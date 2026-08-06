@@ -1,0 +1,54 @@
+name: build
+on:
+  push:
+    paths-ignore: ['*.md']
+  pull_request:
+  workflow_dispatch:
+
+env:
+  IS_THIS_RELEASE: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    if: ${{ !contains(github.event.head_commit.message, 'SKIP') }}
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_USERNAME: ${{ secrets.GH_USERNAME }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Validate gradle wrapper
+        uses: gradle/actions/wrapper-validation@v6
+
+      - name: Setup jdk
+        uses: actions/setup-java@v5
+        with:
+          java-version: '25'
+          distribution: 'temurin'
+
+      - name: Cache Gradle dependencies (公共缓存)
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ./.gradle
+            ./libs
+          key: ${{ runner.os }}-gradle-common
+          restore-keys: |
+            ${{ runner.os }}-gradle-common
+
+      - name: Make gradle wrapper executable
+        run: chmod +x ./gradlew
+
+      - name: Build fabricWrapper subproject
+        run: ./gradlew :fabricWrapper:build
+
+      - name: Capture build artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Artifacts
+          path: fabricWrapper/build/libs/*.jar
+          archive: false
