@@ -79,6 +79,10 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
     @Nullable
     private BlockPos lastPos;
 
+    // 运动感知：上一观测的玩家方块位置，用于推算主导移动轴
+    @Nullable
+    private BlockPos prevPlayerBlockPos = null;
+
     private long lastTickTime = -1L;
 
     @Getter
@@ -169,28 +173,106 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                 ? (int) PlayerUtils.getInteractionRange(5)
                 : getWorkRange();
 
+        // 运动感知：按玩家移动主导轴优先扫描新进入的层，减少高速移动漏扫
+        boolean adaptive = Configs.Core.MOVE_ADAPTIVE_ITERATION.getBooleanValue();
+        int dominantAxis = -1;
+        int dominantSign = 1;
+        if (adaptive && this.prevPlayerBlockPos != null) {
+            int dx = eyePos.getX() - this.prevPlayerBlockPos.getX();
+            int dy = eyePos.getY() - this.prevPlayerBlockPos.getY();
+            int dz = eyePos.getZ() - this.prevPlayerBlockPos.getZ();
+            int adx = Math.abs(dx);
+            int ady = Math.abs(dy);
+            int adz = Math.abs(dz);
+            if (adx >= ady && adx >= adz) {
+                dominantAxis = 0;
+                dominantSign = dx >= 0 ? 1 : -1;
+            } else if (ady >= adz) {
+                dominantAxis = 1;
+                dominantSign = dy >= 0 ? 1 : -1;
+            } else {
+                dominantAxis = 2;
+                dominantSign = dz >= 0 ? 1 : -1;
+            }
+            if (adx == 0 && ady == 0 && adz == 0) {
+                dominantAxis = -1;
+            }
+        }
+        this.prevPlayerBlockPos = eyePos;
+
         // 检查是否需要重建交互盒
         boolean needRebuild = box == null
                 || !box.equals(lastBox)
                 || lastPos == null
-                || !lastPos.closerThan(eyePos, getWorkRange() * 0.4)
-                || expandRange != currentRange;
+                || expandRange != currentRange
+                || !lastPos.closerThan(eyePos, getWorkRange() * 0.4);
+        if (adaptive && dominantAxis >= 0 && lastPos != null) {
+            // 主导轴移动超过半个范围时也提前重建，让盒子跟上运动方向
+            int moved = dominantAxis == 0 ? eyePos.getX() - lastPos.getX()
+                    : dominantAxis == 1 ? eyePos.getY() - lastPos.getY()
+                    : eyePos.getZ() - lastPos.getZ();
+            if (Math.abs(moved) > currentRange * 0.5) {
+                needRebuild = true;
+            }
+        }
 
         if (needRebuild) {
             lastPos = eyePos;
             expandRange = currentRange;
 
-            box = new PrinterBox(eyePos).expand(expandRange, expandRange, expandRange);
+            if (adaptive && dominantAxis >= 0 && Configs.Core.MOTION_AHEAD.getIntegerValue() > 0) {
+                box = buildMotionBox(eyePos, expandRange, dominantAxis, dominantSign, Configs.Core.MOTION_AHEAD.getIntegerValue());
+            } else {
+                box = new PrinterBox(eyePos).expand(expandRange, expandRange, expandRange);
+            }
             lastBox = box;
             boxRef.set(box);
 
             box.iterationMode = (IterationOrderType) Configs.Core.ITERATION_ORDER.getOptionListValue();
-            box.xIncrement = !Configs.Core.X_REVERSE.getBooleanValue();
-            box.yIncrement = !Configs.Core.Y_REVERSE.getBooleanValue();
-            box.zIncrement = !Configs.Core.Z_REVERSE.getBooleanValue();
-            
+            if (adaptive && dominantAxis >= 0) {
+                // 把移动主导轴放到最外层，优先扫描运动方向的新层
+                IterationOrderType.Axis primary = dominantAxis == 0 ? IterationOrderType.Axis.X
+                        : dominantAxis == 1 ? IterationOrderType.Axis.Y : IterationOrderType.Axis.Z;
+                box.iterationMode = IterationOrderType.primaryFirst(box.iterationMode, primary);
+                // 主导轴沿运动方向迭代，其余轴沿用用户配置
+                if (dominantAxis == 0) {
+                    box.xIncrement = dominantSign > 0;
+                } else if (dominantAxis == 1) {
+                    box.yIncrement = dominantSign > 0;
+                } else {
+                    box.zIncrement = dominantSign > 0;
+                }
+            } else {
+                box.xIncrement = !Configs.Core.X_REVERSE.getBooleanValue();
+                box.yIncrement = !Configs.Core.Y_REVERSE.getBooleanValue();
+                box.zIncrement = !Configs.Core.Z_REVERSE.getBooleanValue();
+            }
+
             cachedIterator = null;
         }
+    }
+
+    /**
+     * 构建带运动方向预扫的交互盒：主导轴沿运动方向多延伸 ahead 格
+     */
+    private PrinterBox buildMotionBox(BlockPos eye, int range, int dominantAxis, int sign, int ahead) {
+        int xe = eye.getX();
+        int ye = eye.getY();
+        int ze = eye.getZ();
+        int minX = xe - range;
+        int maxX = xe + range;
+        int minY = ye - range;
+        int maxY = ye + range;
+        int minZ = ze - range;
+        int maxZ = ze + range;
+        if (dominantAxis == 0) {
+            if (sign > 0) maxX += ahead; else minX -= ahead;
+        } else if (dominantAxis == 1) {
+            if (sign > 0) maxY += ahead; else minY -= ahead;
+        } else {
+            if (sign > 0) maxZ += ahead; else minZ -= ahead;
+        }
+        return new PrinterBox(minX, minY, minZ, maxX, maxY, maxZ);
     }
 
     /**

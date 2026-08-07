@@ -175,6 +175,17 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 核心 - 运动感知扫描：高速移动时优先扫描移动方向，避免新进入的层漏扫
+        public static final ConfigBoolean MOVE_ADAPTIVE_ITERATION = bool("moveAdaptiveIteration")
+                .defaultValue(true)
+                .build();
+
+        // 核心 - 运动方向预扫余量（格）
+        public static final ConfigInteger MOTION_AHEAD = integer("motionAheadBlocks")
+                .defaultValue(3)
+                .range(0, 16)
+                .build();
+
         // 核心 - 显示打印机HUD
         public static final ConfigBoolean RENDER_HUD = bool("renderHud")
                 .defaultValue(false)
@@ -244,6 +255,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 X_REVERSE,
                 Y_REVERSE,
                 Z_REVERSE,
+                MOVE_ADAPTIVE_ITERATION,
+                MOTION_AHEAD,
                 AUTO_DISABLE_PRINTER,
                 UPDATE_CHECK,
                 DEBUG_OUTPUT,

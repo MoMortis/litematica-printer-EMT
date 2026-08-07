@@ -25,6 +25,32 @@ public enum IterationOrderType implements ConfigOptionListEntry<IterationOrderTy
         return i18n;
     }
 
+    /**
+     * 返回一个把 primary 放到最外层轴、其余两轴保持原相对顺序的迭代顺序。
+     * 运动感知扫描用它把"玩家正在逼近的轴"提到最前先扫。
+     */
+    public static IterationOrderType primaryFirst(IterationOrderType base, Axis primary) {
+        Axis[] target = reorder(base.axis, primary);
+        for (IterationOrderType t : values()) {
+            if (t.axis[0] == target[0] && t.axis[1] == target[1] && t.axis[2] == target[2]) {
+                return t;
+            }
+        }
+        return base;
+    }
+
+    private static Axis[] reorder(Axis[] base, Axis primary) {
+        Axis[] result = new Axis[3];
+        result[0] = primary;
+        int idx = 1;
+        for (Axis a : base) {
+            if (a != primary) {
+                result[idx++] = a;
+            }
+        }
+        return result;
+    }
+
     // 封装轴的所有行为逻辑
     public enum Axis {
         X {
