@@ -5,6 +5,7 @@ import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
+import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.properties.AttachFace;
@@ -120,7 +121,8 @@ public class DefaultGuide extends Guide {
             if (BreakUtils.canBreakBlock(blockPos) && BreakUtils.breakRestriction(currentState)) {
                 if (printBreakWrongBlock && !requiredState.isAir()) {
                     BreakUtils.INSTANCE.add(context);
-                } else if (printBreakExtraBlock && requiredState.isAir()) {
+                } else if (printBreakExtraBlock && requiredState.isAir()
+                        && !(currentState.getBlock() instanceof LiquidBlock)) {
                     BreakUtils.INSTANCE.add(context);
                 }
             }

@@ -66,20 +66,30 @@ public abstract class MixinMinecraftClient {
             return;
         }
         Item item = level.getBlockState(pos).getBlock().asItem();
-        if (player.inventoryMenu.slots.stream().noneMatch(slot -> slot.getItem().getItem().equals(item)) &&
-                !player.getAbilities().instabuild) {
-            // 云仓库鼠标中键取货：无视冷却立即下单，同时重置冷却计时器
-            if (Configs.Placement.PRINT_CLOUD_STORE_REFILL.getBooleanValue()
+        boolean forceCloudStore = Configs.Placement.PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE.getBooleanValue();
+        // 潜影盒物品要求身上是"空盒"才算已拥有；有物品的潜影盒不算
+        boolean itemIsShulker = me.aleksilassila.litematica.printer.utils.InventoryUtils.isShulkerItem(item);
+        boolean inInventory = player.inventoryMenu.slots.stream().anyMatch(slot -> {
+            net.minecraft.world.item.ItemStack stack = slot.getItem();
+            if (!stack.getItem().equals(item)) return false;
+            return !itemIsShulker
+                    || me.aleksilassila.litematica.printer.utils.InventoryUtils.isEmptyShulker(stack);
+        });
+        if (!player.getAbilities().instabuild) {
+            // 云仓库鼠标中键取货：无视冷却立即下单；开启"强制取货"后不再检查背包是否有物品。
+            // 下单后不再 return，继续走原版中键取物（云仓库取货 + 原版背包取物同时生效）
+            if ((forceCloudStore || Configs.Placement.PRINT_CLOUD_STORE_REFILL.getBooleanValue())
                     && item != net.minecraft.world.item.Items.AIR
-                    && ModUtils.isCloudStoreLoaded()) {
+                    && ModUtils.isCloudStoreLoaded()
+                    && (forceCloudStore || !inInventory)) {
                 me.aleksilassila.litematica.printer.utils.CloudStoreUtils.tryRequestRefillImmediate(
                         player,
                         item,
                         Configs.Placement.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
                 );
-                return;
             }
-            if (Configs.Core.CLOUD_INVENTORY.getBooleanValue() || Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
+            if (!inInventory
+                    && (Configs.Core.CLOUD_INVENTORY.getBooleanValue() || Configs.Placement.QUICK_SHULKER.getBooleanValue())) {
                 InventoryUtils.lastNeedItemList.add(item);
                 InventoryUtils.switchItem();
                 return;

@@ -338,6 +338,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(isLoadCloudStoreLoaded) // 仅云仓库 Mod 加载时显示
                 .build();
 
+        // 云仓库鼠标中键强制取货：开启后，鼠标中键取货不再检查背包是否有物品，强制向云仓库发送请求
+        public static final ConfigBoolean PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE = bool("printCloudStoreMiddleClickForce")
+                .defaultValue(false)
+                .setVisible(isLoadCloudStoreLoaded) // 仅云仓库 Mod 加载时显示
+                .build();
+
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 PRINT_USE_PACKET,
                 PLACE_INTERVAL,
@@ -350,6 +356,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_CLOUD_STORE_REFILL_AMOUNT,
                 REFILL_AMOUNT_ADJUST,
                 REFILL_SCROLL_REVERSE,
+                PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE,
                 QUICK_SHULKER,
                 QUICK_SHULKER_MODE,
                 QUICK_SHULKER_COOLDOWN
@@ -395,11 +402,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 自动切换最佳工具
-        public static final ConfigBoolean BREAK_AUTO_TOOL = bool("breakAutoTool")
-                .defaultValue(false)
-                .build();
-
         // 并行破坏（一次扫描后按距离由近到远同时破坏多个方块）
         public static final ConfigBoolean BREAK_PARALLEL = bool("breakParallel")
                 .defaultValue(false)
@@ -430,7 +432,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_CHECK_HARDNESS,
                 BREAK_INSTANT_MINE,
                 BREAK_USE_PACKET,
-                BREAK_AUTO_TOOL,
                 BREAK_PARALLEL,
                 BREAK_USE_DELAYED_DESTROY,
                 BREAK_INTERVAL,

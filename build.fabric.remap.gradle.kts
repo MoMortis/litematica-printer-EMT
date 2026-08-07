@@ -13,7 +13,7 @@ version = fullProjectVersion
 group = modMavenGroup
 
 repositories {
-    maven(uri("file:///D:/SSS/litematica-printer-1.3-beta.1/.localrepo")) { name = "LocalHack" }
+    maven(uri("$rootDir/.localrepo")) { name = "LocalHack" }
     maven("https://maven.fabricmc.net") { name = "FabricMC" }
     maven("https://maven.fallenbreath.me/releases") { name = "FallenBreath" }
     maven("https://api.modrinth.com/maven") { name = "Modrinth" }

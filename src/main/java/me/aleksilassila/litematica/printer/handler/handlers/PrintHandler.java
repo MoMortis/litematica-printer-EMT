@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.Setter;
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
@@ -19,7 +20,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.*;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.HashSet;
 import java.util.Set;
@@ -94,21 +97,13 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 }
 
         }
-        Direction side = action.getValidSide(level, blockPos);
-        if (side == null) return;
         Item[] reqItems = action.getRequiredItems(ctx.requiredState.getBlock());
         if (!InventoryUtils.switchToItems(player, reqItems)) {
-            // 缺货：统计工作范围内所有需要打印但背包为空的材料，一次性提交云仓库取货订单
-            if (Configs.Placement.PRINT_CLOUD_STORE_REFILL.getBooleanValue()
-                    && !CloudStoreUtils.isRefillInCooldown()) {
-                CloudStoreUtils.tryRequestRefillMany(
-                        player,
-                        collectMissingMaterials(),
-                        Configs.Placement.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
-                );
-            }
+            requestCloudStoreRefill(reqItems);
             return;
         }
+        Direction side = action.getValidSide(level, blockPos);
+        if (side == null) return;
         boolean useShift;
         if (action.getShift() == null) {
             useShift = (Implementation.isInteractive(level.getBlockState(blockPos.relative(side)).getBlock()) && !(action instanceof ClickAction))
@@ -139,32 +134,87 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     /**
      * 统计工作范围内所有需要打印、但背包中数量为 0 的材料种类。
-     * 扫描会修改 this.action / this.ctx，完成后恢复原值。
+     *
+     * 注意：这里使用只读判定（isRequiredForPlacement），不调用 canProcessPos / Guides.buildAction。
+     * 之前的实现会经 Guides.buildAction 触发 DefaultGuide.onBuildActionWrongBlock，把多余/错误方块
+     * 全部入队破坏，造成"开启云仓库补货时挖到原理图之外"的副作用。
      */
     private Set<Item> collectMissingMaterials() {
         Set<Item> missing = new HashSet<>();
         PrinterBox box = this.boxRef == null ? null : this.boxRef.get();
         if (box == null) return missing;
-        Action savedAction = this.action;
-        SchematicBlockContext savedCtx = this.ctx;
         int scanned = 0;
-        try {
-            for (BlockPos pos : box) {
-                if (++scanned > 20000) break;
-                if (!canProcessPos(pos)) continue;
-                Item[] reqItems = this.action.getRequiredItems(this.ctx.requiredState.getBlock());
-                if (reqItems == null) continue;
-                for (Item reqItem : reqItems) {
-                    if (reqItem == null || reqItem == net.minecraft.world.item.Items.AIR) continue;
-                    if (InventoryUtils.countMatchingMainInventory(player, stack -> stack.is(reqItem)) == 0) {
-                        missing.add(reqItem);
-                    }
+        for (BlockPos pos : box) {
+            if (++scanned > 20000) break;
+            if (!PlayerUtils.canInteracted(pos)) continue;
+            if (!LitematicaUtils.isSchematicBlock(pos)) continue;
+            if (getSelectionType() != null
+                    && !PlayerUtils.isPositionInSelectionRange(player, pos, getSelectionType())) continue;
+            Item[] reqItems = getRequiredItemsFor(pos);
+            if (reqItems == null) continue;
+            for (Item reqItem : reqItems) {
+                if (reqItem == null || reqItem == net.minecraft.world.item.Items.AIR) continue;
+                if (InventoryUtils.countMatchingMainInventory(player, stack -> stack.is(reqItem)) == 0) {
+                    missing.add(reqItem);
                 }
             }
-        } finally {
-            this.action = savedAction;
-            this.ctx = savedCtx;
         }
         return missing;
+    }
+
+    /**
+     * 只读判定该位置是否需要打印（世界缺失目标方块或存在错误方块需替换），纯比较、不产生任何构建动作副作用。
+     * 返回需要的物品 []；不需要或不可打印时返回 null。
+     */
+    @Nullable
+    private Item[] getRequiredItemsFor(BlockPos pos) {
+        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+        if (schematic == null) return null;
+        SchematicBlockContext context = new SchematicBlockContext(client, level, schematic, pos);
+        if (Configs.Print.PRINT_SKIP.getBooleanValue()) {
+            Set<String> skipSet = new HashSet<>(Configs.Print.PRINT_SKIP_LIST.getStrings());
+            if (skipSet.stream().anyMatch(s -> PinYinSearchUtils.matchName(s, context.requiredState))) {
+                return null;
+            }
+        }
+        BlockState required = context.requiredState;
+        if (required.isAir() || required.getBlock() instanceof LiquidBlock) {
+            return null;
+        }
+        BlockMatchResult match = BlockMatchResult.compare(context);
+        // 空气/可替换（MISSING）需要放方块；错误方块（WRONG_BLOCK）需要先破坏再放，
+        // 两者都会消耗目标方块材料，都应纳入云仓库缺货统计。
+        if (match != BlockMatchResult.MISSING && match != BlockMatchResult.WRONG_BLOCK) {
+            return null;
+        }
+        return new Item[]{required.getBlock().asItem()};
+    }
+
+    /**
+     * 背包缺货时发起云仓库补货订单。
+     * 空集兜底：只读扫描结果为空时，仍把当前缺货的 reqItems 加入订单，避免静默失效（无任何提示）。
+     */
+    private void requestCloudStoreRefill(Item[] reqItems) {
+        if (!Configs.Placement.PRINT_CLOUD_STORE_REFILL.getBooleanValue()
+                || CloudStoreUtils.isRefillInCooldown()) {
+            return;
+        }
+        Set<Item> missing = collectMissingMaterials();
+        if (reqItems != null) {
+            for (Item reqItem : reqItems) {
+                if (reqItem == null || reqItem == net.minecraft.world.item.Items.AIR) continue;
+                if (InventoryUtils.countMatchingMainInventory(player, stack -> stack.is(reqItem)) == 0) {
+                    missing.add(reqItem);
+                }
+            }
+        }
+        if (missing.isEmpty()) {
+            return;
+        }
+        CloudStoreUtils.tryRequestRefillMany(
+                player,
+                missing,
+                Configs.Placement.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
+        );
     }
 }

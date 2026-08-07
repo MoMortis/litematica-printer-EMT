@@ -4,8 +4,11 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 import org.jetbrains.annotations.Nullable;
 
 import java.lang.reflect.Constructor;
@@ -20,6 +23,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 /**
  * 云仓库 (cloud-store) 软集成。通过反射调用 com.cloudstore.client.CloudStoreClient.api：
@@ -43,11 +48,20 @@ public class CloudStoreUtils {
     // 当前自动订单中的材料（用于"拿到目标物品即结束冷却"检测）
     private static final Set<Item> orderedItems = new HashSet<>();
 
+    // 最近一次自动订单提交时间戳（用于判断在途订单是否已陈旧、可被清理）
+    private static long autoOrderSubmittedAt = 0L;
+
+    // 自动订单序号：每次提交自增，用于让过期订单的收尾逻辑不再覆盖新订单的冷却
+    private static long orderToken = 0L;
+
     // 手动（鼠标中键）取货在途材料：与冷却计时器无关，到包或失败后移除
     private static final Set<Item> manualOrdered = new HashSet<>();
 
     // 补货订单失败后的重试冷却
     private static final long REFILL_COOLDOWN_MS = 30_000L;
+
+    // 云仓库单个 HTTP 请求最大等待时间：防止网络卡死占用唯一后台线程
+    private static final long REQUEST_TIMEOUT_MS = 10_000L;
 
     private CloudStoreUtils() {
     }
@@ -104,17 +118,20 @@ public class CloudStoreUtils {
             return false;
         }
         List<Item> snapshot;
+        final long token;
         synchronized (CloudStoreUtils.class) {
             if (isRefillInCooldown()) {
                 return false;
             }
             snapshot = new ArrayList<>(missingItems);
             orderedItems.addAll(snapshot);
+            autoOrderSubmittedAt = System.currentTimeMillis();
+            token = ++orderToken;
             // 先按失败短冷却占位，成功提交后再替换为配置长冷却
             pendingUntilMillis = System.currentTimeMillis() + REFILL_COOLDOWN_MS;
         }
         String playerName = player.getName().getString();
-        EXECUTOR.execute(() -> runRefill(snapshot, playerName, amount, false));
+        EXECUTOR.execute(() -> runRefill(snapshot, playerName, amount, false, token));
         // 立即反馈：后台 HTTP 请求链（登录/查仓/取货）完成前先提示已提交
         MessageUtils.setOverlayMessage("[打印机] 已提交补货请求：" + snapshot.size() + " 种材料，每种 x" + amount);
         return true;
@@ -136,7 +153,7 @@ public class CloudStoreUtils {
         List<Item> snapshot = new ArrayList<>();
         snapshot.add(item);
         String playerName = player.getName().getString();
-        EXECUTOR.execute(() -> runRefill(snapshot, playerName, amount, true));
+        EXECUTOR.execute(() -> runRefill(snapshot, playerName, amount, true, 0L));
         // 立即反馈：后台 HTTP 请求链（登录/查仓/取货）完成前先提示已提交
         MessageUtils.setOverlayMessage("[打印机] 已提交取货请求：" + item.getName(net.minecraft.world.item.ItemStack.EMPTY).getString() + " x" + amount);
         return true;
@@ -161,11 +178,7 @@ public class CloudStoreUtils {
                 arrived = true;
             }
         }
-        if (!isRefillInCooldown()) {
-            // 自动订单无冷却即无在途订单，清掉陈旧记录
-            orderedItems.clear();
-        }
-        // 自动订单在途材料：到包即移除
+        // 自动订单在途材料：到包即移除（先于任何清理判断，保证到货能被检测到）
         Iterator<Item> iterator = orderedItems.iterator();
         while (iterator.hasNext()) {
             Item item = iterator.next();
@@ -174,18 +187,40 @@ public class CloudStoreUtils {
                 arrived = true;
             }
         }
+        // 只在订单确实陈旧（提交时间超过冷却+缓冲）而无果时才清理，避免后台订单未完成
+        // （登录/查仓/取货 HTTP 链 > 短冷却）时提前清空导致到货检测永久失效。
+        if (!orderedItems.isEmpty()
+                && autoOrderSubmittedAt > 0L
+                && System.currentTimeMillis() - autoOrderSubmittedAt > getOrderStaleThresholdMs()) {
+            orderedItems.clear();
+        }
         if (!arrived) {
             return;
         }
-        if (!isRefillInCooldown()) {
-            MessageUtils.setOverlayMessage("[打印机] 已收到云仓库材料");
-        } else {
+        if (isRefillInCooldown()) {
             pendingUntilMillis = 0L;
+        }
+        if (orderedItems.isEmpty()) {
             MessageUtils.setOverlayMessage("[打印机] 已收到云仓库材料，补货冷却结束");
+        } else {
+            MessageUtils.setOverlayMessage("[打印机] 已收到部分云仓库材料");
         }
     }
 
-    private static void runRefill(List<Item> missingItems, String playerName, int amount, boolean manual) {
+    /**
+     * 自动订单在途视为陈旧的时间阈值：短冷却与配置长冷却取大者，再加 60 秒缓冲。
+     */
+    private static long getOrderStaleThresholdMs() {
+        long threshold = REFILL_COOLDOWN_MS;
+        try {
+            threshold = Math.max(threshold,
+                    Configs.Placement.PRINT_CLOUD_STORE_REFILL_COOLDOWN.getIntegerValue() * 1000L);
+        } catch (Throwable ignored) {
+        }
+        return threshold + 60_000L;
+    }
+
+    private static void runRefill(List<Item> missingItems, String playerName, int amount, boolean manual, long token) {
         String message = null;
         boolean success = false;
         try {
@@ -274,7 +309,12 @@ public class CloudStoreUtils {
                 cooldown = REFILL_COOLDOWN_MS;
             }
             synchronized (CloudStoreUtils.class) {
-                pendingUntilMillis = System.currentTimeMillis() + cooldown;
+                // 仅当仍是当前订单（未被更新的订单取代）时才写入冷却，防止过期订单的收尾
+                // 覆盖新订单的冷却；且订单材料已全部到包（tickArrivalCheck 已清空 orderedItems
+                // 并清零冷却）时不再重新拉长冷却，保证"到货即结束冷却"不被后台线程撤销。
+                if (orderToken == token && !(success && orderedItems.isEmpty())) {
+                    pendingUntilMillis = System.currentTimeMillis() + cooldown;
+                }
             }
         }
     }
@@ -288,7 +328,8 @@ public class CloudStoreUtils {
         for (Object entry : items) {
             if (entry == null) continue;
             if (itemId.equals(readField(entry, "itemId"))
-                    && readLong(entry, "amount") + readLong(entry, "boxedAmount") > 0L) {
+                    && readLong(entry, "amount") + readLong(entry, "boxedAmount") > 0L
+                    && matchesShulkerExpectation(entry, itemId)) {
                 return entry;
             }
         }
@@ -301,6 +342,27 @@ public class CloudStoreUtils {
             }
         }
         return null;
+    }
+
+    /**
+     * 目标是潜影盒时，只匹配空盒条目（无盒内容物、无盒内数量），避免取到装有物品的盒子。
+     * 非潜影盒物品不受影响。
+     */
+    private static boolean matchesShulkerExpectation(Object entry, String itemId) {
+        if (!isShulkerId(itemId)) {
+            return true;
+        }
+        List<?> contents = readList(entry, "shulkerContents");
+        return readLong(entry, "boxedAmount") == 0L && (contents == null || contents.isEmpty());
+    }
+
+    private static boolean isShulkerId(String itemId) {
+        try {
+            Item item = BuiltInRegistries.ITEM.getValue(Identifier.parse(itemId));
+            return item != null && item != Items.AIR && Block.byItem(item) instanceof ShulkerBoxBlock;
+        } catch (Throwable error) {
+            return false;
+        }
     }
 
     private static Object newWithdrawRequest(Object matchedItem, int amount) throws Exception {
@@ -324,7 +386,7 @@ public class CloudStoreUtils {
         }
         Object future = method.invoke(api, ownerUuid, requests, playerName);
         if (future instanceof CompletableFuture<?> completableFuture) {
-            return completableFuture.get();
+            return completableFuture.get(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         }
         throw new IllegalStateException("cloud-store 方法 withdrawMany 未返回异步结果");
     }
@@ -416,7 +478,7 @@ public class CloudStoreUtils {
         }
         Object future = method.invoke(api, args);
         if (future instanceof CompletableFuture<?> completableFuture) {
-            return completableFuture.get();
+            return completableFuture.get(REQUEST_TIMEOUT_MS, TimeUnit.MILLISECONDS);
         }
         throw new IllegalStateException("cloud-store 方法 " + methodName + " 未返回异步结果");
     }

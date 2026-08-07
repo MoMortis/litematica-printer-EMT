@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.handler.handlers;
 
-import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.ModUtils;
@@ -30,8 +29,7 @@ final class MineBreakExecutor {
     public void beginTick() {
         this.currentProgressCache.clear();
         this.bestToolCache.clear();
-        this.resolveBestTool = Configs.Break.BREAK_AUTO_TOOL.getBooleanValue()
-                || ModUtils.isTweakerooLoaded() && ModUtils.isToolSwitchEnabled();
+        this.resolveBestTool = ModUtils.isTweakerooLoaded() && ModUtils.isToolSwitchEnabled();
     }
 
     public void reset() {

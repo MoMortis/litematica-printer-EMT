@@ -486,12 +486,12 @@ public class InventoryUtils {
         return false;
     }
 
-    private static boolean isShulkerItem(Item item) {
+    public static boolean isShulkerItem(Item item) {
         return net.minecraft.world.level.block.Block.byItem(item)
                 instanceof net.minecraft.world.level.block.ShulkerBoxBlock;
     }
 
-    private static boolean isEmptyShulker(ItemStack stack) {
+    public static boolean isEmptyShulker(ItemStack stack) {
         //#if MC >= 12109
         net.minecraft.world.item.component.ItemContainerContents contents = stack.get(DataComponents.CONTAINER);
         if (contents == null) return true;

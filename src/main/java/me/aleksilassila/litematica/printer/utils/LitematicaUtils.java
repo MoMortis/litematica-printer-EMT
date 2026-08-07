@@ -1,7 +1,9 @@
 package me.aleksilassila.litematica.printer.utils;
 
 import fi.dy.masa.litematica.data.DataManager;
+import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import fi.dy.masa.litematica.schematic.placement.SchematicPlacementManager;
+import fi.dy.masa.litematica.schematic.placement.SubRegionPlacement;
 import fi.dy.masa.litematica.selection.AreaSelection;
 import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.litematica.selection.SelectionMode;
@@ -52,6 +54,10 @@ public class LitematicaUtils {
     /**
      * 判断位置是否位于当前加载的投影范围内。
      *
+     * <p>与 Litematica 原版默认范围不同，这里按「原理图子区域内容盒」判定
+     * （即原理图实际包含方块的范围），而不是完整的放置盒。放置盒会覆盖大量
+     * 空气/空白区域，若按放置盒判定，"多余方块"会把投影盒覆盖的地形也破坏。
+     *
      * @param pos 要检测的方块位置
      * @return 如果位置属于图纸结构的一部分，则返回 true，否则返回 false
      */
@@ -65,7 +71,16 @@ public class LitematicaUtils {
 
         for (SchematicPlacementManager.PlacementPart placementPart : allPlacementsTouchingChunk) {
             if (placementPart.getBox().containsPos(pos)) {
-                return true;
+                SchematicPlacement placement = placementPart.getPlacement();
+                if (placement == null) {
+                    return true;
+                }
+                for (Box box : placement.getSubRegionBoxes(
+                        SubRegionPlacement.RequiredEnabled.RENDERING_ENABLED).values()) {
+                    if (new PrinterBox(box.getPos1(), box.getPos2()).contains(pos)) {
+                        return true;
+                    }
+                }
             }
         }
         return false;

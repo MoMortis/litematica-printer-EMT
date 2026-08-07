@@ -96,15 +96,12 @@ public class BreakUtils {
         LocalPlayer player = client.player;
         boolean tweakerooToolSwitch = ModUtils.isTweakerooLoaded() && ModUtils.isToolSwitchEnabled();
         if (player != null
-                && (Configs.Break.BREAK_AUTO_TOOL.getBooleanValue() || tweakerooToolSwitch)
+                && tweakerooToolSwitch
                 && ToolSelectionUtils.prefersSilkTouchForDrops(blockState)
                 && (!isToolAllowedByDurabilityProtection(player.getMainHandItem())
                 || !ToolSelectionUtils.hasSilkTouch(player.getMainHandItem()))
                 && InventoryUtils.hasUsableSilkTouchTool(player)) {
             return InventoryUtils.switchToBestTool(player, blockState);
-        }
-        if (Configs.Break.BREAK_AUTO_TOOL.getBooleanValue()) {
-            return player != null && InventoryUtils.switchToBestTool(player, blockState);
         }
         if (tweakerooToolSwitch) {
             ModUtils.trySwitchToEffectiveTool(pos);
@@ -123,8 +120,7 @@ public class BreakUtils {
                 || !ToolSelectionUtils.prefersSilkTouchForDrops(blockState)) {
             return true;
         }
-        boolean toolSwitchEnabled = Configs.Break.BREAK_AUTO_TOOL.getBooleanValue()
-                || ModUtils.isTweakerooLoaded() && ModUtils.isToolSwitchEnabled();
+        boolean toolSwitchEnabled = ModUtils.isTweakerooLoaded() && ModUtils.isToolSwitchEnabled();
         if (!toolSwitchEnabled) {
             return true;
         }
