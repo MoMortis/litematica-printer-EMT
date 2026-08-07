@@ -290,6 +290,8 @@
   "litematica_printer.config.breakAvoidFluid.desc": "启用后，不挖掘与流体（岩浆/水）紧邻的方块（下、东、西、北、南5个面），防止误挖导致液体流出。方块正上方的方块仍会挖掘。仅影响普通挖掘（打印模式的破坏多余/错误方块、挖掘模式）。",
   "litematica_printer.config.breakAvoidSupport": "不破坏支撑方块",
   "litematica_printer.config.breakAvoidSupport.desc": "启用后，不破坏重力方块（沙子、沙砾、红沙、混凝土粉末、铁砧、龙蛋等）正下方的一格方块，防止挖掉支撑引发重力方块坠落。仅影响普通挖掘。",
+  "litematica_printer.config.breakNonBlocking": "非阻塞式挖掘",
+  "litematica_printer.config.breakNonBlocking.desc": "启用后，玩家手动挖掘（按住左键）时，打印机暂停自己的挖掘并让出破坏状态，避免玩家与打印机互相抢占同一目标的进度；玩家停止挖掘后打印机自动恢复。仅于生存/冒险生效，创造不受影响。",
   "litematica_printer.config.breakUseDelayedDestroy": "通用延迟破坏",
   "litematica_printer.config.printReserveItems": "保留打印耗材",
   "litematica_printer.config.printReserveItemCount": "打印耗材保留数量",

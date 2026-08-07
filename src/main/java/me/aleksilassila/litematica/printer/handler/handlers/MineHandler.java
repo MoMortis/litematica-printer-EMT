@@ -83,6 +83,10 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     protected boolean canIterate() {
+        // 非阻塞型挖掘：玩家手动挖掘时暂停整个挖掘迭代
+        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
+            return false;
+        }
         if (!isParallelMode()) {
             return true;
         }
@@ -102,6 +106,10 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     public boolean canProcessPos(BlockPos pos) {
+        // 非阻塞型挖掘：玩家手动挖掘时停止收集新候选
+        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
+            return false;
+        }
         if (isOnCooldown(pos) || BlockPosCooldownManager.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)) {
             return false;
         }

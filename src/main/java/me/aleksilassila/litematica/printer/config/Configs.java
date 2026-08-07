@@ -430,6 +430,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 非阻塞型挖掘：玩家手动挖掘（按住左键）时打印机暂停挖掘并让出破坏状态，玩家结束后自动恢复
+        public static final ConfigBoolean BREAK_NON_BLOCKING = bool("breakNonBlocking")
+                .defaultValue(false)
+                .build();
+
         // 模式限制器
         public static final ConfigOptionList BREAK_LIMITER = optionList("breakLimiter")
                 .defaultValue(ExcavateListMode.CUSTOM)
@@ -457,6 +462,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_USE_PACKET,
                 BREAK_AVOID_FLUID,
                 BREAK_AVOID_SUPPORT,
+                BREAK_NON_BLOCKING,
                 BREAK_PARALLEL,
                 BREAK_USE_DELAYED_DESTROY,
                 BREAK_INTERVAL,

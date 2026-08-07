@@ -289,6 +289,10 @@ if (this.delayedDestroyLocalPrediction) {
         if (player == null || level == null || gameMode == null) {
             return BlockBreakResult.FAILED;
         }
+        // 非阻塞型挖掘：玩家手动挖掘时让出破坏状态（含同 tick 秒破路径）
+        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
+            return BlockBreakResult.ABORTED;
+        }
 
         // 这很体面：同 tick 数据包秒破，跳过全部校验
         if (this.litematica_printer$instantMine(blockPos, direction)) {
@@ -368,6 +372,10 @@ if (this.delayedDestroyLocalPrediction) {
         MultiPlayerGameMode gameMode = minecraft.gameMode;
         if (player == null || level == null || gameMode == null) {
             return BlockBreakResult.FAILED;
+        }
+        // 非阻塞型挖掘：玩家手动挖掘时让出破坏状态
+        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
+            return BlockBreakResult.ABORTED;
         }
         // 这很体面：同 tick 数据包秒破（打印流程的普通破坏队列路径）
         if (this.litematica_printer$instantMine(blockPos, direction)) {

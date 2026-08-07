@@ -23,6 +23,7 @@ import net.minecraft.world.level.block.DragonEggBlock;
 import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.phys.HitResult;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import org.jetbrains.annotations.Nullable;
 
@@ -52,6 +53,8 @@ public class BreakUtils {
     private static final LongOpenHashSet fluidAvoidCache = new LongOpenHashSet();
     private static final LongOpenHashSet supportAvoidCache = new LongOpenHashSet();
     private static long fluidCacheTick = -1L;
+    // 非阻塞型挖掘：记录玩家最近一次手动挖掘的游戏刻（1 tick 防抖）
+    private static long lastPlayerMineGameTime = -1L;
 
     private BreakUtils() {
     }
@@ -350,10 +353,31 @@ public class BreakUtils {
         return !breakQueue.isEmpty() || breakPos != null;
     }
 
+    // 非阻塞型挖掘：检测玩家是否正在手动挖掘（仅生存/冒险；创造模式忽略）
+    public static boolean isPlayerMining() {
+        LocalPlayer player = client.player;
+        ClientLevel level = client.level;
+        if (player == null || level == null || player.getAbilities().instabuild) {
+            return false;
+        }
+        boolean mining = client.options.keyAttack.isDown()
+                && client.hitResult != null
+                && client.hitResult.getType() == HitResult.Type.BLOCK;
+        if (mining) {
+            lastPlayerMineGameTime = level.getGameTime();
+        }
+        // 1 tick 防抖：松手后仍短暂暂停，避免连挖/换目标时打印机抖动恢复
+        return level.getGameTime() - lastPlayerMineGameTime <= 1;
+    }
+
     public void onTick() {
         LocalPlayer player = client.player;
         ClientLevel level = client.level;
         if (player == null || level == null) {
+            return;
+        }
+        // 非阻塞型挖掘：玩家手动挖掘时整体暂停，保留队列/目标
+        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && isPlayerMining()) {
             return;
         }
         if (this.externalDestroyLockTicks > 0) {
