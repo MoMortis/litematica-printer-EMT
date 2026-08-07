@@ -273,6 +273,7 @@
   "litematica_printer.config.workingSwitch": "工作开关",
   "litematica_printer.config.workingSwitch.desc": "打印机的全局开关。",
   "litematica_printer.free_notice": "此模组在GitHub上开源免费，如从收费渠道购买请自行退款",
+  "litematica_printer.printer_tagline": "1.4-EMT！ 超NB的打印机！",
   "litematica_printer.menu.settings_button": "打印机设置",
   "litematica_printer.message.toggled": "已将 %s 切换为 %s",
   "litematica_printer.message.value.off": "关闭",

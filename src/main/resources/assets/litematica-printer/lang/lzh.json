@@ -273,6 +273,7 @@
   "litematica_printer.config.workingSwitch": "工訣",
   "litematica_printer.config.workingSwitch.desc": "機巧之總開關。",
   "litematica_printer.free_notice": "諸語翻譯尚未周備，敬請襄助完善",
+  "litematica_printer.printer_tagline": "1.4-EMT！ 超勁之印機也！",
   "litematica_printer.menu.settings_button": "機巧設令",
   "litematica_printer.message.toggled": "已轉 %s 為 %s",
   "litematica_printer.message.value.off": "關",

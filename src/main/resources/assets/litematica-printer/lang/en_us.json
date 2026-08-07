@@ -273,6 +273,7 @@
   "litematica_printer.config.workingSwitch": "Work Switch",
   "litematica_printer.config.workingSwitch.desc": "Global switch for printer.",
   "litematica_printer.free_notice": "Multilingual translation needs improvement, help us please",
+  "litematica_printer.printer_tagline": "1.4-EMT! An Amazing Printer!",
   "litematica_printer.menu.settings_button": "Printer Settings",
   "litematica_printer.message.toggled": "%s has been toggled to %s",
   "litematica_printer.message.value.off": "Off",

@@ -13,6 +13,7 @@ public class I18n {
 
     public static final I18n AUTO_DISABLE_NOTICE = of("auto_disable_notice");
     public static final I18n FREE_NOTICE = of("free_notice");
+    public static final I18n PRINTER_TAGLINE = of("printer_tagline");
 
     public static final I18n BEDROCK_CREATIVE_MODE = of("bedrock.creative_mode");
     public static final I18n BEDROCK_MOD_MISSING = of("bedrock.mod_missing");

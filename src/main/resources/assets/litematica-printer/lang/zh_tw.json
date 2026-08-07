@@ -273,6 +273,7 @@
   "litematica_printer.config.workingSwitch": "工作開關",
   "litematica_printer.config.workingSwitch.desc": "印表機的全域開關。",
   "litematica_printer.free_notice": "多語言翻譯尚待完善，歡迎協助改善",
+  "litematica_printer.printer_tagline": "1.4-EMT！ 超NB的印表機！",
   "litematica_printer.menu.settings_button": "印表機設定",
   "litematica_printer.message.toggled": "已將 %s 切換為 %s",
   "litematica_printer.message.value.off": "關閉",
