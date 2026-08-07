@@ -233,23 +233,25 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
             boxRef.set(box);
 
             box.iterationMode = (IterationOrderType) Configs.Core.ITERATION_ORDER.getOptionListValue();
+            // 先全部按用户反转配置设置，再覆盖主导轴
+            box.xIncrement = !Configs.Core.X_REVERSE.getBooleanValue();
+            box.yIncrement = !Configs.Core.Y_REVERSE.getBooleanValue();
+            box.zIncrement = !Configs.Core.Z_REVERSE.getBooleanValue();
             if (adaptive && dominantAxis >= 0) {
-                // 把移动主导轴放到最外层，优先扫描运动方向的新层
+                // 把移动主导轴放到最外层，优先扫描运动前方的新层
                 IterationOrderType.Axis primary = dominantAxis == 0 ? IterationOrderType.Axis.X
                         : dominantAxis == 1 ? IterationOrderType.Axis.Y : IterationOrderType.Axis.Z;
                 box.iterationMode = IterationOrderType.primaryFirst(box.iterationMode, primary);
-                // 主导轴沿运动方向迭代，其余轴沿用用户配置
+                // 主导轴从运动方向一侧开始扫（运动前方即 buildMotionBox 延伸的"前方新层"），
+                // 其余两轴沿用用户反转配置。
+                boolean fromFront = !(dominantSign > 0);
                 if (dominantAxis == 0) {
-                    box.xIncrement = dominantSign > 0;
+                    box.xIncrement = fromFront;
                 } else if (dominantAxis == 1) {
-                    box.yIncrement = dominantSign > 0;
+                    box.yIncrement = fromFront;
                 } else {
-                    box.zIncrement = dominantSign > 0;
+                    box.zIncrement = fromFront;
                 }
-            } else {
-                box.xIncrement = !Configs.Core.X_REVERSE.getBooleanValue();
-                box.yIncrement = !Configs.Core.Y_REVERSE.getBooleanValue();
-                box.zIncrement = !Configs.Core.Z_REVERSE.getBooleanValue();
             }
 
             cachedIterator = null;
