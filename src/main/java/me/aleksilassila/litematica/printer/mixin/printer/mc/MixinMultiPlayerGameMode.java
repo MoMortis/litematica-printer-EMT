@@ -18,6 +18,7 @@ import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -362,6 +363,7 @@ if (this.delayedDestroyLocalPrediction) {
         if (!player.getAbilities().instabuild) {
             PacketUtils.sendPacket(sequence -> getActionPacket(Action.STOP_DESTROY_BLOCK, blockPos, direction, sequence));
         }
+        this.litematica_printer$playBreakEffect(blockPos, blockState);
         return BlockBreakResult.COMPLETED_WAIT;
     }
 
@@ -394,6 +396,7 @@ if (this.delayedDestroyLocalPrediction) {
             int elapsedTicks = (int) (currentTick - this.delayedDestroyStartTick);
             float delayedDestroyProgress = blockState2.getDestroyProgress(player, level, this.delayedDestroyPos) * elapsedTicks;
             if (delayedDestroyProgress >= 1.0F) {
+                this.litematica_printer$playBreakEffect(this.delayedDestroyPos, blockState2);
                 if (this.delayedDestroyLocalPrediction) {
                     this.litematica_printer$destroyBlockSilently(this.delayedDestroyPos);
                 }
@@ -412,6 +415,7 @@ if (this.delayedDestroyLocalPrediction) {
                 }
                 return getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence);
             });
+            this.litematica_printer$playBreakEffect(blockPos, blockState);
             return BlockBreakResult.COMPLETED;
         }
         if (allowToolSwitch) {
@@ -465,6 +469,7 @@ if (this.delayedDestroyLocalPrediction) {
                 if (localEffects) {
                     level.destroyBlockProgress(player.getId(), blockPos, -1);
                 }
+                this.litematica_printer$playBreakEffect(blockPos, blockState);
                 return BlockBreakResult.COMPLETED;
             }
             return BlockBreakResult.IN_PROGRESS;
@@ -491,6 +496,9 @@ if (this.delayedDestroyLocalPrediction) {
                 if (localEffects) {
                     level.destroyBlockProgress(player.getId(), blockPos, -1);
                 }
+                if (!waitForServerState) {
+                    this.litematica_printer$playBreakEffect(blockPos, blockState);
+                }
                 return waitForServerState ? BlockBreakResult.COMPLETED_WAIT : BlockBreakResult.COMPLETED;
             }
             PacketUtils.sendPacket(sequence -> getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence));
@@ -499,6 +507,7 @@ if (this.delayedDestroyLocalPrediction) {
                     level.destroyBlockProgress(player.getId(), blockPos, -1);
                 }
                 this.litematica_printer$resetDestroyState(player, blockPos);
+                this.litematica_printer$playBreakEffect(blockPos, blockState);
                 return BlockBreakResult.COMPLETED;
             }
             if (useDelayedDestroy) {
@@ -513,6 +522,7 @@ if (this.delayedDestroyLocalPrediction) {
                     if (localEffects) {
                         level.destroyBlockProgress(player.getId(), blockPos, -1);
                     }
+                    this.litematica_printer$playBreakEffect(blockPos, blockState);
                     return BlockBreakResult.COMPLETED;
                 } else {
                     // 发送STOP让服务端当前处理位置状态转移到延迟破坏位置中
@@ -554,6 +564,26 @@ if (this.delayedDestroyLocalPrediction) {
         if (player != null) {
             level.destroyBlockProgress(player.getId(), pos, -1);
         }
+    }
+
+    // 非数据包挖掘/打印：本地播放方块破坏音效与粒子（数据包模式保持静音）
+    @Unique
+    private void litematica_printer$playBreakEffect(BlockPos pos, BlockState state) {
+        if (Configs.Break.BREAK_USE_PACKET.getBooleanValue()) {
+            return;
+        }
+        ClientLevel level = this.minecraft.level;
+        if (level == null || pos == null) {
+            return;
+        }
+        if (state == null || state.isAir() || state.getBlock() instanceof LiquidBlock) {
+            state = level.getBlockState(pos);
+            if (state.isAir() || state.getBlock() instanceof LiquidBlock) {
+                return;
+            }
+        }
+        level.addDestroyBlockEffect(pos, state);
+        level.playLocalSound(pos, state.getSoundType().getBreakSound(), SoundSource.BLOCKS, 1.0F, 0.8F, false);
     }
 
     @Unique
