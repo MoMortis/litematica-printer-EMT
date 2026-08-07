@@ -18,6 +18,9 @@ import net.minecraft.core.Direction;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
+import net.minecraft.world.level.block.AnvilBlock;
+import net.minecraft.world.level.block.DragonEggBlock;
+import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
@@ -44,9 +47,10 @@ public class BreakUtils {
     private boolean forceDelayedDestroy;
     private int externalDestroyLockTicks;
 
-    // 防流体挖掘：受保护位置集合（流体下/东/西/北/南 紧邻方块）逐tick缓存，命中O(1)
+    // 防流体挖掘 / 不破坏支撑方块：受保护位置集合逐tick缓存（一次扫描同时构建），命中O(1)
     private static final int FLUID_CACHE_RADIUS_CAP = 16;
     private static final LongOpenHashSet fluidAvoidCache = new LongOpenHashSet();
+    private static final LongOpenHashSet supportAvoidCache = new LongOpenHashSet();
     private static long fluidCacheTick = -1L;
 
     private BreakUtils() {
@@ -64,6 +68,9 @@ public class BreakUtils {
         if (Configs.Break.BREAK_AVOID_FLUID.getBooleanValue() && isFluidProtected(pos, world)) {
             return false;
         }
+        if (Configs.Break.BREAK_AVOID_SUPPORT.getBooleanValue() && isSupportProtected(pos, world)) {
+            return false;
+        }
         return !currentState.isAir() &&
                 !currentState.is(Blocks.AIR) &&
                 !currentState.is(Blocks.CAVE_AIR) &&
@@ -77,6 +84,22 @@ public class BreakUtils {
                 || state.getFluidState().is(FluidTags.LAVA));
     }
 
+    // 判重：是否是会受重力作用下落的方块（沙/沙砾/红沙/混凝土粉末/铁砧/龙蛋等）
+    private static boolean isGravityBlock(BlockState state) {
+        if (state == null || state.isAir()) return false;
+        net.minecraft.world.level.block.Block block = state.getBlock();
+        return block instanceof FallingBlock
+                || block instanceof AnvilBlock
+                || block instanceof DragonEggBlock;
+    }
+
+    private static int avoidScanRadius() {
+        int radius = Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue()
+                ? (int) PlayerUtils.getInteractionRange(5)
+                : ConfigUtils.getWorkRange();
+        return radius + 2;
+    }
+
     /**
      * 防流体挖掘判定：当前方块是否被流体在下/东/西/北/南任一方向紧邻。
      * 优先用逐tick缓存集合（O(1)命中）；可达半径过大时降级为内联直查。
@@ -84,10 +107,7 @@ public class BreakUtils {
     private static boolean isFluidProtected(BlockPos pos, ClientLevel level) {
         LocalPlayer player = LitematicaUtils.client.player;
         if (player == null) return false;
-        int radius = Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue()
-                ? (int) PlayerUtils.getInteractionRange(5)
-                : ConfigUtils.getWorkRange();
-        radius += 2;
+        int radius = avoidScanRadius();
         if (radius > FLUID_CACHE_RADIUS_CAP) {
             return isFluidState(level.getBlockState(pos.relative(Direction.DOWN)))
                     || isFluidState(level.getBlockState(pos.relative(Direction.EAST)))
@@ -95,15 +115,37 @@ public class BreakUtils {
                     || isFluidState(level.getBlockState(pos.relative(Direction.NORTH)))
                     || isFluidState(level.getBlockState(pos.relative(Direction.SOUTH)));
         }
-        long tick = level.getGameTime();
-        if (fluidCacheTick != tick) {
-            buildFluidCache(level, player.blockPosition(), radius, tick);
-        }
+        ensureAvoidCaches(level, player, radius);
         return fluidAvoidCache.contains(pos.asLong());
     }
 
-    private static void buildFluidCache(ClientLevel level, BlockPos center, int radius, long tick) {
+    /**
+     * 不破坏支撑方块判定：当前方块正下方是否是重力方块（被支撑）。
+     * 优先用逐层缓存集合（O(1)命中）；可达半径过大时降级为内联直查正下方。
+     */
+    private static boolean isSupportProtected(BlockPos pos, ClientLevel level) {
+        int radius = avoidScanRadius();
+        if (radius > FLUID_CACHE_RADIUS_CAP) {
+            return isGravityBlock(level.getBlockState(pos.relative(Direction.DOWN)));
+        }
+        ensureAvoidCaches(level, LitematicaUtils.client.player, radius);
+        return supportAvoidCache.contains(pos.asLong());
+    }
+
+    private static void ensureAvoidCaches(ClientLevel level, LocalPlayer player, int radius) {
+        if (player == null) {
+            return;
+        }
+        long tick = level.getGameTime();
+        if (fluidCacheTick != tick) {
+            buildAvoidCaches(level, player.blockPosition(), radius, tick);
+        }
+    }
+
+    // 一次立方体扫描，同时构建"防流体"与"不破坏支撑方块"两份保护集合，减少重复 getBlockState
+    private static void buildAvoidCaches(ClientLevel level, BlockPos center, int radius, long tick) {
         fluidAvoidCache.clear();
+        supportAvoidCache.clear();
         int minX = center.getX() - radius;
         int maxX = center.getX() + radius;
         int minY = center.getY() - radius;
@@ -114,15 +156,19 @@ public class BreakUtils {
             for (int x = minX; x <= maxX; x++) {
                 for (int z = minZ; z <= maxZ; z++) {
                     BlockPos p = new BlockPos(x, y, z);
-                    if (!isFluidState(level.getBlockState(p))) {
-                        continue;
+                    BlockState state = level.getBlockState(p);
+                    if (isFluidState(state)) {
+                        // 保护流体 下/东/西/北/南 5 面（顶面不保护）
+                        fluidAvoidCache.add(p.relative(Direction.DOWN).asLong());
+                        fluidAvoidCache.add(p.relative(Direction.EAST).asLong());
+                        fluidAvoidCache.add(p.relative(Direction.WEST).asLong());
+                        fluidAvoidCache.add(p.relative(Direction.NORTH).asLong());
+                        fluidAvoidCache.add(p.relative(Direction.SOUTH).asLong());
                     }
-                    // 保护流体 下/东/西/北/南 5 面（顶面不保护）
-                    fluidAvoidCache.add(p.relative(Direction.DOWN).asLong());
-                    fluidAvoidCache.add(p.relative(Direction.EAST).asLong());
-                    fluidAvoidCache.add(p.relative(Direction.WEST).asLong());
-                    fluidAvoidCache.add(p.relative(Direction.NORTH).asLong());
-                    fluidAvoidCache.add(p.relative(Direction.SOUTH).asLong());
+                    if (isGravityBlock(state)) {
+                        // 保护重力方块正下方一格
+                        supportAvoidCache.add(p.relative(Direction.DOWN).asLong());
+                    }
                 }
             }
         }

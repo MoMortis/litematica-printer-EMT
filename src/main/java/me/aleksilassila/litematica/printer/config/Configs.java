@@ -425,6 +425,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 不破坏支撑方块：不破坏重力方块（沙子/沙砾/红沙/混凝土粉末/铁砧/龙蛋等）正下方的一格方块
+        public static final ConfigBoolean BREAK_AVOID_SUPPORT = bool("breakAvoidSupport")
+                .defaultValue(false)
+                .build();
+
         // 模式限制器
         public static final ConfigOptionList BREAK_LIMITER = optionList("breakLimiter")
                 .defaultValue(ExcavateListMode.CUSTOM)
@@ -451,6 +456,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_INSTANT_MINE,
                 BREAK_USE_PACKET,
                 BREAK_AVOID_FLUID,
+                BREAK_AVOID_SUPPORT,
                 BREAK_PARALLEL,
                 BREAK_USE_DELAYED_DESTROY,
                 BREAK_INTERVAL,

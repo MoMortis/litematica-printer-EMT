@@ -288,6 +288,8 @@
   "litematica_printer.config.breakParallel.desc": "When enabled, uses parallel breaking: scan collects all candidate blocks, auto-switches to the best tool, and breaks multiple blocks at once from nearest to farthest (ideal for large areas of hard blocks such as deepslate). When disabled, keeps breaking blocks one by one in order.",
   "litematica_printer.config.breakAvoidFluid": "Avoid Fluid Breaking",
   "litematica_printer.config.breakAvoidFluid.desc": "When enabled, blocks adjacent to a fluid (lava/water) on the down, east, west, north or south face are not mined, preventing accidental breaks that release liquid. Blocks directly above a fluid are still mined. Only affects normal breaking (removing extra/wrong blocks in print mode, and the mine mode).",
+  "litematica_printer.config.breakAvoidSupport": "Don't Break Support Blocks",
+  "litematica_printer.config.breakAvoidSupport.desc": "When enabled, the block directly below a gravity-affected block (sand, gravel, red sand, concrete powder, anvils, dragon eggs, etc.) is not mined, preventing the supported block from falling. Only affects normal breaking.",
   "litematica_printer.config.breakUseDelayedDestroy": "Generic Delayed Destroy",
   "litematica_printer.config.printReserveItems": "Reserve Printing Materials",
   "litematica_printer.config.printReserveItemCount": "Printing Material Reserve",
