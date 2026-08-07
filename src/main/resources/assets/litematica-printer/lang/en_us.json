@@ -290,7 +290,7 @@
   "litematica_printer.config.breakAvoidFluid.desc": "When enabled, blocks adjacent to a fluid (lava/water) on the down, east, west, north or south face are not mined, preventing accidental breaks that release liquid. Blocks directly above a fluid are still mined. Only affects normal breaking (removing extra/wrong blocks in print mode, and the mine mode).",
   "litematica_printer.config.breakAvoidSupport": "Don't Break Support Blocks",
   "litematica_printer.config.breakAvoidSupport.desc": "When enabled, the block directly below a gravity-affected block (sand, gravel, red sand, concrete powder, anvils, dragon eggs, etc.) is not mined, preventing the supported block from falling. Only affects normal breaking.",
-  "litematica_printer.config.breakNonBlocking": "Non-Blocking Mining",
+  "litematica_printer.config.breakNonBlocking": "Cooperative Mining",
   "litematica_printer.config.breakNonBlocking.desc": "When enabled, while you are manually breaking a block (holding left-click), the printer pauses its own breaking and yields the block-break state to you, preventing the player and printer from fighting over the same target. The printer resumes automatically once you stop mining. Only applies in survival/adventure; creative is unaffected.",
   "litematica_printer.config.breakUseDelayedDestroy": "Generic Delayed Destroy",
   "litematica_printer.config.printReserveItems": "Reserve Printing Materials",

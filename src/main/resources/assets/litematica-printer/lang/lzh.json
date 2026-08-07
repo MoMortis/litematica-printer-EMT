@@ -290,7 +290,7 @@
   "litematica_printer.config.breakAvoidFluid.desc": "啟則不破與流體（熔水/水）緊鄰之石（下、東、西、北、南五面），以防誤破而液洩。石正上之石仍破之。惟及常破（印模破贅誤之石、破石模式）。",
   "litematica_printer.config.breakAvoidSupport": "不破承石",
   "litematica_printer.config.breakAvoidSupport.desc": "啟則不破重力石（沙、礫、紅沙、凝土粉、鐵砧、龍卵等）正下一格之石，以防抽支而墜。惟及常破。",
-  "litematica_printer.config.breakNonBlocking": "非阻塞挖掘",
+  "litematica_printer.config.breakNonBlocking": "協同掘石",
   "litematica_printer.config.breakNonBlocking.desc": "啟則，玩家手挖（按左鍵）時，印機暫止而讓出破態，勿使相搶同石之進度；玩家止即自動復之。惟生存、冒險用之，創造如故。",
   "litematica_printer.config.breakUseDelayedDestroy": "通用迟毁",
   "litematica_printer.config.printReserveItems": "留存繕材",
