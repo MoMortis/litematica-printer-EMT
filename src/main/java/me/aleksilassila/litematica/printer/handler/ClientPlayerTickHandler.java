@@ -176,7 +176,9 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                 : getWorkRange();
 
         // 运动感知：按玩家移动主导轴优先扫描新进入的层，减少高速移动漏扫
-        boolean adaptive = Configs.Core.MOVE_ADAPTIVE_ITERATION.getBooleanValue();
+        // 该配置仅作用于并行破坏（MINE）模式，不影响放置等其他模式
+        boolean adaptive = Configs.Core.MOVE_ADAPTIVE_ITERATION.getBooleanValue()
+                && getPrintMode() == PrintModeType.MINE;
         int dominantAxis = -1;
         int dominantSign = 1;
         if (adaptive && this.prevPlayerBlockPos != null) {
