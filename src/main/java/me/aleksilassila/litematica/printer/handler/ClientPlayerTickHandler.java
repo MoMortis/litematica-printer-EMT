@@ -61,6 +61,8 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
 
     // 迭代状态缓存（性能优化关键）
     private Iterator<BlockPos> cachedIterator = null;
+    // 方案二：记录当前正在扫描的Y层，时间预算仅在层边界截断（保证整层Y扫完）
+    private int lastSweptY = Integer.MIN_VALUE;
     private final BlockPos lastBasePos = null;
     private int expandRange = -1;
 
@@ -287,6 +289,8 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
     
         if (cachedIterator == null) {
             cachedIterator = box.iterator();
+            // 新盒：重置Y层切片追踪
+            lastSweptY = Integer.MIN_VALUE;
         }
     
         int maxExecs = getMaxExecutions();
@@ -306,22 +310,31 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
         guiQueue.clear();
         renderIndex = 0;
     
-        while (cachedIterator.hasNext()) {
-            if (timeLimit > 0 && ++iterCount % checkInterval == 0) {
-                if (System.nanoTime() - startTime >= timeLimitNanos) {
-                    stopIteration(true);
-                    return true;
-                }
-            }
-    
+while (cachedIterator.hasNext()) {
             if (skipIteration.get() || ActionManager.INSTANCE.needWaitModifyLook) {
                 stopIteration(true);
                 return true;
             }
-    
+
             BlockPos pos = cachedIterator.next();
             if (pos == null) continue;
-    
+
+            // 方案二（分层续扫）：仅在进入新的一层Y时检查时间预算，
+            // 保证一整层Y（Y平面）被扫完才可能截断，避免高速移动时中间层被半截丢弃。
+            if (timeLimit > 0 && pos.getY() != lastSweptY && lastSweptY != Integer.MIN_VALUE
+                    && System.nanoTime() - startTime >= timeLimitNanos) {
+                stopIteration(true);
+                return true;
+            }
+            lastSweptY = pos.getY();
+
+            // 兜底：防止单层过大导致预算无限拖长（仅截断同一层，不影响Y层完整性）
+            if (timeLimit > 0 && ++iterCount % checkInterval == 0
+                    && System.nanoTime() - startTime >= timeLimitNanos) {
+                stopIteration(true);
+                return true;
+            }
+
             if (!PlayerUtils.canInteracted(pos)) continue;
     
             if (needRangeCheck) {
