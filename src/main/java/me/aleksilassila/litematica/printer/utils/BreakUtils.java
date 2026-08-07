@@ -15,10 +15,12 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashSet;
@@ -42,6 +44,11 @@ public class BreakUtils {
     private boolean forceDelayedDestroy;
     private int externalDestroyLockTicks;
 
+    // 防流体挖掘：受保护位置集合（流体下/东/西/北/南 紧邻方块）逐tick缓存，命中O(1)
+    private static final int FLUID_CACHE_RADIUS_CAP = 16;
+    private static final LongOpenHashSet fluidAvoidCache = new LongOpenHashSet();
+    private static long fluidCacheTick = -1L;
+
     private BreakUtils() {
     }
 
@@ -54,12 +61,72 @@ public class BreakUtils {
         if (Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue() && currentState.getBlock().defaultDestroyTime() < 0) {
             return false;
         }
+        if (Configs.Break.BREAK_AVOID_FLUID.getBooleanValue() && isFluidProtected(pos, world)) {
+            return false;
+        }
         return !currentState.isAir() &&
                 !currentState.is(Blocks.AIR) &&
                 !currentState.is(Blocks.CAVE_AIR) &&
                 !currentState.is(Blocks.VOID_AIR) &&
                 !(currentState.getBlock() instanceof LiquidBlock) &&
                 !player.blockActionRestricted(LitematicaUtils.client.level, pos, LitematicaUtils.client.gameMode.getPlayerMode());
+    }
+
+    private static boolean isFluidState(BlockState state) {
+        return state != null && (state.getFluidState().is(FluidTags.WATER)
+                || state.getFluidState().is(FluidTags.LAVA));
+    }
+
+    /**
+     * 防流体挖掘判定：当前方块是否被流体在下/东/西/北/南任一方向紧邻。
+     * 优先用逐tick缓存集合（O(1)命中）；可达半径过大时降级为内联直查。
+     */
+    private static boolean isFluidProtected(BlockPos pos, ClientLevel level) {
+        LocalPlayer player = LitematicaUtils.client.player;
+        if (player == null) return false;
+        int radius = Configs.Core.CHECK_PLAYER_INTERACTION_RANGE.getBooleanValue()
+                ? (int) PlayerUtils.getInteractionRange(5)
+                : ConfigUtils.getWorkRange();
+        radius += 2;
+        if (radius > FLUID_CACHE_RADIUS_CAP) {
+            return isFluidState(level.getBlockState(pos.relative(Direction.DOWN)))
+                    || isFluidState(level.getBlockState(pos.relative(Direction.EAST)))
+                    || isFluidState(level.getBlockState(pos.relative(Direction.WEST)))
+                    || isFluidState(level.getBlockState(pos.relative(Direction.NORTH)))
+                    || isFluidState(level.getBlockState(pos.relative(Direction.SOUTH)));
+        }
+        long tick = level.getGameTime();
+        if (fluidCacheTick != tick) {
+            buildFluidCache(level, player.blockPosition(), radius, tick);
+        }
+        return fluidAvoidCache.contains(pos.asLong());
+    }
+
+    private static void buildFluidCache(ClientLevel level, BlockPos center, int radius, long tick) {
+        fluidAvoidCache.clear();
+        int minX = center.getX() - radius;
+        int maxX = center.getX() + radius;
+        int minY = center.getY() - radius;
+        int maxY = center.getY() + radius;
+        int minZ = center.getZ() - radius;
+        int maxZ = center.getZ() + radius;
+        for (int y = minY; y <= maxY; y++) {
+            for (int x = minX; x <= maxX; x++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    BlockPos p = new BlockPos(x, y, z);
+                    if (!isFluidState(level.getBlockState(p))) {
+                        continue;
+                    }
+                    // 保护流体 下/东/西/北/南 5 面（顶面不保护）
+                    fluidAvoidCache.add(p.relative(Direction.DOWN).asLong());
+                    fluidAvoidCache.add(p.relative(Direction.EAST).asLong());
+                    fluidAvoidCache.add(p.relative(Direction.WEST).asLong());
+                    fluidAvoidCache.add(p.relative(Direction.NORTH).asLong());
+                    fluidAvoidCache.add(p.relative(Direction.SOUTH).asLong());
+                }
+            }
+        }
+        fluidCacheTick = tick;
     }
 
     public static boolean breakRestriction(BlockState blockState) {

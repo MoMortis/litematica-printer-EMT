@@ -420,6 +420,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 防流体挖掘：不挖掘与流体（岩浆/水）紧邻（下东西北南5面）的方块
+        public static final ConfigBoolean BREAK_AVOID_FLUID = bool("breakAvoidFluid")
+                .defaultValue(false)
+                .build();
+
         // 模式限制器
         public static final ConfigOptionList BREAK_LIMITER = optionList("breakLimiter")
                 .defaultValue(ExcavateListMode.CUSTOM)
@@ -445,6 +450,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_CHECK_HARDNESS,
                 BREAK_INSTANT_MINE,
                 BREAK_USE_PACKET,
+                BREAK_AVOID_FLUID,
                 BREAK_PARALLEL,
                 BREAK_USE_DELAYED_DESTROY,
                 BREAK_INTERVAL,

@@ -285,6 +285,8 @@
   "litematica_printer.update.repository": "代码仓库：",
   "litematica_printer.config.breakParallel": "并行破坏",
   "litematica_printer.config.breakParallel.desc": "启用后采用并行破坏模式：先扫描收集所有候选方块，自动切换最佳工具，并按玩家距离由近到远同时破坏多个方块（适合大量高硬度方块，如深板岩）。关闭则保持逐个顺序破坏。",
+  "litematica_printer.config.breakAvoidFluid": "防流体挖掘",
+  "litematica_printer.config.breakAvoidFluid.desc": "启用后，不挖掘与流体（岩浆/水）紧邻的方块（下、东、西、北、南5个面），防止误挖导致液体流出。方块正上方的方块仍会挖掘。仅影响普通挖掘（打印模式的破坏多余/错误方块、挖掘模式）。",
   "litematica_printer.config.breakUseDelayedDestroy": "通用延迟破坏",
   "litematica_printer.config.printReserveItems": "保留打印耗材",
   "litematica_printer.config.printReserveItemCount": "打印耗材保留数量",

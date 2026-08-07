@@ -285,6 +285,8 @@
   "litematica_printer.update.repository": "典庫：",
   "litematica_printer.config.breakParallel": "並行破石",
   "litematica_printer.config.breakParallel.desc": "啟則並行破石：先盡掃候石，自易利器，自近及遠同破多石（利於頑石如深板岩）。閉則依次而破。",
+  "litematica_printer.config.breakAvoidFluid": "避流破石",
+  "litematica_printer.config.breakAvoidFluid.desc": "啟則不破與流體（熔水/水）緊鄰之石（下、東、西、北、南五面），以防誤破而液洩。石正上之石仍破之。惟及常破（印模破贅誤之石、破石模式）。",
   "litematica_printer.config.breakUseDelayedDestroy": "通用迟毁",
   "litematica_printer.config.printReserveItems": "留存繕材",
   "litematica_printer.config.printReserveItemCount": "繕材留數",
