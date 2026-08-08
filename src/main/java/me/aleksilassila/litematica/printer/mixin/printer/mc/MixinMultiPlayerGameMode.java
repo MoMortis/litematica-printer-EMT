@@ -195,6 +195,7 @@ public abstract class MixinMultiPlayerGameMode implements MultiPlayerGameModeExt
             int elapsedTicks = (int) (currentTick - this.delayedDestroyStartTick);
             float delayedDestroyProgress = blockState.getDestroyProgress(player, level, this.delayedDestroyPos) * elapsedTicks;
             if (delayedDestroyProgress >= 1.0F) {
+                this.litematica_printer$playBreakEffect(this.delayedDestroyPos, blockState);
 if (this.delayedDestroyLocalPrediction) {
                     this.litematica_printer$destroyBlockSilently(this.delayedDestroyPos);
                 }

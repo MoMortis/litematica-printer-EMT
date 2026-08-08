@@ -357,7 +357,7 @@ public class BreakUtils {
     public static boolean isPlayerMining() {
         LocalPlayer player = client.player;
         ClientLevel level = client.level;
-        if (player == null || level == null || player.getAbilities().instabuild) {
+        if (player == null || level == null || player.getAbilities().instabuild || player.isSpectator()) {
             return false;
         }
         boolean mining = client.options.keyAttack.isDown()
@@ -367,7 +367,9 @@ public class BreakUtils {
             lastPlayerMineGameTime = level.getGameTime();
         }
         // 1 tick 防抖：松手后仍短暂暂停，避免连挖/换目标时打印机抖动恢复
-        return level.getGameTime() - lastPlayerMineGameTime <= 1;
+        // 钳制差值：避免跨维度/重连后 gameTime 变小导致的负值恒判（负数 <= 1 恒真）
+        long diff = level.getGameTime() - lastPlayerMineGameTime;
+        return diff >= 0 && diff <= 1;
     }
 
     public void onTick() {
