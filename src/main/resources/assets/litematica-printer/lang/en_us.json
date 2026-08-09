@@ -205,8 +205,6 @@
   "litematica_printer.config.printSkip.desc": "When enabled, will skip blocks in the list during printing.",
   "litematica_printer.config.printSkipList": "Skip Placement - List",
   "litematica_printer.config.printSkipList.desc": "Block list skipped during printing. Can input item ID or translated name in current language, example: §bminecraft:stone§r §bsandstone§r.\nPrefix §b#§r for tag matching, example: §l#minecraft:logs§r.\nAdd \",c\" after text for contains matching, example: §lglazed_terracotta,c§r.",
-  "litematica_printer.config.printSkipWaterlogged": "Skip Waterlogged Blocks",
-  "litematica_printer.config.printSkipWaterlogged.desc": "Skip waterlogged blocks during printing.",
   "litematica_printer.config.printerAutoDisable": "Auto Disable Printer",
   "litematica_printer.config.printerAutoDisable.desc": "Automatically disable printer when player dies to avoid misoperations after respawning.",
   "litematica_printer.config.printerInventory": "Set Printer Inventory Hotkey",

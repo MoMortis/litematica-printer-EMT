@@ -205,8 +205,6 @@
   "litematica_printer.config.printSkip.desc": "启用后，打印时会列表内的方块。",
   "litematica_printer.config.printSkipList": "跳过放置 - 列表",
   "litematica_printer.config.printSkipList.desc": "打印时跳过的方块列表。可输入物品ID或当前语言的翻译名称，示例：§bminecraft:stone§r §b砂岩§r。\n前缀添加§b#§r表示标签匹配，示例：§l#minecraft:logs§r。\n文本后加“,c”表示包含匹配，示例：§l带釉陶瓦,c§r。",
-  "litematica_printer.config.printSkipWaterlogged": "跳过含水方块",
-  "litematica_printer.config.printSkipWaterlogged.desc": "打印时跳过含水方块。",
   "litematica_printer.config.printerAutoDisable": "自动关闭打印机",
   "litematica_printer.config.printerAutoDisable.desc": "当玩家死亡时自动关闭打印机，避免重生后打印机误操作。",
   "litematica_printer.config.printerInventory": "设置打印机库存热键",

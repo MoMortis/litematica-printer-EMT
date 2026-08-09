@@ -205,8 +205,6 @@
   "litematica_printer.config.printSkip.desc": "啟則摹形時將越冊中所列之石。",
   "litematica_printer.config.printSkipList": "越置 - 名冊",
   "litematica_printer.config.printSkipList.desc": "摹形時越過之石冊。格式同前。",
-  "litematica_printer.config.printSkipWaterlogged": "越含水石",
-  "litematica_printer.config.printSkipWaterlogged.desc": "摹形時越過含水之石。",
   "litematica_printer.config.printerAutoDisable": "自偃機巧",
   "litematica_printer.config.printerAutoDisable.desc": "玩家身殞時自關機巧，防重生後誤作。",
   "litematica_printer.config.printerInventory": "設機巧庫藏訣",

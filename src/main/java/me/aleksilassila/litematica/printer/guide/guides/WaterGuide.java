@@ -1,6 +1,5 @@
 package me.aleksilassila.litematica.printer.guide.guides;
 
-import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.guide.Guide;
 import me.aleksilassila.litematica.printer.guide.Result;
@@ -10,7 +9,7 @@ import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
 /**
  * 水源/含水方块的无状态兜底规则。
- * 破冰放水这类跨 tick 流程由 PrintTaskController 接管。
+ * 跨 tick 破冰放水流程由 PrintTaskController 接管。
  */
 public class WaterGuide extends Guide {
     public WaterGuide(SchematicBlockContext context) {
@@ -24,8 +23,9 @@ public class WaterGuide extends Guide {
 
     @Override
     protected Result onBuildAction(BlockMatchResult state) {
-        if (shouldSkipWaterloggedTarget()) {
-            return Result.SKIP;
+        // 错误方块（如泥土占位）：放行给后续 Guide（DefaultGuide）先破坏，破坏完后再走破冰放水流程
+        if (state == BlockMatchResult.WRONG_BLOCK) {
+            return Result.PASS;
         }
         if (isWaterloggedTarget()) {
             return Result.PASS;
@@ -36,10 +36,6 @@ public class WaterGuide extends Guide {
     @Override
     protected Result onBuildActionCorrect(BlockMatchResult state) {
         return isWaterloggedTarget() ? Result.PASS : Result.SKIP;
-    }
-
-    private boolean shouldSkipWaterloggedTarget() {
-        return Configs.Print.SKIP_WATERLOGGED_BLOCK.getBooleanValue() && isWaterloggedTarget();
     }
 
     private boolean isWaterloggedTarget() {

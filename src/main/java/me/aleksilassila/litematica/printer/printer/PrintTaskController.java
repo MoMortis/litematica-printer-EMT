@@ -78,6 +78,14 @@ public class PrintTaskController {
             return null;
         }
 
+        // 位置是错误方块（不可替换、非水非冰非空）→ 清状态交还原流程破坏（DefaultGuide），破坏完后再放冰
+        if (!current.isAir() && current.getFluidState().isEmpty()
+                && !BlockStateUtils.isReplaceable(current)) {
+            stages.remove(key);
+            stageStartTicks.remove(key);
+            return null;
+        }
+
         // 冰已消失但水尚未同步到本地 → 等待水源
         if (stage == Stage.BREAKING) {
             stages.put(key, Stage.WAITING_WATER);
