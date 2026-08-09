@@ -143,8 +143,10 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     /**
-     * 计算当前允许的最高层带顶 Y：自选区最高层向下扫描，返回第一层"仍存在可挖方块"的 Y。
-     * 以投影选区（isWithinSelection1ModeRange）为界，而非玩家交互距离盒。
+     * 计算当前允许的最高层带顶 Y：自选区（投影选区的合并包围盒）最高层向下扫描，
+     * 返回第一层"选区内已加载且仍存在可挖方块"的 Y。
+     * 以投影选区为界（非玩家交互距离盒），且只统计已加载区块，保证从选区内
+     * 已加载方块的最上层开始挖。
      * 每 tick 缓存一次，避免对每个候选方块重复全层扫描。
      */
     private int getLayeredTopY() {
@@ -157,24 +159,28 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     private int scanLayeredTopY() {
-        PrinterBox box = this.boxRef == null ? null : this.boxRef.get();
-        if (box == null) {
+        // 必须以投影选区自身的包围盒为界，而非玩家交互距离盒（boxRef）
+        PrinterBox selection = LitematicaUtils.getSelectionPrinterBox();
+        if (selection == null) {
             return Integer.MIN_VALUE;
         }
-        // 从最高层向下逐层扫描：选区内该层仍有可挖方块即视为该层为当前层带顶
-        for (int y = box.maxY; y >= box.minY; y--) {
-            if (layerHasBreakable(y, box)) {
+        // 从选区最高层向下逐层扫描：选区内已加载且该层仍有可挖方块即视为当前层带顶
+        for (int y = selection.maxY; y >= selection.minY; y--) {
+            if (layerHasBreakable(y, selection)) {
                 return y;
             }
         }
         return Integer.MIN_VALUE;
     }
 
-    private boolean layerHasBreakable(int y, PrinterBox box) {
-        for (int x = box.minX; x <= box.maxX; x++) {
-            for (int z = box.minZ; z <= box.maxZ; z++) {
+    private boolean layerHasBreakable(int y, PrinterBox selection) {
+        for (int x = selection.minX; x <= selection.maxX; x++) {
+            for (int z = selection.minZ; z <= selection.maxZ; z++) {
                 BlockPos pos = new BlockPos(x, y, z);
-                // 必须以投影选区内为准（用户强调非交互距离盒）
+                // 只统计选区内已加载的方块
+                if (!level.hasChunkAt(pos)) {
+                    continue;
+                }
                 if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
                     continue;
                 }

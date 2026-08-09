@@ -109,4 +109,40 @@ public class LitematicaUtils {
         return printerBox.contains(pos);
     }
 
+    /**
+     * 获取当前选区的合并包围盒（所有子区域的整体最小/最大坐标，未裁剪世界高度）。
+     * 无选区时返回 null。
+     */
+    public static PrinterBox getSelectionPrinterBox() {
+        AreaSelection selection = DataManager.getSelectionManager().getCurrentSelection();
+        if (selection == null) return null;
+        List<Box> boxes;
+        if (DataManager.getSelectionManager().getSelectionMode() == SelectionMode.NORMAL) {
+            boxes = selection.getAllSubRegionBoxes();
+        } else {
+            Box simple = selection.getSubRegionBox(DataManager.getSimpleArea().getName());
+            boxes = simple == null ? Collections.emptyList() : Collections.singletonList(simple);
+        }
+        int minX = Integer.MAX_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        boolean found = false;
+        for (Box box : boxes) {
+            if (box == null || box.getPos1() == null || box.getPos2() == null) continue;
+            found = true;
+            BlockPos p1 = box.getPos1();
+            BlockPos p2 = box.getPos2();
+            minX = Math.min(minX, Math.min(p1.getX(), p2.getX()));
+            minY = Math.min(minY, Math.min(p1.getY(), p2.getY()));
+            minZ = Math.min(minZ, Math.min(p1.getZ(), p2.getZ()));
+            maxX = Math.max(maxX, Math.max(p1.getX(), p2.getX()));
+            maxY = Math.max(maxY, Math.max(p1.getY(), p2.getY()));
+            maxZ = Math.max(maxZ, Math.max(p1.getZ(), p2.getZ()));
+        }
+        return found ? new PrinterBox(minX, minY, minZ, maxX, maxY, maxZ) : null;
+    }
+
 }
