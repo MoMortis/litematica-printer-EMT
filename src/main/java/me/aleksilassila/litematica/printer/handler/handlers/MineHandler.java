@@ -23,11 +23,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
 public class MineHandler extends ClientPlayerTickHandler {
@@ -126,123 +122,78 @@ public class MineHandler extends ClientPlayerTickHandler {
         return BreakUtils.canBreakBlock(pos) && mineRestriction(level.getBlockState(pos));
     }
 
-    // 强制逐层挖掘批次状态：只有批次最高层的服务端确认集合为空后，才解锁批次下方层。
-    private int layeredBatchTopY = Integer.MIN_VALUE;
-    private int layeredBatchBottomY = Integer.MIN_VALUE;
-    private int layeredCurrentTopY = Integer.MIN_VALUE;
-    private PrinterBox layeredSelectionBox;
-    private final Set<BlockPos> layeredTopPendingServer = new HashSet<>();
-    private final Map<BlockPos, BlockState> layeredTopOriginalStates = new HashMap<>();
+    // 强制逐层挖掘：缓存"当前允许的最高层带顶 Y"，每 tick 只计算一次
+    private long layeredCacheTick = -1L;
+    private int layeredTopY = Integer.MIN_VALUE;
 
+    /**
+     * 强制逐层挖掘：判定该位置所在层是否在"当前允许的最高层带"内。
+     * 允许层带 = [topY - N + 1, topY]，其中 topY 为投影选区内从最高层向下第一个仍有可挖方块的高度。
+     * 最上层 N 层挖空后 topY 自然下移，从而解锁下一层。
+     */
     private boolean isLayerAllowed(BlockPos pos) {
+        int layerCount = Math.max(1, Configs.Mine.MINE_LAYER_COUNT.getIntegerValue());
         int top = getLayeredTopY();
         if (top == Integer.MIN_VALUE) {
+            // 选区无任何可挖方块，放行（正常路径会因无候选而停止）
             return true;
         }
-        // A 层确认后，下面 N-1 层仍按层扫描；当前只放行当前扫描到的这一层。
-        return pos.getY() == top;
+        int minAllowed = top - layerCount + 1;
+        return pos.getY() >= minAllowed && pos.getY() <= top;
     }
 
+    /**
+     * 计算当前允许的最高层带顶 Y：自选区（投影选区的合并包围盒）最高层向下扫描，
+     * 返回第一层"选区内已加载且仍存在可挖方块"的 Y。
+     * 以投影选区为界（非玩家交互距离盒），且只统计已加载区块，保证从选区内
+     * 已加载方块的最上层开始挖。
+     * 每 tick 缓存一次，避免对每个候选方块重复全层扫描。
+     */
     private int getLayeredTopY() {
-        if (level == null) {
-            return Integer.MIN_VALUE;
+        long tick = level == null ? -1L : level.getGameTime();
+        if (tick != layeredCacheTick) {
+            layeredCacheTick = tick;
+            layeredTopY = scanLayeredTopY();
         }
+        return layeredTopY;
+    }
+
+    private int scanLayeredTopY() {
+        // 必须以投影选区自身的包围盒为界，而非玩家交互距离盒（boxRef）
         PrinterBox selection = LitematicaUtils.getSelectionPrinterBox();
         if (selection == null) {
-            clearLayeredState();
             return Integer.MIN_VALUE;
         }
-        if (layeredSelectionBox == null || !layeredSelectionBox.equals(selection)) {
-            clearLayeredState();
-            layeredSelectionBox = selection;
-        }
-        if (layeredBatchTopY == Integer.MIN_VALUE) {
-            startLayeredBatch(selection.maxY, selection.minY, selection);
-        }
-        if (!layeredTopPendingServer.isEmpty()) {
-            return layeredBatchTopY;
-        }
-        if (layeredCurrentTopY != Integer.MIN_VALUE && collectBreakableLayer(layeredCurrentTopY, selection).isEmpty()) {
-            layeredCurrentTopY = scanHighestBreakableY(layeredCurrentTopY - 1, layeredBatchBottomY, selection);
-        }
-        if (layeredCurrentTopY == Integer.MIN_VALUE || layeredCurrentTopY < layeredBatchBottomY) {
-            startLayeredBatch(layeredBatchBottomY - 1, selection.minY, selection);
-        }
-        return layeredCurrentTopY == Integer.MIN_VALUE ? Integer.MIN_VALUE : layeredCurrentTopY;
-    }
-
-    private void startLayeredBatch(int upperY, int lowerY, PrinterBox selection) {
-        layeredTopPendingServer.clear();
-        int top = scanHighestBreakableY(upperY, lowerY, selection);
-        if (top == Integer.MIN_VALUE) {
-            layeredBatchTopY = Integer.MIN_VALUE;
-            layeredBatchBottomY = Integer.MIN_VALUE;
-            return;
-        }
-        int layerCount = Math.max(1, Configs.Mine.MINE_LAYER_COUNT.getIntegerValue());
-        layeredBatchTopY = top;
-        layeredBatchBottomY = Math.max(selection.minY, top - layerCount + 1);
-        layeredCurrentTopY = top;
-        layeredTopPendingServer.addAll(collectBreakableLayer(top, selection));
-        layeredTopOriginalStates.clear();
-        for (BlockPos pos : layeredTopPendingServer) {
-            layeredTopOriginalStates.put(pos, level.getBlockState(pos));
-        }
-    }
-
-    private int scanHighestBreakableY(int upperY, int lowerY, PrinterBox selection) {
-        int upper = Math.min(upperY, selection.maxY);
-        int lower = Math.max(lowerY, selection.minY);
-        for (int y = upper; y >= lower; y--) {
-            if (!collectBreakableLayer(y, selection).isEmpty()) {
+        // 从选区最高层向下逐层扫描：选区内已加载且该层仍有可挖方块即视为当前层带顶
+        for (int y = selection.maxY; y >= selection.minY; y--) {
+            if (layerHasBreakable(y, selection)) {
                 return y;
             }
         }
         return Integer.MIN_VALUE;
     }
 
-    private Set<BlockPos> collectBreakableLayer(int y, PrinterBox selection) {
-        Set<BlockPos> result = new HashSet<>();
+    private boolean layerHasBreakable(int y, PrinterBox selection) {
         for (int x = selection.minX; x <= selection.maxX; x++) {
             for (int z = selection.minZ; z <= selection.maxZ; z++) {
                 BlockPos pos = new BlockPos(x, y, z);
-                if (!level.hasChunkAt(pos)
-                        || !LitematicaUtils.isWithinSelection1ModeRange(pos)
-                        || (getSelectionType() != null
-                        && !PlayerUtils.isPositionInSelectionRange(player, pos, getSelectionType()))) {
+                // 只统计选区内已加载的方块
+                if (!level.hasChunkAt(pos)) {
                     continue;
                 }
-                BlockState state = level.getBlockState(pos);
-                if (BreakUtils.canBreakBlock(pos) && mineRestriction(state)) {
-                    result.add(pos.immutable());
+                if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
+                    continue;
+                }
+                if (getSelectionType() != null
+                        && !PlayerUtils.isPositionInSelectionRange(player, pos, getSelectionType())) {
+                    continue;
+                }
+                if (BreakUtils.canBreakBlock(pos) && mineRestriction(level.getBlockState(pos))) {
+                    return true;
                 }
             }
         }
-        return result;
-    }
-
-    public void onServerBlockUpdate(BlockPos pos, BlockState state) {
-        if (!Configs.Mine.MINE_FORCE_LAYERED.getBooleanValue()
-                || pos == null || state == null || layeredTopPendingServer.isEmpty()) {
-            return;
-        }
-        if (pos.getY() != layeredBatchTopY || !layeredTopPendingServer.contains(pos)) {
-            return;
-        }
-        BlockState original = layeredTopOriginalStates.get(pos);
-        if (original != null && !state.equals(original)) {
-            layeredTopPendingServer.remove(pos.immutable());
-            layeredTopOriginalStates.remove(pos);
-        }
-    }
-
-    private void clearLayeredState() {
-        layeredBatchTopY = Integer.MIN_VALUE;
-        layeredBatchBottomY = Integer.MIN_VALUE;
-        layeredCurrentTopY = Integer.MIN_VALUE;
-        layeredSelectionBox = null;
-        layeredTopPendingServer.clear();
-        layeredTopOriginalStates.clear();
+        return false;
     }
 
     @Override

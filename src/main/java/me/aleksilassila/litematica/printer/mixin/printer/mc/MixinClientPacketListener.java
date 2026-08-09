@@ -2,13 +2,10 @@ package me.aleksilassila.litematica.printer.mixin.printer.mc;
 
 import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.utils.MessageUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.client.player.LocalPlayer;
-import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
-import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundSetHealthPacket;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
@@ -30,15 +27,4 @@ public abstract class MixinClientPacketListener {
             Configs.Core.WORK_SWITCH.setBooleanValue(false);
         }
     }
-
-    @Inject(method = "handleBlockUpdate", at = @At("RETURN"))
-    private void litematica_printer$trackBlockUpdate(ClientboundBlockUpdatePacket packet, CallbackInfo ci) {
-        ClientPlayerTickManager.MINE.onServerBlockUpdate(packet.getPos(), packet.getBlockState());
-    }
-
-    @Inject(method = "handleChunkBlocksUpdate", at = @At("RETURN"))
-    private void litematica_printer$trackChunkBlocksUpdate(ClientboundSectionBlocksUpdatePacket packet, CallbackInfo ci) {
-        packet.runUpdates((pos, state) -> ClientPlayerTickManager.MINE.onServerBlockUpdate(pos, state));
-    }
-
 }
