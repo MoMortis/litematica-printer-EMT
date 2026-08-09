@@ -9,9 +9,11 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.BlockPosCooldownManager;
+import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.ModUtils;
 import me.aleksilassila.litematica.printer.utils.PinYinSearchUtils;
 import me.aleksilassila.litematica.printer.utils.PlayerUtils;
@@ -106,6 +108,10 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     public boolean canProcessPos(BlockPos pos) {
+        // 强制逐层挖掘：投影选区内必须先挖完最上层 N 层，才能挖下一层
+        if (Configs.Mine.MINE_FORCE_LAYERED.getBooleanValue() && !isLayerAllowed(pos)) {
+            return false;
+        }
         // 非阻塞型挖掘：玩家手动挖掘时停止收集新候选
         if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
             return false;
@@ -114,6 +120,74 @@ public class MineHandler extends ClientPlayerTickHandler {
             return false;
         }
         return BreakUtils.canBreakBlock(pos) && mineRestriction(level.getBlockState(pos));
+    }
+
+    // 强制逐层挖掘：缓存"当前允许的最高层带顶 Y"，每 tick 只计算一次
+    private long layeredCacheTick = -1L;
+    private int layeredTopY = Integer.MIN_VALUE;
+
+    /**
+     * 强制逐层挖掘：判定该位置所在层是否在"当前允许的最高层带"内。
+     * 允许层带 = [topY - N + 1, topY]，其中 topY 为投影选区内从最高层向下第一个仍有可挖方块的高度。
+     * 最上层 N 层挖空后 topY 自然下移，从而解锁下一层。
+     */
+    private boolean isLayerAllowed(BlockPos pos) {
+        int layerCount = Math.max(1, Configs.Mine.MINE_LAYER_COUNT.getIntegerValue());
+        int top = getLayeredTopY();
+        if (top == Integer.MIN_VALUE) {
+            // 选区无任何可挖方块，放行（正常路径会因无候选而停止）
+            return true;
+        }
+        int minAllowed = top - layerCount + 1;
+        return pos.getY() >= minAllowed && pos.getY() <= top;
+    }
+
+    /**
+     * 计算当前允许的最高层带顶 Y：自选区最高层向下扫描，返回第一层"仍存在可挖方块"的 Y。
+     * 以投影选区（isWithinSelection1ModeRange）为界，而非玩家交互距离盒。
+     * 每 tick 缓存一次，避免对每个候选方块重复全层扫描。
+     */
+    private int getLayeredTopY() {
+        long tick = level == null ? -1L : level.getGameTime();
+        if (tick != layeredCacheTick) {
+            layeredCacheTick = tick;
+            layeredTopY = scanLayeredTopY();
+        }
+        return layeredTopY;
+    }
+
+    private int scanLayeredTopY() {
+        PrinterBox box = this.boxRef == null ? null : this.boxRef.get();
+        if (box == null) {
+            return Integer.MIN_VALUE;
+        }
+        // 从最高层向下逐层扫描：选区内该层仍有可挖方块即视为该层为当前层带顶
+        for (int y = box.maxY; y >= box.minY; y--) {
+            if (layerHasBreakable(y, box)) {
+                return y;
+            }
+        }
+        return Integer.MIN_VALUE;
+    }
+
+    private boolean layerHasBreakable(int y, PrinterBox box) {
+        for (int x = box.minX; x <= box.maxX; x++) {
+            for (int z = box.minZ; z <= box.maxZ; z++) {
+                BlockPos pos = new BlockPos(x, y, z);
+                // 必须以投影选区内为准（用户强调非交互距离盒）
+                if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
+                    continue;
+                }
+                if (getSelectionType() != null
+                        && !PlayerUtils.isPositionInSelectionRange(player, pos, getSelectionType())) {
+                    continue;
+                }
+                if (BreakUtils.canBreakBlock(pos) && mineRestriction(level.getBlockState(pos))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     @Override
