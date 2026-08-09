@@ -691,25 +691,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(isExcavateBlacklist)
                 .build();
 
-        // 强制逐层挖掘：选区内必须先挖完最上层 N 层，才能挖下一层
-        public static final ConfigBoolean MINE_FORCE_LAYERED = bool("mineForceLayered")
-                .defaultValue(false)
-                .build();
-
-        // 逐层挖掘层数
-        public static final ConfigInteger MINE_LAYER_COUNT = integer("mineLayerCount")
-                .defaultValue(1)
-                .range(1, 64)
-                .build();
-
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 MINE_SELECTION_TYPE,          // 挖掘 - 选区类型
                 EXCAVATE_LIMITER,             // 挖掘 - 挖掘模式限制器
                 EXCAVATE_LIMIT,               // 挖掘 - 挖掘模式限制
                 EXCAVATE_WHITELIST,           // 挖掘 - 挖掘白名单
-                EXCAVATE_BLACKLIST,           // 挖掘 - 挖掘黑名单
-                MINE_FORCE_LAYERED,           // 挖掘 - 强制逐层挖掘
-                MINE_LAYER_COUNT              // 挖掘 - 逐层挖掘层数
+                EXCAVATE_BLACKLIST            // 挖掘 - 挖掘黑名单
         );
     }
 
