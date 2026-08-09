@@ -77,6 +77,21 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 return false;
             }
         }
+        // 破冰放水：水源/含水方块缺水时由任务控制器优先接管（放冰），避免普通 Guide 先放"干方块"
+        Action waterTask = PrintTaskController.INSTANCE.handle(ctx);
+        if (waterTask != null) {
+            this.action = waterTask;
+            return true;
+        }
+        // 等待水源出现：跳过本位置（保留状态，不进入 buildAction），水出现后自动转正常流程
+        if (PrintTaskController.INSTANCE.isWaitingWater(blockPos)) {
+            return false;
+        }
+        // 破冰阶段：位置是冰，入破坏队列由 tweakeroo 决定工具破掉
+        if (PrintTaskController.INSTANCE.isBreaking(blockPos)) {
+            this.action = new Action();
+            return true;
+        }
         Action action = Guides.INSTANCE.buildAction(ctx).orElse(null);
         if (action == null) return false;
         this.action = action;
@@ -85,6 +100,12 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+        // 破冰放水：破冰阶段直接把冰入破坏队列，工具切换交给 tweakeroo
+        if (PrintTaskController.INSTANCE.isBreaking(blockPos)) {
+            BreakUtils.INSTANCE.add(blockPos);
+            setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+            return;
+        }
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() && ctx.requiredState.getBlock() instanceof FallingBlock) {
             BlockPos downPos = blockPos.below();
 
@@ -122,6 +143,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
         ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
         ActionManager.INSTANCE.setWaitForHorizontalLook(action.isWaitForHorizontalLook());
         ActionManager.SendResult sendResult = ActionManager.INSTANCE.sendQueue(player);
+        // 破冰放水：放冰动作已发出，标记冰已放置（下一 tick 位置变为冰后进入破冰阶段）
+        PrintTaskController.INSTANCE.onIcePlaceSent(blockPos);
         if (sendResult.isWaiting() || sendResult == ActionManager.SendResult.RESERVE_LIMIT) {
             skipIteration.set(true);
         }
