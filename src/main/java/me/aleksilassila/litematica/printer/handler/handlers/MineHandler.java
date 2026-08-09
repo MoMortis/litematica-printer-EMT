@@ -19,7 +19,14 @@ import me.aleksilassila.litematica.printer.utils.PinYinSearchUtils;
 import me.aleksilassila.litematica.printer.utils.PlayerUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.minecraft.world.level.chunk.LevelChunkSection;
 import net.minecraft.world.level.block.state.BlockState;
+//#if MC >= 12102
+import net.minecraft.world.level.chunk.status.ChunkStatus;
+//#else
+//$$ import net.minecraft.world.level.chunk.ChunkStatus;
+//#endif
 import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
@@ -159,41 +166,81 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     private int scanLayeredTopY() {
-        // 必须以投影选区自身的包围盒为界，而非玩家交互距离盒（boxRef）
+        // 按已加载区块段从上到下查找，避免对大型选区逐坐标扫描。
         PrinterBox selection = LitematicaUtils.getSelectionPrinterBox();
         if (selection == null) {
             return Integer.MIN_VALUE;
         }
-        // 从选区最高层向下逐层扫描：选区内已加载且该层仍有可挖方块即视为当前层带顶
-        for (int y = selection.maxY; y >= selection.minY; y--) {
-            if (layerHasBreakable(y, selection)) {
-                return y;
+
+        int minSection = Math.floorDiv(selection.minY, 16);
+        int maxSection = Math.floorDiv(selection.maxY, 16);
+        int minChunkX = Math.floorDiv(selection.minX, 16);
+        int maxChunkX = Math.floorDiv(selection.maxX, 16);
+        int minChunkZ = Math.floorDiv(selection.minZ, 16);
+        int maxChunkZ = Math.floorDiv(selection.maxZ, 16);
+
+        for (int sectionY = maxSection; sectionY >= minSection; sectionY--) {
+            int sectionTopY = sectionY * 16 + 15;
+            int sectionBottomY = sectionY * 16;
+            if (sectionTopY < selection.minY || sectionBottomY > selection.maxY) {
+                continue;
+            }
+            for (int chunkX = minChunkX; chunkX <= maxChunkX; chunkX++) {
+                for (int chunkZ = minChunkZ; chunkZ <= maxChunkZ; chunkZ++) {
+                    LevelChunk chunk = (LevelChunk) level.getChunk(chunkX, chunkZ, ChunkStatus.FULL, false);
+                    if (chunk == null) {
+                        continue;
+                    }
+                    int sectionIndex = sectionY - Math.floorDiv(level.getMinY(), 16);
+                    LevelChunkSection[] sections = chunk.getSections();
+                    if (sectionIndex < 0 || sectionIndex >= sections.length) {
+                        continue;
+                    }
+                    LevelChunkSection section = sections[sectionIndex];
+                    if (section.hasOnlyAir()) {
+                        continue;
+                    }
+                    int foundY = findBreakableInSection(section, sectionY, chunkX, chunkZ, selection);
+                    if (foundY != Integer.MIN_VALUE) {
+                        return foundY;
+                    }
+                }
             }
         }
         return Integer.MIN_VALUE;
     }
 
-    private boolean layerHasBreakable(int y, PrinterBox selection) {
-        for (int x = selection.minX; x <= selection.maxX; x++) {
-            for (int z = selection.minZ; z <= selection.maxZ; z++) {
-                BlockPos pos = new BlockPos(x, y, z);
-                // 只统计选区内已加载的方块
-                if (!level.hasChunkAt(pos)) {
-                    continue;
-                }
-                if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
-                    continue;
-                }
-                if (getSelectionType() != null
-                        && !PlayerUtils.isPositionInSelectionRange(player, pos, getSelectionType())) {
-                    continue;
-                }
-                if (BreakUtils.canBreakBlock(pos) && mineRestriction(level.getBlockState(pos))) {
-                    return true;
+    private int findBreakableInSection(LevelChunkSection section, int sectionY, int chunkX, int chunkZ,
+                                       PrinterBox selection) {
+        int minLocalX = Math.max(0, selection.minX - (chunkX << 4));
+        int maxLocalX = Math.min(15, selection.maxX - (chunkX << 4));
+        int minLocalZ = Math.max(0, selection.minZ - (chunkZ << 4));
+        int maxLocalZ = Math.min(15, selection.maxZ - (chunkZ << 4));
+        int minLocalY = Math.max(0, selection.minY - (sectionY << 4));
+        int maxLocalY = Math.min(15, selection.maxY - (sectionY << 4));
+
+        for (int localY = maxLocalY; localY >= minLocalY; localY--) {
+            for (int localX = minLocalX; localX <= maxLocalX; localX++) {
+                for (int localZ = minLocalZ; localZ <= maxLocalZ; localZ++) {
+                    BlockState state = section.getBlockState(localX, localY, localZ);
+                    if (state.isAir()) {
+                        continue;
+                    }
+                    BlockPos pos = new BlockPos((chunkX << 4) + localX, (sectionY << 4) + localY, (chunkZ << 4) + localZ);
+                    if (!LitematicaUtils.isWithinSelection1ModeRange(pos)) {
+                        continue;
+                    }
+                    if (getSelectionType() != null
+                            && !PlayerUtils.isPositionInSelectionRange(player, pos, getSelectionType())) {
+                        continue;
+                    }
+                    if (BreakUtils.canBreakBlock(pos) && mineRestriction(state)) {
+                        return pos.getY();
+                    }
                 }
             }
         }
-        return false;
+        return Integer.MIN_VALUE;
     }
 
     @Override
