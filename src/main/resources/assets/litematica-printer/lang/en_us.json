@@ -315,7 +315,7 @@
   "litematica_printer.config.printPriorityList.desc": "Blocks placed with priority, in list order. Supports item IDs, simplified IDs (without minecraft:), and item names; pinyin and tags are supported.",
   "litematica_printer.config.printPostponedList": "Postponed Placement Block List",
   "litematica_printer.config.printPostponedList.desc": "Blocks placed last (after ordinary blocks), in list order. Supports item IDs, simplified IDs (without minecraft:), and item names; pinyin and tags are supported.",
-  "litematica_printer.config.printOrderStrategy": "Block Placement Priority Strategy",
+  "litematica_printer.config.printOrderStrategy": "Priority Placement Strategy Scope",
   "litematica_printer.config.printOrderStrategy.desc": "Scope for the priority/postponed placement lists:\n§dOff§r: priority/postponed placement disabled\n§dInteraction Range§r: blocks within player interaction range in the render layer\n§dGlobal§r: all blocks in the projection render layer",
   "litematica_printer.config.printPriorityType.off": "Off",
   "litematica_printer.config.printPriorityType.interactionRange": "Interaction Range",

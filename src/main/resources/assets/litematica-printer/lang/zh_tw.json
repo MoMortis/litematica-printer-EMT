@@ -315,7 +315,7 @@
   "litematica_printer.config.printPriorityList.desc": "優先放置的方塊列表，按列表內先後順序放置。支援物品ID、簡化ID（不帶 minecraft:）、物品中文名，可用拼音/標籤。",
   "litematica_printer.config.printPostponedList": "後置放置方塊列表",
   "litematica_printer.config.printPostponedList.desc": "後置放置的方塊列表，按列表內先後順序放置。支援物品ID、簡化ID（不帶 minecraft:）、物品中文名，可用拼音/標籤。",
-  "litematica_printer.config.printOrderStrategy": "方塊放置優先級策略",
+  "litematica_printer.config.printOrderStrategy": "優先級放置策略作用範圍",
   "litematica_printer.config.printOrderStrategy.desc": "優先/後置放置列表的生效範圍：\n§d關閉§r：不使用優先/後置放置\n§d僅交互範圍§r：投影渲染層內玩家交互範圍內的方塊\n§d全域§r：投影渲染層內所有方塊",
   "litematica_printer.config.printPriorityType.off": "關閉",
   "litematica_printer.config.printPriorityType.interactionRange": "僅交互範圍",
