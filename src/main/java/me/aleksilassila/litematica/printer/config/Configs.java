@@ -319,8 +319,14 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 云仓库自动补充
+        // 云仓库-打印机补货：打印时缺货自动向云仓库下单
         public static final ConfigBoolean PRINT_CLOUD_STORE_REFILL = bool("printCloudStoreRefill")
+                .defaultValue(false)
+                .setVisible(isLoadCloudStoreLoaded) // 仅云仓库 Mod 加载时显示
+                .build();
+
+        // 云仓库-手动补货：鼠标中键点击方块时，背包无该物品则向云仓库下单
+        public static final ConfigBoolean PRINT_CLOUD_STORE_MANUAL_REFILL = bool("printCloudStoreManualRefill")
                 .defaultValue(false)
                 .setVisible(isLoadCloudStoreLoaded) // 仅云仓库 Mod 加载时显示
                 .build();
@@ -365,6 +371,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 FALLING_CHECK,
                 STORE_ORDERLY,
                 PRINT_CLOUD_STORE_REFILL,
+                PRINT_CLOUD_STORE_MANUAL_REFILL,
                 PRINT_CLOUD_STORE_REFILL_COOLDOWN,
                 PRINT_CLOUD_STORE_REFILL_AMOUNT,
                 REFILL_AMOUNT_ADJUST,

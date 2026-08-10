@@ -76,9 +76,9 @@ public abstract class MixinMinecraftClient {
                     || me.aleksilassila.litematica.printer.utils.InventoryUtils.isEmptyShulker(stack);
         });
         if (!player.getAbilities().instabuild) {
-            // 云仓库鼠标中键取货：无视冷却立即下单；开启"强制取货"后不再检查背包是否有物品。
+            // 云仓库鼠标中键取货（手动补货）：无视冷却立即下单；开启"强制取货"后不再检查背包是否有物品。
             // 下单后不再 return，继续走原版中键取物（云仓库取货 + 原版背包取物同时生效）
-            if ((forceCloudStore || Configs.Placement.PRINT_CLOUD_STORE_REFILL.getBooleanValue())
+            if ((forceCloudStore || Configs.Placement.PRINT_CLOUD_STORE_MANUAL_REFILL.getBooleanValue())
                     && item != net.minecraft.world.item.Items.AIR
                     && ModUtils.isCloudStoreLoaded()
                     && (forceCloudStore || !inInventory)) {
