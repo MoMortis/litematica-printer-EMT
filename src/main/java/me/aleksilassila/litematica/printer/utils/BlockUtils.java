@@ -330,6 +330,10 @@ public class BlockUtils {
     }
 
     public static void openShulker(ItemStack stack, int shulkerBoxSlot) {
+        // 记录最近打开的潜影盒槽位：打开瞬间本地 CONTAINER 会短暂变空盒，
+        // 需在 2gt 窗口内避免被 isEmptyShulker 误判为"空盒"
+        lastOpenedShulkerSlot = shulkerBoxSlot;
+        lastOpenedShulkerTimeMillis = System.currentTimeMillis();
         if (Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
                 == QuickShulkerModeType.CLICK_SLOT) {
             client.gameMode.handleInventoryMouseClick(
@@ -347,6 +351,21 @@ public class BlockUtils {
                 }
             } else MessageUtils.addMessage(MessageUtils.literal("快捷潜影盒模组未加载！"));
         }
+    }
+
+    /** 最近打开过的潜影盒槽位（防 2gt 变空盒误判） */
+    private static int lastOpenedShulkerSlot = -1;
+    private static long lastOpenedShulkerTimeMillis = -1L;
+
+    /**
+     * 判断槽位是否为"刚打开的潜影盒"：在打开后的约 2gt（200ms）窗口内返回 true，
+     * 期间该潜影盒在本地被临时置空，应视为非空盒，避免被选为"空盒"放置。
+     */
+    public static boolean isShulkerRecentlyOpened(int slot) {
+        if (slot != lastOpenedShulkerSlot || lastOpenedShulkerTimeMillis < 0L) {
+            return false;
+        }
+        return System.currentTimeMillis() - lastOpenedShulkerTimeMillis < 200L;
     }
 
     public static boolean canBeClicked(ClientLevel world, BlockPos pos) {

@@ -470,6 +470,11 @@ public class InventoryUtils {
                     && Configs.Print.PRINT_ONLY_EMPTY_SHULKER.getBooleanValue();
             for (int i = 0; i < inventory.getContainerSize(); i++) {
                 ItemStack itemStack = inventory.getItem(i);
+                // 跳过"刚打开的潜影盒"槽位：打开瞬间本地 CONTAINER 会短暂变空盒，
+                // 若在此窗口内选为"空盒"会误放置有内容的潜影盒
+                if (onlyEmptyShulker && BlockUtils.isShulkerRecentlyOpened(i)) {
+                    continue;
+                }
                 if (itemStack.getItem().equals(item)
                         && (!onlyEmptyShulker || isEmptyShulker(itemStack))) {
                     slot = i;
