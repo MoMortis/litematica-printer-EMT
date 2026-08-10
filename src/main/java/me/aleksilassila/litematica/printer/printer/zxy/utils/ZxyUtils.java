@@ -254,8 +254,13 @@ public class ZxyUtils {
                     while (iterator.hasNext()) {
                         BlockPos pos = iterator.next();
                         if (!openInv(pos, true)) {
-                            //打开失败（如距离过远），移到队尾稍后再试，连续失败则放弃该容器
                             iterator.remove();
+                            // 超距容器：无法打开但不应放弃，保留等待玩家靠近（避免误报同步完成）
+                            if (client.player != null && !PlayerUtils.canInteracted(pos)) {
+                                retryPositions.add(pos);
+                                continue;
+                            }
+                            //打开失败（如距离过远），移到队尾稍后再试，连续失败则放弃该容器
                             int failCount = syncFailCount.getOrDefault(pos, 0) + 1;
                             if (failCount >= 5) {
                                 syncFailCount.remove(pos);
