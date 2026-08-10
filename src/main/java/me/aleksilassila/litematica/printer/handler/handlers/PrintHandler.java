@@ -9,6 +9,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
+import me.aleksilassila.litematica.printer.guide.guides.ShulkerPlacementGuard;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.*;
@@ -107,6 +108,25 @@ public class PrintHandler extends ClientPlayerTickHandler {
             setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
             return;
         }
+        // 潜影盒放置守卫：只打印空盒时，后置放置 + 关容器 + 5gt 确认空盒，避免误放打开中的盒子
+        if (Configs.Print.PRINT_ONLY_EMPTY_SHULKER.getBooleanValue()
+                && ctx.requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock) {
+            ShulkerPlacementGuard.GuardResult guardResult = ShulkerPlacementGuard.INSTANCE.evaluate(ctx);
+            switch (guardResult) {
+                case WAIT_OTHER_BLOCKS:
+                case WAIT_CLOSE:
+                case WAIT_CONFIRM:
+                    setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+                    return;
+                case NO_EMPTY:
+                    requestCloudStoreRefill(new Item[]{ctx.requiredState.getBlock().asItem()});
+                    setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+                    return;
+                case READY:
+                    // 守卫已切换主手为空盒，直接走放置
+                    break;
+            }
+        }
         if (Configs.Placement.FALLING_CHECK.getBooleanValue() && ctx.requiredState.getBlock() instanceof FallingBlock) {
             BlockPos downPos = blockPos.below();
 
@@ -120,9 +140,15 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
         }
         Item[] reqItems = action.getRequiredItems(ctx.requiredState.getBlock());
+        // 潜影盒守卫 READY 时主手已切好，跳过 switchToItems
+        boolean shulkerReady = Configs.Print.PRINT_ONLY_EMPTY_SHULKER.getBooleanValue()
+                && ctx.requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock
+                && ShulkerPlacementGuard.INSTANCE.isReady(blockPos);
         // 换挡类交互（ClickAction 未指定物品，如中继器/比较器/活板门/红石线等右键切换状态）：
         // 保持当前手持任意物品直接右键，不再要求切空手
-        if (isFreeHandClick(action, reqItems)) {
+        if (shulkerReady) {
+            // 主手已由守卫设置
+        } else if (isFreeHandClick(action, reqItems)) {
             // 不切换物品，保持当前手持任意物品非潜行右键目标方块
         } else if (!InventoryUtils.switchToItems(player, reqItems)) {
             requestCloudStoreRefill(reqItems);
