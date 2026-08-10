@@ -159,6 +159,9 @@ public class PrintOrderController {
     /** 扫描范围内是否存在匹配指定列表条目的待放置方块 */
     private boolean hasPendingMatching(String entry) {
         for (BlockPos pos : iterateScope()) {
+            if (!isInScope(pos)) {
+                continue;
+            }
             BlockState required = getRequiredState(pos);
             if (required == null || required.isAir()) {
                 continue;
@@ -176,6 +179,9 @@ public class PrintOrderController {
     /** 是否存在待放置的普通方块（非潜影盒、非水/含水、非任一列表匹配） */
     private boolean hasPendingOrdinary() {
         for (BlockPos pos : iterateScope()) {
+            if (!isInScope(pos)) {
+                continue;
+            }
             BlockState required = getRequiredState(pos);
             if (required == null || required.isAir()) {
                 continue;
@@ -196,6 +202,9 @@ public class PrintOrderController {
             return false;
         }
         for (BlockPos pos : iterateScope()) {
+            if (!isInScope(pos)) {
+                continue;
+            }
             BlockState required = getRequiredState(pos);
             if (required == null || !(required.getBlock() instanceof ShulkerBoxBlock)) {
                 continue;
@@ -210,6 +219,9 @@ public class PrintOrderController {
     /** 是否存在待放置的水/含水方块 */
     private boolean hasPendingWater() {
         for (BlockPos pos : iterateScope()) {
+            if (!isInScope(pos)) {
+                continue;
+            }
             BlockState required = getRequiredState(pos);
             if (required == null || !BlockStateUtils.isWaterBlock(required)) {
                 continue;
@@ -219,6 +231,17 @@ public class PrintOrderController {
             }
         }
         return false;
+    }
+
+    /**
+     * 位置是否在当前策略的作用范围内。
+     * "仅交互范围"需玩家实际可交互；全局模式不做交互距离限制（与 iterateBlocks 的 canInteracted 对齐）。
+     */
+    private boolean isInScope(BlockPos pos) {
+        if (isAnyGlobal()) {
+            return true;
+        }
+        return PlayerUtils.canInteracted(pos);
     }
 
     /** 是否为普通方块（非潜影盒、非水/含水、非优先/后置列表匹配） */
@@ -272,9 +295,7 @@ public class PrintOrderController {
         if (minecraft.level == null) {
             return java.util.Collections.emptyList();
         }
-        boolean global = Configs.Print.PRINT_PRIORITY_STRATEGY.getOptionListValue() == PrintPriorityType.GLOBAL
-                || Configs.Print.PRINT_POSTPONED_STRATEGY.getOptionListValue() == PrintPriorityType.GLOBAL;
-        if (global) {
+        if (isAnyGlobal()) {
             return iterateSelectionBoxes();
         }
         AtomicReference<PrinterBox> boxRef = ClientPlayerTickManager.PRINT.getBoxRef();
@@ -283,6 +304,12 @@ public class PrintOrderController {
             return java.util.Collections.emptyList();
         }
         return box;
+    }
+
+    /** 优先或后置策略是否为全局模式 */
+    private boolean isAnyGlobal() {
+        return Configs.Print.PRINT_PRIORITY_STRATEGY.getOptionListValue() == PrintPriorityType.GLOBAL
+                || Configs.Print.PRINT_POSTPONED_STRATEGY.getOptionListValue() == PrintPriorityType.GLOBAL;
     }
 
     /** 全局：遍历选区所有子区域 box */
