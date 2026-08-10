@@ -1,9 +1,15 @@
 package me.aleksilassila.litematica.printer.printer;
 
+import fi.dy.masa.litematica.world.SchematicWorldHandler;
+import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
+import me.aleksilassila.litematica.printer.utils.PlayerUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
@@ -12,6 +18,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 破冰放水的跨 tick 任务控制器（坐实 Guide 注释里的承诺）。
@@ -19,6 +26,9 @@ import java.util.Map;
  * 流程：目标为水源方块/含水方块且位置缺水时，
  * ① 先放置冰（new Action().setItem(Items.ICE)）→ ② 通过破坏队列直接破冰（工具切换交给 tweakeroo）→
  * ③ 本地预测到位置出现水（fluidState 非空）→ ④ 状态完成，交还普通 Guide 立即放置含水方块/水源判定。
+ *
+ * 放置顺序后置：新发起破冰放水前，必须等玩家交互距离内所有"非水/非含水"的普通方块
+ * 都放置完毕，否则一直等待（不接管，让普通方块先被打印）。
  *
  * 破坏队列非空时打印循环会整体暂停（MixinLocalPlayer.tick），天然充当破冰期间的等待，
  * 无需自建定时器。状态按 BlockPos.asLong() 存于 Map，跨 tick 保持。
@@ -39,6 +49,10 @@ public class PrintTaskController {
 
     private final Map<Long, Stage> stages = new HashMap<>();
     private final Map<Long, Long> stageStartTicks = new HashMap<>();
+
+    /** 普通方块扫描缓存（每 tick 一次） */
+    private long ordinaryScanTick = -1L;
+    private boolean hasPendingOrdinaryCache;
 
     private PrintTaskController() {
     }
@@ -102,9 +116,73 @@ public class PrintTaskController {
             return null;
         }
 
+        // 放置顺序后置：交互距离内还有待放置的普通方块（非水/非含水）时，
+        // 不发起破冰放水，返回 null 让打印循环先处理普通方块。
+        if (hasPendingOrdinaryBlock()) {
+            return null;
+        }
+
         // 需要放冰：显式 setItem(Items.ICE)，否则 getRequiredItems 会回退成水桶
         stages.put(key, Stage.NEED_ICE);
         return new Action().setItem(Items.ICE);
+    }
+
+    /**
+     * 玩家交互距离内是否仍有"待放置的普通方块"（排除水方块/含水方块）。
+     * 带每 tick 缓存，避免对每个候选方块重复扫描交互盒。
+     */
+    private boolean hasPendingOrdinaryBlock() {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return false;
+        }
+        long tick = minecraft.level.getGameTime();
+        if (tick != ordinaryScanTick) {
+            ordinaryScanTick = tick;
+            hasPendingOrdinaryCache = scanPendingOrdinaryBlock();
+        }
+        return hasPendingOrdinaryCache;
+    }
+
+    private boolean scanPendingOrdinaryBlock() {
+        Minecraft minecraft = Minecraft.getInstance();
+        ClientLevel level = minecraft.level;
+        if (level == null) {
+            return false;
+        }
+        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+        if (schematic == null) {
+            return false;
+        }
+        AtomicReference<PrinterBox> boxRef = ClientPlayerTickManager.PRINT.getBoxRef();
+        if (boxRef == null) {
+            return false;
+        }
+        PrinterBox box = boxRef.get();
+        if (box == null) {
+            return false;
+        }
+        for (BlockPos pos : box) {
+            if (!PlayerUtils.canInteracted(pos)) {
+                continue;
+            }
+            if (!LitematicaUtils.isSchematicBlock(pos)) {
+                continue;
+            }
+            BlockState required = schematic.getBlockState(pos);
+            if (required.isAir()) {
+                continue;
+            }
+            // 水方块/含水方块由破冰放水接管，不算普通方块
+            if (BlockStateUtils.isWaterBlock(required)) {
+                continue;
+            }
+            if (BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) {
+                continue;
+            }
+            return true;
+        }
+        return false;
     }
 
     /** 是否正处于破冰阶段（canProcessPos 应返回 true，executeIteration 里把冰入破坏队列） */
