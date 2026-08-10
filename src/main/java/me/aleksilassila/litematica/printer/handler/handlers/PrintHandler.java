@@ -19,6 +19,7 @@ import me.aleksilassila.litematica.printer.utils.*;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
@@ -119,7 +120,11 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
         }
         Item[] reqItems = action.getRequiredItems(ctx.requiredState.getBlock());
-        if (!InventoryUtils.switchToItems(player, reqItems)) {
+        // 换挡类交互（ClickAction 未指定物品，如中继器/比较器/活板门/红石线等右键切换状态）：
+        // 保持当前手持任意物品直接右键，不再要求切空手
+        if (isFreeHandClick(action, reqItems)) {
+            // 不切换物品，保持当前手持任意物品非潜行右键目标方块
+        } else if (!InventoryUtils.switchToItems(player, reqItems)) {
             requestCloudStoreRefill(reqItems);
             return;
         }
@@ -153,6 +158,26 @@ public class PrintHandler extends ClientPlayerTickHandler {
         } else {
             setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
         }
+    }
+
+    /**
+     * 是否为"空手右键换挡"类交互（ClickAction 且未指定实际物品）。
+     * 这类交互（中继器/比较器/活板门/红石线/拉杆等右键切换状态）不再要求空手，
+     * 保持当前手持任意物品直接右键即可。
+     */
+    private static boolean isFreeHandClick(Action action, Item[] reqItems) {
+        if (!(action instanceof ClickAction)) {
+            return false;
+        }
+        if (reqItems == null) {
+            return true;
+        }
+        for (Item item : reqItems) {
+            if (item != null && item != Items.AIR) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**
