@@ -184,6 +184,8 @@
   "litematica_printer.config.printHotkey.desc": "持此訣鍵時，機巧將持續置石。",
   "litematica_printer.config.printIceForWater": "破冰得水",
   "litematica_printer.config.printIceForWater.desc": "以「置冰→破冰」之法生水源石，遂成水之摹形。",
+  "litematica_printer.config.printIceForWaterOptimized": "益水之理",
+  "litematica_printer.config.printIceForWaterOptimized.desc": "啟則破冰得水之後置：先盡置水源/含水石所在層之常石，然後破冰得水；闔則循舊，徑置冰而破之，不察他石。",
   "litematica_printer.config.printMode.bedrock": "破基巖",
   "litematica_printer.config.printMode.fill": "填方",
   "litematica_printer.config.printMode.fluid": "治水",

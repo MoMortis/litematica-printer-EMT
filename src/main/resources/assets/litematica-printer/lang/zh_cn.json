@@ -184,6 +184,8 @@
   "litematica_printer.config.printHotkey.desc": "按住绑定的快捷键时，打印机将持续放置方块。",
   "litematica_printer.config.printIceForWater": "破冰放水",
   "litematica_printer.config.printIceForWater.desc": "通过“放置冰→破坏冰”的方式生成水源方块，实现水源的打印。",
+  "litematica_printer.config.printIceForWaterOptimized": "优化放水逻辑",
+  "litematica_printer.config.printIceForWaterOptimized.desc": "开启后，破冰放水放置顺序后置：先放完目标水源/含水方块所在层的普通方块，再破冰放水；关闭则按原本逻辑直接放冰破冰，不检查其他方块。",
   "litematica_printer.config.printMode.bedrock": "破基岩",
   "litematica_printer.config.printMode.fill": "填充",
   "litematica_printer.config.printMode.fluid": "排流体",

@@ -575,6 +575,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 优化放水逻辑：开启后破冰放水放置顺序后置（先放完目标层普通方块再破冰放水）
+        public static final ConfigBoolean PRINT_ICE_FOR_WATER_OPTIMIZED = bool("printIceForWaterOptimized")
+                .defaultValue(false)
+                .build();
+
         // 自动去皮
         public static final ConfigBoolean STRIP_LOGS = bool("printAutoStripLogs")
                 .defaultValue(false)
@@ -640,6 +645,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_REPLACE,
                 REPLACEABLE_LIST,
                 PRINT_ICE_FOR_WATER,
+                PRINT_ICE_FOR_WATER_OPTIMIZED,
                 SAFELY_OBSERVER,
                 STRIP_LOGS,
                 NOTE_BLOCK_TUNING,

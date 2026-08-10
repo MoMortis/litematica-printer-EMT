@@ -119,9 +119,10 @@ public class PrintTaskController {
             return null;
         }
 
-        // 放置顺序后置：目标水源/含水方块所在层（Y 轴）还有待放置的普通方块时，
-        // 不发起破冰放水，返回 null 让打印循环先处理该层普通方块。
-        if (hasPendingOrdinaryBlock(pos.getY())) {
+        // 优化放水逻辑（开启时）：放置顺序后置，目标水源/含水方块所在层（Y 轴）还有待放置的
+        // 普通方块时，不发起破冰放水，返回 null 让打印循环先处理该层普通方块。
+        if (Configs.Print.PRINT_ICE_FOR_WATER_OPTIMIZED.getBooleanValue()
+                && hasPendingOrdinaryBlock(pos.getY())) {
             return null;
         }
 
