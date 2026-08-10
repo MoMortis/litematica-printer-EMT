@@ -51,7 +51,6 @@
     "printer.malilib.MixinGuiStringListEdit",
     "printer.mc.MixinClientLevel",
     "printer.mc.MixinClientPacketListener",
-    "printer.mc.MixinBlockStatePredictionHandler",
     "printer.mc.MixinGui",
     "printer.mc.MixinLocalPlayer",
     "printer.mc.MixinMultiPlayerGameMode",

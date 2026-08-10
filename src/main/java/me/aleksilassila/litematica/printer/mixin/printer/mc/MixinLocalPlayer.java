@@ -82,7 +82,6 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
     public void tick(CallbackInfo ci) {
         ClientPlayerTickManager.updateTickHandlerTime();
         BlockPosCooldownManager.INSTANCE.tick();
-        me.aleksilassila.litematica.printer.guide.guides.ObserverPlacementGuard.INSTANCE.tick();
         InventoryUtils.tick();
         ZxyUtils.tick();
         CloudStoreUtils.tickArrivalCheck(minecraft.player);

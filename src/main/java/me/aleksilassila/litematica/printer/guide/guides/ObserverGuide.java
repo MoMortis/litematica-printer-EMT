@@ -6,16 +6,12 @@ import me.aleksilassila.litematica.printer.guide.Guide;
 import me.aleksilassila.litematica.printer.guide.Result;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
-import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
-import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
-import net.minecraft.world.level.block.CrossCollisionBlock;
 import net.minecraft.world.level.block.ObserverBlock;
-import net.minecraft.world.level.block.WallBlock;
-import net.minecraft.world.level.block.piston.PistonBaseBlock;
 import net.minecraft.world.level.block.state.properties.Property;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 侦测器
@@ -36,87 +32,17 @@ public class ObserverGuide extends Guide {
                     .setNeedWaitModifyLook());
         }
 
-        // 安全放置模式
-        SchematicBlockContext input = context.offset(facing);          // 输入端（侦测面）
-        SchematicBlockContext output = context.offset(facing.getOpposite()); // 输出端（红点面）
-
-        // 获取输入端方块需要忽略的属性
+        // 安全放置模式：只检查输入面（侦测面）是否与原理图一致。
+        // 一致则放置，不一致则跳过，等下一轮遍历再试。
+        SchematicBlockContext input = context.offset(facing);
         List<Property<?>> inputPropertiesToIgnore = new ArrayList<>();
-        if (input.requiredState.getBlock() instanceof WallBlock) {
-            BlockStateUtils.getWallFacingProperty(facing.getOpposite()).ifPresent(inputPropertiesToIgnore::add);
-        }
-        if (input.requiredState.getBlock() instanceof CrossCollisionBlock) {
-            BlockStateUtils.getCrossCollisionBlock(facing.getOpposite()).ifPresent(inputPropertiesToIgnore::add);
-        }
-
-        BlockMatchResult inputState = BlockMatchResult.compare(input, inputPropertiesToIgnore.toArray(new Property<?>[0]));
-        BlockMatchResult outputState = BlockMatchResult.compare(output);
-
-        // 输入端与输出端均正确
-        if (inputState == BlockMatchResult.CORRECT && outputState == BlockMatchResult.CORRECT) {
-            if (!isObserverInputChainReady(input)) {
-                return Result.SKIP;
-            }
-            // 服务器安全确认：若输入面刚被打印机放置（本地预测、服务器尚未确认），
-            // 登记等待服务器确认；已确认/环境固有/超时兜底后放行，避免无限等待。
-            if (ObserverPlacementGuard.INSTANCE.hasPendingPrediction(input.blockPos)) {
-                ObserverPlacementGuard.INSTANCE.requestConfirm(input.blockPos);
-            }
-            if (!ObserverPlacementGuard.INSTANCE.isConfirmed(input.blockPos)) {
-                return Result.SKIP;
-            }
-            return Result.success(placementAction(facing));
-        }
-
-        // 输入端正确但输出端有问题
-        if (inputState == BlockMatchResult.CORRECT) {
-            // 检查输入端后面的落地方块链
-            SchematicBlockContext temp = input;
-            while (temp.requiredState.getBlock() instanceof net.minecraft.world.level.block.FallingBlock) {
-                SchematicBlockContext offset = temp.offset(Direction.DOWN);
-                if (BlockMatchResult.compare(offset) != BlockMatchResult.CORRECT) {
-                    return Result.SKIP;
-                }
-                temp = offset;
-            }
-            if (!isObserverInputChainReady(input)) {
-                return Result.SKIP;
-            }
-            // 服务器安全确认：输入面刚放置、待服务器确认时登记等待；确认/超时后放行
-            if (ObserverPlacementGuard.INSTANCE.hasPendingPrediction(input.blockPos)) {
-                ObserverPlacementGuard.INSTANCE.requestConfirm(input.blockPos);
-            }
-            if (!ObserverPlacementGuard.INSTANCE.isConfirmed(input.blockPos)) {
-                return Result.SKIP;
-            }
-
-            // 侦测器隔空激活活塞检查
-            for (Direction direction : Direction.values()) {
-                SchematicBlockContext offset = output.offset(direction);
-                if (offset.blockPos.equals(output.blockPos)) continue;
-                if (offset.blockPos.equals(input.blockPos)) continue;
-                if (offset.blockPos.equals(blockPos)) continue;
-                if (offset.requiredState.getBlock() instanceof PistonBaseBlock) {
-                    if (!offset.currentState.isAir()) {
-                        return Result.SKIP;
-                    }
-                }
-            }
-        } else if (inputState == BlockMatchResult.WRONG_STATE) {
+        BlockMatchResult inputState = BlockMatchResult.compare(
+                input,
+                inputPropertiesToIgnore.toArray(new Property<?>[0])
+        );
+        if (inputState != BlockMatchResult.CORRECT) {
             return Result.SKIP;
-        } else {
-            if (!output.requiredState.isAir()) {
-                if (output.currentState.isAir() && input.requiredState.getBlock() instanceof WallBlock) {
-                    return Result.success(placementAction(facing).setCooldownTicksOverride(2));
-                }
-                return Result.SKIP;
-            } else {
-                // 输出端为空不代表输入端已经安全。安全模式必须等侦测面链条就绪，
-                // 否则放置瞬间仍可能产生非原理图预期的更新脉冲。
-                return Result.SKIP;
-            }
         }
-
         return Result.success(placementAction(facing));
     }
 
@@ -129,25 +55,5 @@ public class ObserverGuide extends Guide {
         return new Action()
                 .setLookDirection(facing)
                 .setNeedWaitModifyLook();
-    }
-
-    private static boolean isObserverInputChainReady(SchematicBlockContext start) {
-        Set<BlockPos> visited = new HashSet<>();
-        SchematicBlockContext temp = start;
-        while (temp.requiredState.getBlock() instanceof ObserverBlock) {
-            if (!visited.add(temp.blockPos)) {
-                return true;
-            }
-            Direction tempFacing = BlockStateUtils.getProperty(temp.requiredState, ObserverBlock.FACING).orElse(null);
-            if (tempFacing == null) {
-                return false;
-            }
-            SchematicBlockContext offset = temp.offset(tempFacing);
-            if (BlockMatchResult.compare(offset) != BlockMatchResult.CORRECT) {
-                return false;
-            }
-            temp = offset;
-        }
-        return true;
     }
 }
