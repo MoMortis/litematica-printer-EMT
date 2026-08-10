@@ -58,9 +58,11 @@ public class ObserverGuide extends Guide {
                 return Result.SKIP;
             }
             // 服务器安全确认：若输入面刚被打印机放置（本地预测、服务器尚未确认），
-            // 必须等服务器确认输入面状态后才放置侦测器，避免侦测器读到旧状态产生非预期脉冲。
+            // 登记等待服务器确认；已确认/环境固有/超时兜底后放行，避免无限等待。
             if (ObserverPlacementGuard.INSTANCE.hasPendingPrediction(input.blockPos)) {
                 ObserverPlacementGuard.INSTANCE.requestConfirm(input.blockPos);
+            }
+            if (!ObserverPlacementGuard.INSTANCE.isConfirmed(input.blockPos)) {
                 return Result.SKIP;
             }
             return Result.success(placementAction(facing));
@@ -80,9 +82,11 @@ public class ObserverGuide extends Guide {
             if (!isObserverInputChainReady(input)) {
                 return Result.SKIP;
             }
-            // 服务器安全确认：输入面刚放置、待服务器确认时等待
+            // 服务器安全确认：输入面刚放置、待服务器确认时登记等待；确认/超时后放行
             if (ObserverPlacementGuard.INSTANCE.hasPendingPrediction(input.blockPos)) {
                 ObserverPlacementGuard.INSTANCE.requestConfirm(input.blockPos);
+            }
+            if (!ObserverPlacementGuard.INSTANCE.isConfirmed(input.blockPos)) {
                 return Result.SKIP;
             }
 
