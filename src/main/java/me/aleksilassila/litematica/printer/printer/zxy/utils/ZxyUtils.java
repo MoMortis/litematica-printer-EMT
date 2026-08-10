@@ -248,6 +248,8 @@ public class ZxyUtils {
                     return;
 
                 if ((!Configs.Core.CLOUD_INVENTORY.getBooleanValue() || !openIng) && OpenInventoryPacket.key == null) {
+                    // 失败重试容器暂存，循环结束后统一加回，避免迭代中修改 syncPosList 触发 CME
+                    List<BlockPos> retryPositions = new ArrayList<>();
                     Iterator<BlockPos> iterator = syncPosList.iterator();
                     while (iterator.hasNext()) {
                         BlockPos pos = iterator.next();
@@ -261,7 +263,7 @@ public class ZxyUtils {
                                 MessageUtils.setOverlayMessage(I18n.INVENTORY_SYNC_CONTAINER_CANNOT_OPEN.getName());
                             } else {
                                 syncFailCount.put(pos, failCount);
-                                syncPosList.add(pos);
+                                retryPositions.add(pos);
                             }
                             continue;
                         }
@@ -271,6 +273,7 @@ public class ZxyUtils {
                         num = 3;
                         break;
                     }
+                    syncPosList.addAll(retryPositions);
                 }
                 if (syncPosList.isEmpty()) {
                     num = 0;
