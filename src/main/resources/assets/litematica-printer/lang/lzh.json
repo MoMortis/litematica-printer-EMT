@@ -307,6 +307,8 @@
   "litematica_printer.config.printSortSides.desc": "啟後優先取近玩家視向、較易點中之置石面。",
   "litematica_printer.config.printOnlyEmptyShulker": "惟摹空潛影盒",
   "litematica_printer.config.printOnlyEmptyShulker.desc": "啟後置潛影盒時唯取囊中空者；囊中若無空盒，則視為缺材而不置。",
+  "litematica_printer.config.printSkipShulker": "越潛影盒",
+  "litematica_printer.config.printSkipShulker.desc": "啟後徑越所有潛影盒之置（圖中潛影盒不摹，亦不入雲庫補材之計）。",
   "litematica_printer.config.placeDefaultDirection": "強制置石方向",
   "litematica_printer.config.placeDefaultDirection.desc": "啟後凡置石皆強用此向，不拘應承之面。施於需特定朝向之處。",
   "litematica_printer.config.placeDefaultDirection.none": "閉",

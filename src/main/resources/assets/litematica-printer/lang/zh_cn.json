@@ -307,6 +307,8 @@
   "litematica_printer.config.printSortSides.desc": "启用后，会优先选择更靠近玩家视角、通常更容易点到的放置面。",
   "litematica_printer.config.printOnlyEmptyShulker": "只打印空潜影盒",
   "litematica_printer.config.printOnlyEmptyShulker.desc": "启用后，放置潜影盒时只从背包中选择内容为空的潜影盒；若背包中没有空潜影盒，则视为缺少该材料而不放置。",
+  "litematica_printer.config.printSkipShulker": "跳过潜影盒打印",
+  "litematica_printer.config.printSkipShulker.desc": "启用后，直接跳过所有潜影盒的放置（原理图中的潜影盒不会被打印，也不会计入云仓库补货统计）。",
   "litematica_printer.config.placeDefaultDirection": "强制放置方向",
   "litematica_printer.config.placeDefaultDirection.desc": "启用后，所有方块的放置都会强制使用该方向，无视实际应放的支撑面。用于对特定朝向有要求的场景。",
   "litematica_printer.config.placeDefaultDirection.none": "关闭",

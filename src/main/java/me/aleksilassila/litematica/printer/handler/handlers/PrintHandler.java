@@ -79,6 +79,11 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 return false;
             }
         }
+        // 跳过潜影盒打印：直接跳过所有潜影盒的放置
+        if (Configs.Print.PRINT_SKIP_SHULKER.getBooleanValue()
+                && ctx.requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock) {
+            return false;
+        }
         // 破冰放水：水源/含水方块缺水时由任务控制器优先接管（放冰），避免普通 Guide 先放"干方块"
         Action waterTask = PrintTaskController.INSTANCE.handle(ctx);
         if (waterTask != null) {
@@ -252,6 +257,11 @@ public class PrintHandler extends ClientPlayerTickHandler {
             if (skipSet.stream().anyMatch(s -> PinYinSearchUtils.matchName(s, context.requiredState))) {
                 return null;
             }
+        }
+        // 跳过潜影盒打印：直接跳过所有潜影盒的放置（也不为它们补货）
+        if (Configs.Print.PRINT_SKIP_SHULKER.getBooleanValue()
+                && context.requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock) {
+            return null;
         }
         BlockState required = context.requiredState;
         if (required.isAir() || required.getBlock() instanceof LiquidBlock) {

@@ -515,6 +515,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 跳过潜影盒打印：直接跳过所有潜影盒的放置
+        public static final ConfigBoolean PRINT_SKIP_SHULKER = bool("printSkipShulker")
+                .defaultValue(false)
+                .build();
+
         // 强制放置方向（所有放置动作一律使用该方向，无视实际支撑面要求）
         public static final ConfigOptionList PLACE_DEFAULT_DIRECTION = optionList("placeDefaultDirection")
                 .defaultValue(DefaultPlaceDirectionType.NONE)
@@ -646,6 +651,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_SORT_TARGETS,
                 PRINT_SORT_SIDES,
                 PRINT_ONLY_EMPTY_SHULKER,
+                PRINT_SKIP_SHULKER,
                 PLACE_DEFAULT_DIRECTION,
                 REPAIR_RAIL_SHAPE,
                 PRINT_RESERVE_ITEMS,

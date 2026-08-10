@@ -307,6 +307,8 @@
   "litematica_printer.config.printSortSides.desc": "When enabled, prioritize placement faces that are closer to the player's view and usually easier to click.",
   "litematica_printer.config.printOnlyEmptyShulker": "Only Print Empty Shulker Boxes",
   "litematica_printer.config.printOnlyEmptyShulker.desc": "When enabled, only shulker boxes with empty contents are selected from the inventory for placement; if no empty shulker box is available, the material is treated as missing and nothing is placed.",
+  "litematica_printer.config.printSkipShulker": "Skip Shulker Box Printing",
+  "litematica_printer.config.printSkipShulker.desc": "When enabled, all shulker box placements are skipped directly (shulker boxes in the schematic are not printed, and are not counted for cloud store refill).",
   "litematica_printer.config.placeDefaultDirection": "Forced Place Direction",
   "litematica_printer.config.placeDefaultDirection.desc": "When enabled, all block placements are forced to use this direction, ignoring the actual support face. Useful for scenarios with specific orientation requirements.",
   "litematica_printer.config.placeDefaultDirection.none": "Off",
