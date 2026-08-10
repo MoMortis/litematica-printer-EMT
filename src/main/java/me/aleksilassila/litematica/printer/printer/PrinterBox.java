@@ -18,7 +18,6 @@ public class PrinterBox implements Iterable<BlockPos> {
     public boolean xIncrement = true;
     public boolean zIncrement = true;
     public IterationOrderType iterationMode = IterationOrderType.XZY;
-    private Iterator<BlockPos> iterator;
 
     public PrinterBox(int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
         this.minX = Math.min(minX, maxX);
@@ -73,10 +72,10 @@ public class PrinterBox implements Iterable<BlockPos> {
 
     @Override
     public @NotNull Iterator<BlockPos> iterator() {
-        if (this.iterator == null) {
-            this.iterator = new BoxIterator();
-        }
-        return this.iterator;
+        // 每次返回新迭代器：BoxIterator 是有状态的一次性迭代器，
+        // 缓存实例会导致同一 box 二次遍历拿到已耗尽迭代器（hasNext 恒 false），
+        // 表现为"不移动就不遍历/挖掘"。跨 tick 续扫由调用方保存的迭代器引用保证。
+        return new BoxIterator();
     }
 
     @Override
