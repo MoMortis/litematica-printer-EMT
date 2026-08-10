@@ -524,17 +524,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ConfigStringList PRINT_PRIORITY_LIST = stringList("printPriorityList")
                 .build();
 
-        // 优先放置方块策略
-        public static final ConfigOptionList PRINT_PRIORITY_STRATEGY = optionList("printPriorityStrategy")
-                .defaultValue(PrintPriorityType.OFF)
-                .build();
-
         // 后置放置方块列表（按列表顺序最后放置，晚于普通方块）
         public static final ConfigStringList PRINT_POSTPONED_LIST = stringList("printPostponedList")
                 .build();
 
-        // 后置放置方块策略
-        public static final ConfigOptionList PRINT_POSTPONED_STRATEGY = optionList("printPostponedStrategy")
+        // 方块放置优先级策略（同时控制优先/后置放置列表的生效范围）
+        public static final ConfigOptionList PRINT_ORDER_STRATEGY = optionList("printOrderStrategy")
                 .defaultValue(PrintPriorityType.OFF)
                 .build();
 
@@ -677,9 +672,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_ONLY_EMPTY_SHULKER,
                 PRINT_SKIP_SHULKER,
                 PRINT_PRIORITY_LIST,
-                PRINT_PRIORITY_STRATEGY,
                 PRINT_POSTPONED_LIST,
-                PRINT_POSTPONED_STRATEGY,
+                PRINT_ORDER_STRATEGY,
                 PLACE_DEFAULT_DIRECTION,
                 REPAIR_RAIL_SHAPE,
                 PRINT_RESERVE_ITEMS,

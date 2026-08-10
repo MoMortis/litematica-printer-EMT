@@ -53,9 +53,8 @@ public class PrintOrderController {
      * 该方块是否允许在当前阶段放置。由 PrintHandler.canProcessPos 开头咨询。
      */
     public boolean shouldAllow(SchematicBlockContext ctx, BlockPos pos) {
-        // 两个列表策略都关闭 → 不启用顺序控制，全部放行（保持原行为）
-        if (Configs.Print.PRINT_PRIORITY_STRATEGY.getOptionListValue() == PrintPriorityType.OFF
-                && Configs.Print.PRINT_POSTPONED_STRATEGY.getOptionListValue() == PrintPriorityType.OFF) {
+        // 方块放置优先级策略关闭 → 不启用顺序控制，全部放行（保持原行为）
+        if (Configs.Print.PRINT_ORDER_STRATEGY.getOptionListValue() == PrintPriorityType.OFF) {
             return true;
         }
         refreshStage();
@@ -100,7 +99,7 @@ public class PrintOrderController {
         stageCacheTick = tick;
 
         // 1. 优先列表
-        if (isStrategyEnabled(Configs.Print.PRINT_PRIORITY_STRATEGY)) {
+        if (isOrderEnabled()) {
             int index = findPendingListIndex(Configs.Print.PRINT_PRIORITY_LIST.getStrings());
             if (index >= 0) {
                 cachedStage = Stage.PRIORITY;
@@ -115,7 +114,7 @@ public class PrintOrderController {
             return;
         }
         // 3. 后置列表
-        if (isStrategyEnabled(Configs.Print.PRINT_POSTPONED_STRATEGY)) {
+        if (isOrderEnabled()) {
             int index = findPendingListIndex(Configs.Print.PRINT_POSTPONED_LIST.getStrings());
             if (index >= 0) {
                 cachedStage = Stage.POSTPONED;
@@ -139,8 +138,9 @@ public class PrintOrderController {
         cachedIndex = -1;
     }
 
-    private boolean isStrategyEnabled(fi.dy.masa.malilib.config.options.ConfigOptionList strategy) {
-        return strategy.getOptionListValue() != PrintPriorityType.OFF;
+    /** 方块放置优先级策略是否已启用（非关闭） */
+    private boolean isOrderEnabled() {
+        return Configs.Print.PRINT_ORDER_STRATEGY.getOptionListValue() != PrintPriorityType.OFF;
     }
 
     /** 列表中存在待放置方块的第一个条目索引；无则 -1 */
@@ -306,10 +306,9 @@ public class PrintOrderController {
         return box;
     }
 
-    /** 优先或后置策略是否为全局模式 */
+    /** 方块放置优先级策略是否为全局模式 */
     private boolean isAnyGlobal() {
-        return Configs.Print.PRINT_PRIORITY_STRATEGY.getOptionListValue() == PrintPriorityType.GLOBAL
-                || Configs.Print.PRINT_POSTPONED_STRATEGY.getOptionListValue() == PrintPriorityType.GLOBAL;
+        return Configs.Print.PRINT_ORDER_STRATEGY.getOptionListValue() == PrintPriorityType.GLOBAL;
     }
 
     /** 全局：遍历选区所有子区域 box */
