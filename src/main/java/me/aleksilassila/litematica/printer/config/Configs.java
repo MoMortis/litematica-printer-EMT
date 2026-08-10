@@ -520,6 +520,24 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 优先放置方块列表（按列表顺序优先放置）
+        public static final ConfigStringList PRINT_PRIORITY_LIST = stringList("printPriorityList")
+                .build();
+
+        // 优先放置方块策略
+        public static final ConfigOptionList PRINT_PRIORITY_STRATEGY = optionList("printPriorityStrategy")
+                .defaultValue(PrintPriorityType.OFF)
+                .build();
+
+        // 后置放置方块列表（按列表顺序最后放置，晚于普通方块）
+        public static final ConfigStringList PRINT_POSTPONED_LIST = stringList("printPostponedList")
+                .build();
+
+        // 后置放置方块策略
+        public static final ConfigOptionList PRINT_POSTPONED_STRATEGY = optionList("printPostponedStrategy")
+                .defaultValue(PrintPriorityType.OFF)
+                .build();
+
         // 强制放置方向（所有放置动作一律使用该方向，无视实际支撑面要求）
         public static final ConfigOptionList PLACE_DEFAULT_DIRECTION = optionList("placeDefaultDirection")
                 .defaultValue(DefaultPlaceDirectionType.NONE)
@@ -658,6 +676,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_SORT_SIDES,
                 PRINT_ONLY_EMPTY_SHULKER,
                 PRINT_SKIP_SHULKER,
+                PRINT_PRIORITY_LIST,
+                PRINT_PRIORITY_STRATEGY,
+                PRINT_POSTPONED_LIST,
+                PRINT_POSTPONED_STRATEGY,
                 PLACE_DEFAULT_DIRECTION,
                 REPAIR_RAIL_SHAPE,
                 PRINT_RESERVE_ITEMS,

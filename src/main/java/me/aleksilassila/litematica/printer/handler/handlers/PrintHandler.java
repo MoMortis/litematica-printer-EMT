@@ -84,6 +84,10 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 && ctx.requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock) {
             return false;
         }
+        // 放置顺序：优先列表 → 普通方块 → 后置列表 → 潜影盒 → 破冰放水
+        if (!PrintOrderController.INSTANCE.shouldAllow(ctx, blockPos)) {
+            return false;
+        }
         // 破冰放水：水源/含水方块缺水时由任务控制器优先接管（放冰），避免普通 Guide 先放"干方块"
         Action waterTask = PrintTaskController.INSTANCE.handle(ctx);
         if (waterTask != null) {
