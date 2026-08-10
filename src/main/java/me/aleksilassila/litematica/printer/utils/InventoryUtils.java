@@ -668,6 +668,49 @@ public class InventoryUtils {
     }
 
     /**
+     * 统计主背包 + 所有背包潜影盒内容中匹配某物品的总数量。
+     * 云仓库缺货判定应使用此方法，避免"潜影盒里有该物品仍发起取货请求"。
+     */
+    public static int countAvailableIncludingShulkers(LocalPlayer player, Item item) {
+        int count = countMatchingMainInventory(player, stack -> stack.is(item));
+        Inventory inventory = player.getInventory();
+        int size = Math.min(36, inventory.getContainerSize());
+        for (int slot = 0; slot < size; slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.isEmpty() || !isShulkerItem(stack.getItem())) {
+                continue;
+            }
+            net.minecraft.world.item.component.ItemContainerContents contents = stack.get(DataComponents.CONTAINER);
+            if (contents == null) {
+                continue;
+            }
+            for (net.minecraft.world.item.ItemStack inner : contents.nonEmptyItems()) {
+                if (inner.is(item)) {
+                    count += inner.getCount();
+                }
+            }
+        }
+        return count;
+    }
+
+    /**
+     * 背包中是否存在"刚打开的潜影盒"槽位（QuickShulker 打开瞬间本地 CONTAINER 被临时清空，
+     * 其内容不可信）。潜影盒取货流程进行中时不应判定缺货，避免与云仓库请求冲突。
+     */
+    public static boolean hasRecentlyOpenedShulker(LocalPlayer player) {
+        Inventory inventory = player.getInventory();
+        int size = Math.min(36, inventory.getContainerSize());
+        for (int slot = 0; slot < size; slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (!stack.isEmpty() && isShulkerItem(stack.getItem())
+                    && BlockUtils.isShulkerRecentlyOpened(slot)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
      * 检查是否能切换到目标物品（配合槽位检查，仅判断不执行切换）
      *
      * @param player 本地玩家实例

@@ -202,7 +202,9 @@ public class PrintHandler extends ClientPlayerTickHandler {
             if (reqItems == null) continue;
             for (Item reqItem : reqItems) {
                 if (reqItem == null || reqItem == net.minecraft.world.item.Items.AIR) continue;
-                if (InventoryUtils.countMatchingMainInventory(player, stack -> stack.is(reqItem)) == 0) {
+                // 主背包 + 潜影盒内容都没有才视为缺货（且潜影盒取货流程未在进行）
+                if (InventoryUtils.countAvailableIncludingShulkers(player, reqItem) == 0
+                        && !InventoryUtils.hasRecentlyOpenedShulker(player)) {
                     missing.add(reqItem);
                 }
             }
@@ -251,7 +253,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (reqItems != null) {
             for (Item reqItem : reqItems) {
                 if (reqItem == null || reqItem == net.minecraft.world.item.Items.AIR) continue;
-                if (InventoryUtils.countMatchingMainInventory(player, stack -> stack.is(reqItem)) == 0) {
+                if (InventoryUtils.countAvailableIncludingShulkers(player, reqItem) == 0
+                        && !InventoryUtils.hasRecentlyOpenedShulker(player)) {
                     missing.add(reqItem);
                 }
             }
