@@ -67,14 +67,19 @@ public abstract class MixinMinecraftClient {
         }
         Item item = level.getBlockState(pos).getBlock().asItem();
         boolean forceCloudStore = Configs.Placement.PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE.getBooleanValue();
-        // 潜影盒物品要求身上是"空盒"才算已拥有；有物品的潜影盒不算
+        // 潜影盒物品要求身上是"空盒"才算已拥有；有物品的潜影盒不算。
+        // 非潜影盒物品：背包或背包潜影盒内容中已有即视为已拥有，避免误发云仓库手动补货。
         boolean itemIsShulker = me.aleksilassila.litematica.printer.utils.InventoryUtils.isShulkerItem(item);
-        boolean inInventory = player.inventoryMenu.slots.stream().anyMatch(slot -> {
-            net.minecraft.world.item.ItemStack stack = slot.getItem();
-            if (!stack.getItem().equals(item)) return false;
-            return !itemIsShulker
-                    || me.aleksilassila.litematica.printer.utils.InventoryUtils.isEmptyShulker(stack);
-        });
+        boolean inInventory;
+        if (itemIsShulker) {
+            inInventory = player.inventoryMenu.slots.stream().anyMatch(slot -> {
+                net.minecraft.world.item.ItemStack stack = slot.getItem();
+                return stack.getItem().equals(item)
+                        && me.aleksilassila.litematica.printer.utils.InventoryUtils.isEmptyShulker(stack);
+            });
+        } else {
+            inInventory = me.aleksilassila.litematica.printer.utils.InventoryUtils.countAvailableIncludingShulkers(player, item) > 0;
+        }
         if (!player.getAbilities().instabuild) {
             // 云仓库鼠标中键取货（手动补货）：无视冷却立即下单；开启"强制取货"后不再检查背包是否有物品。
             // 下单后不再 return，继续走原版中键取物（云仓库取货 + 原版背包取物同时生效）
