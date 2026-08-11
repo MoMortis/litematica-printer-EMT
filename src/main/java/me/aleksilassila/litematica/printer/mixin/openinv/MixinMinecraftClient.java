@@ -7,8 +7,11 @@ package me.aleksilassila.litematica.printer.mixin.openinv;
 
 import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
+import fi.dy.masa.litematica.world.SchematicWorldHandler;
+import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.ModUtils;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -20,6 +23,7 @@ import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Shadow;
@@ -65,7 +69,18 @@ public abstract class MixinMinecraftClient {
             original.call(instance, pos, b);
             return;
         }
-        Item item = level.getBlockState(pos).getBlock().asItem();
+        Item item;
+        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+        if (schematic != null && LitematicaUtils.isSchematicBlock(pos)) {
+            // 位置在原理图内 → 取原理图预期方块（即使原理图该位置为空气，也按原理图计）
+            BlockState schematicState = schematic.getBlockState(pos);
+            item = (schematicState == null || schematicState.isAir())
+                    ? net.minecraft.world.item.Items.AIR
+                    : schematicState.getBlock().asItem();
+        } else {
+            // 不在原理图内 → 取世界方块
+            item = level.getBlockState(pos).getBlock().asItem();
+        }
         boolean forceCloudStore = Configs.Placement.PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE.getBooleanValue();
         // 潜影盒物品要求身上是"空盒"才算已拥有；有物品的潜影盒不算。
         // 非潜影盒物品：背包或背包潜影盒内容中已有即视为已拥有，避免误发云仓库手动补货。
