@@ -83,36 +83,40 @@ public abstract class MixinMinecraftClient {
         }
         boolean forceCloudStore = Configs.Placement.PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE.getBooleanValue();
         // 潜影盒物品要求身上是"空盒"才算已拥有；有物品的潜影盒不算。
-        // 非潜影盒物品：背包或背包潜影盒内容中已有即视为已拥有，避免误发云仓库手动补货。
+        // 判定A（inMain）：主背包主栏直接持有该物品（不含潜影盒内容）——快捷潜影盒用。
+        // 判定B（inShulkers）：主栏 + 所有背包潜影盒内容 —— 云仓库手动补货用。
         boolean itemIsShulker = me.aleksilassila.litematica.printer.utils.InventoryUtils.isShulkerItem(item);
-        boolean inInventory;
+        boolean inMain;
         if (itemIsShulker) {
-            inInventory = player.inventoryMenu.slots.stream().anyMatch(slot -> {
+            inMain = player.inventoryMenu.slots.stream().anyMatch(slot -> {
                 net.minecraft.world.item.ItemStack stack = slot.getItem();
                 return stack.getItem().equals(item)
                         && me.aleksilassila.litematica.printer.utils.InventoryUtils.isEmptyShulker(stack);
             });
         } else {
-            inInventory = me.aleksilassila.litematica.printer.utils.InventoryUtils.countAvailableIncludingShulkers(player, item) > 0;
+            inMain = me.aleksilassila.litematica.printer.utils.InventoryUtils.countMatchingMainInventory(
+                    player, stack -> stack.is(item)) > 0;
         }
+        boolean inShulkers = me.aleksilassila.litematica.printer.utils.InventoryUtils.countAvailableIncludingShulkers(player, item) > 0;
         if (!player.getAbilities().instabuild) {
-            // 云仓库鼠标中键取货（手动补货）：无视冷却立即下单；开启"强制取货"后不再检查背包是否有物品。
-            // 下单后不再 return，继续走原版中键取物（云仓库取货 + 原版背包取物同时生效）
-            if ((forceCloudStore || Configs.Placement.PRINT_CLOUD_STORE_MANUAL_REFILL.getBooleanValue())
+            // 快捷潜影盒优先：主栏没有但潜影盒里有 → 从背包潜影盒取
+            if (!inMain && inShulkers
+                    && (Configs.Core.CLOUD_INVENTORY.getBooleanValue()
+                    || Configs.Placement.QUICK_SHULKER.getBooleanValue())) {
+                InventoryUtils.lastNeedItemList.add(item);
+                InventoryUtils.switchItem();
+                return;
+            }
+            // 云仓库-手动补货：主栏与潜影盒都没有才下单（与快捷潜影盒互斥）
+            if (!inShulkers
+                    && (forceCloudStore || Configs.Placement.PRINT_CLOUD_STORE_MANUAL_REFILL.getBooleanValue())
                     && item != net.minecraft.world.item.Items.AIR
-                    && ModUtils.isCloudStoreLoaded()
-                    && (forceCloudStore || !inInventory)) {
+                    && ModUtils.isCloudStoreLoaded()) {
                 me.aleksilassila.litematica.printer.utils.CloudStoreUtils.tryRequestRefillImmediate(
                         player,
                         item,
                         Configs.Placement.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
                 );
-            }
-            if (!inInventory
-                    && (Configs.Core.CLOUD_INVENTORY.getBooleanValue() || Configs.Placement.QUICK_SHULKER.getBooleanValue())) {
-                InventoryUtils.lastNeedItemList.add(item);
-                InventoryUtils.switchItem();
-                return;
             }
         }
         original.call(instance, pos, b);
