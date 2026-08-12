@@ -13,8 +13,8 @@ public class ConfigUtils {
     @NotNull
     public static final Minecraft client = Minecraft.getInstance();
 
-    /** 进入服务器自启动：进入服务器后重试开启打印机，共 10 次、每次间隔 1 秒（20 tick）。 */
-    private static final int AUTO_ENABLE_MAX_ATTEMPTS = 10;
+    /** 进入服务器自启动：进入服务器后重试开启打印机，共 60 次、每次间隔 1 秒（20 tick）。 */
+    private static final int AUTO_ENABLE_MAX_ATTEMPTS = 60;
     private static final int AUTO_ENABLE_INTERVAL_TICKS = 20;
     private static int autoEnableAttemptsLeft = 0;
     private static int autoEnableTickCounter = 0;
