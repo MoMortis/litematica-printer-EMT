@@ -66,9 +66,8 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
             CompletableFuture.runAsync(ModUtils::checkForUpdates);
         }
         updateChecked = true;
-        if (me.aleksilassila.litematica.printer.utils.ConfigUtils.consumeAndMarkAutoEnable()) {
-            Configs.Core.WORK_SWITCH.setBooleanValue(true);
-        }
+        // 进入服务器自启动：启动"重试开启打印机"会话（死亡重生不重复启动会话）
+        me.aleksilassila.litematica.printer.utils.ConfigUtils.startAutoEnableSession();
     }
 
     @Inject(at = @At("HEAD"), method = "closeContainer")
@@ -84,6 +83,7 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
     @Inject(at = @At("HEAD"), method = "tick")
     public void tick(CallbackInfo ci) {
         ClientPlayerTickManager.updateTickHandlerTime();
+        me.aleksilassila.litematica.printer.utils.ConfigUtils.tickAutoEnable();
         BlockPosCooldownManager.INSTANCE.tick();
         InventoryUtils.tick();
         ZxyUtils.tick();

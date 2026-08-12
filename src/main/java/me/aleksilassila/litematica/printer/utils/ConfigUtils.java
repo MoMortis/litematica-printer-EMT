@@ -13,24 +13,63 @@ public class ConfigUtils {
     @NotNull
     public static final Minecraft client = Minecraft.getInstance();
 
-    /** 进入服务器自启动：静态标志，防止死亡重生重复触发（退出服务器时由 resetAutoEnableOnce 重置） */
-    private static boolean printerAutoEnabledOnce;
+    /** 进入服务器自启动：进入服务器后重试开启打印机，共 10 次、每次间隔 1 秒（20 tick）。 */
+    private static final int AUTO_ENABLE_MAX_ATTEMPTS = 10;
+    private static final int AUTO_ENABLE_INTERVAL_TICKS = 20;
+    private static int autoEnableAttemptsLeft = 0;
+    private static int autoEnableTickCounter = 0;
+    private static boolean autoEnableSessionActive = false;
 
     /**
-     * 进入服务器自启动判定：仅首次（且开关开启）返回 true，并置位标志。
-     * 死亡重生不重复触发。
+     * 进入服务器时调用：若开关开启则启动"重试开启打印机"会话。
+     * 仅在未处于会话中时启动，死亡重生不重复启动会话。
      */
-    public static boolean consumeAndMarkAutoEnable() {
-        if (Configs.Core.AUTO_ENABLE_PRINTER.getBooleanValue() && !printerAutoEnabledOnce) {
-            printerAutoEnabledOnce = true;
-            return true;
+    public static void startAutoEnableSession() {
+        if (Configs.Core.AUTO_ENABLE_PRINTER.getBooleanValue() && !autoEnableSessionActive) {
+            autoEnableSessionActive = true;
+            autoEnableAttemptsLeft = AUTO_ENABLE_MAX_ATTEMPTS;
+            autoEnableTickCounter = 0;
+            tryAutoEnableNow();
         }
-        return false;
     }
 
-    /** 退出服务器时重置"已自动开启"标志，使下次进服再次自启动 */
-    public static void resetAutoEnableOnce() {
-        printerAutoEnabledOnce = false;
+    /**
+     * 每 tick 调用：尝试开启打印机，成功后结束会话；否则按间隔重试至次数耗尽。
+     */
+    public static void tickAutoEnable() {
+        if (!autoEnableSessionActive) {
+            return;
+        }
+        if (ConfigUtils.isPrinterEnable()) {
+            // 已开启，结束会话
+            resetAutoEnableSession();
+            return;
+        }
+        if (autoEnableAttemptsLeft <= 0) {
+            // 尝试次数耗尽，结束会话
+            resetAutoEnableSession();
+            return;
+        }
+        autoEnableTickCounter++;
+        if (autoEnableTickCounter >= AUTO_ENABLE_INTERVAL_TICKS) {
+            autoEnableTickCounter = 0;
+            tryAutoEnableNow();
+        }
+    }
+
+    /** 立即尝试开启打印机并消耗一次尝试 */
+    private static void tryAutoEnableNow() {
+        if (autoEnableAttemptsLeft > 0) {
+            Configs.Core.WORK_SWITCH.setBooleanValue(true);
+            autoEnableAttemptsLeft--;
+        }
+    }
+
+    /** 退出服务器时重置会话，使下次进服再次自启动 */
+    public static void resetAutoEnableSession() {
+        autoEnableSessionActive = false;
+        autoEnableAttemptsLeft = 0;
+        autoEnableTickCounter = 0;
     }
 
     public static boolean isPrinterEnable() {
