@@ -13,6 +13,26 @@ public class ConfigUtils {
     @NotNull
     public static final Minecraft client = Minecraft.getInstance();
 
+    /** 进入服务器自启动：静态标志，防止死亡重生重复触发（退出服务器时由 resetAutoEnableOnce 重置） */
+    private static boolean printerAutoEnabledOnce;
+
+    /**
+     * 进入服务器自启动判定：仅首次（且开关开启）返回 true，并置位标志。
+     * 死亡重生不重复触发。
+     */
+    public static boolean consumeAndMarkAutoEnable() {
+        if (Configs.Core.AUTO_ENABLE_PRINTER.getBooleanValue() && !printerAutoEnabledOnce) {
+            printerAutoEnabledOnce = true;
+            return true;
+        }
+        return false;
+    }
+
+    /** 退出服务器时重置"已自动开启"标志，使下次进服再次自启动 */
+    public static void resetAutoEnableOnce() {
+        printerAutoEnabledOnce = false;
+    }
+
     public static boolean isPrinterEnable() {
         return Configs.Core.WORK_SWITCH.getBooleanValue();
     }
