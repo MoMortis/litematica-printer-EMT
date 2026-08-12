@@ -211,6 +211,8 @@
   "litematica_printer.config.printSkipList.desc": "列印時跳過的方塊列表。可輸入物品ID或當前語言的翻譯名稱，範例：§bminecraft:stone§r §b砂岩§r。\n前綴新增§b#§r表示標籤匹配，範例：§l#minecraft:logs§r。\n文字後加「,c」表示包含匹配，範例：§l帶釉陶瓦,c§r。",
   "litematica_printer.config.printerAutoDisable": "自動關閉印表機",
   "litematica_printer.config.printerAutoDisable.desc": "當玩家死亡時自動關閉印表機，避免重生後印表機誤操作。",
+  "litematica_printer.config.printerAutoEnable": "進入伺服器自啟動",
+  "litematica_printer.config.printerAutoEnable.desc": "開啟後，玩家進入伺服器時自動開啟印表機；死亡重生不會重複觸發，死亡自動關閉印表機仍正常運作。",
   "litematica_printer.config.printerInventory": "設定印表機庫存熱鍵",
   "litematica_printer.config.printerInventory.desc": "若遠程取物目標位於未載入區塊，取物耗時會增加；選中投影選區後按快捷鍵可綁定印表機庫存，\n印表機工作時將優先使用該庫存的物品；建議在庫存區域放置假人實體，以保持區塊常載入。",
   "litematica_printer.config.printerIteratorMode": "遍歷順序",

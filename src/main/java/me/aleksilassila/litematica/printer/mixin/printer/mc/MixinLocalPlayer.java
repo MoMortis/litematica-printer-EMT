@@ -50,6 +50,10 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
     @Unique
     private boolean updateChecked;
 
+    /** 进入服务器自启动：静态标志，防止死亡重生重复触发（退出服务器时由 MixinConnection.disconnect 重置） */
+    @Unique
+    private static boolean printerAutoEnabledOnce;
+
     //#if MC == 11902
     //$$ public MixinLocalPlayer(ClientLevel world, GameProfile profile, @Nullable PlayerPublicKey publicKey) {
     //$$    super(world, profile, publicKey);
@@ -66,6 +70,17 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
             CompletableFuture.runAsync(ModUtils::checkForUpdates);
         }
         updateChecked = true;
+        // 进入服务器自启动：仅首次进入触发，死亡重生不重复开启
+        if (Configs.Core.AUTO_ENABLE_PRINTER.getBooleanValue() && !printerAutoEnabledOnce) {
+            Configs.Core.WORK_SWITCH.setBooleanValue(true);
+            printerAutoEnabledOnce = true;
+        }
+    }
+
+    /** 退出服务器时重置"已自动开启"标志，使下次进服再次自启动 */
+    @Unique
+    public static void litematica_printer$resetAutoEnableOnce() {
+        printerAutoEnabledOnce = false;
     }
 
     @Inject(at = @At("HEAD"), method = "closeContainer")

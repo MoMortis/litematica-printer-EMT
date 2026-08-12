@@ -211,6 +211,8 @@
   "litematica_printer.config.printSkipList.desc": "摹形時越過之石冊。格式同前。",
   "litematica_printer.config.printerAutoDisable": "自偃機巧",
   "litematica_printer.config.printerAutoDisable.desc": "玩家身殞時自關機巧，防重生後誤作。",
+  "litematica_printer.config.printerAutoEnable": "入服自啟",
+  "litematica_printer.config.printerAutoEnable.desc": "啟後玩家入伺服器即自啟機巧；身殞重生不再復觸，身殞自閉仍如常。",
   "litematica_printer.config.printerInventory": "設機巧庫藏訣",
   "litematica_printer.config.printerInventory.desc": "若隔空所取之物在未載之區塊，取時則增；選投影界後按此訣可繫定機巧庫藏，機巧工時將優先取用此庫之物；建議於庫藏區置假人實體，以保區塊常載。",
   "litematica_printer.config.printerIteratorMode": "徧歷次序",

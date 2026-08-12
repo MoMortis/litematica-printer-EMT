@@ -196,6 +196,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
+        // 核心 - 进入服务器自启动打印机
+        public static final ConfigBoolean AUTO_ENABLE_PRINTER = bool("printerAutoEnable")
+                .defaultValue(false)
+                .build();
+
         // 核心 - 检查更新
         public static final ConfigBoolean UPDATE_CHECK = bool("updateCheck")
                 .defaultValue(true)
@@ -258,6 +263,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 MOVE_ADAPTIVE_ITERATION,
                 MOTION_AHEAD,
                 AUTO_DISABLE_PRINTER,
+                AUTO_ENABLE_PRINTER,
                 UPDATE_CHECK,
                 DEBUG_OUTPUT,
                 CLOUD_INVENTORY,

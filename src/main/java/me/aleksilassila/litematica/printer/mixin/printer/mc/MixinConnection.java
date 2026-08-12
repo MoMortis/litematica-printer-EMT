@@ -29,6 +29,7 @@ public class MixinConnection {
     @Inject(method = "disconnect*", at = {@At("HEAD")})
     public void disconnect(Component ignored, CallbackInfo ci) {
         exitGameReSet();    // 退出重置
+        me.aleksilassila.litematica.printer.mixin.printer.mc.MixinLocalPlayer.litematica_printer$resetAutoEnableOnce();
         if (Configs.Core.AUTO_DISABLE_PRINTER.getBooleanValue() && Configs.Core.WORK_SWITCH.getBooleanValue()) {
             Configs.Core.WORK_SWITCH.setBooleanValue(false);
         }
