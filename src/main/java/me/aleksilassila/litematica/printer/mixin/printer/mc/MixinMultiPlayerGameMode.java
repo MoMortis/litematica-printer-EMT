@@ -264,14 +264,22 @@ if (this.delayedDestroyLocalPrediction) {
     }
 
     /**
-     * 这很体面：数据包挖掘模式下，跳过一切校验，同一游戏刻内直接发送开始+结束挖掘包。
-     * 独立于 Beta2.5 的破坏状态机，作为最快的挖掘路径保留。
+     * 纱幕：数据包挖掘模式下，列表内的方块跳过一切校验，同一游戏刻内直接发送开始+结束挖掘包。
+     * 列表为空视为全放行（保持旧行为）。
      */
     @Unique
     private boolean litematica_printer$instantMine(BlockPos blockPos, Direction direction) {
         if (!Configs.Break.BREAK_USE_PACKET.getBooleanValue()
                 || !Configs.Break.BREAK_INSTANT_MINE.getBooleanValue()) {
             return false;
+        }
+        // 纱幕-列表：仅在列表内的方块触发同 tick 同时发包挖掘开始与结束
+        java.util.List<String> veilList = Configs.Break.BREAK_INSTANT_MINE_LIST.getStrings();
+        if (!veilList.isEmpty() && this.minecraft.level != null) {
+            net.minecraft.world.level.block.state.BlockState veilState = this.minecraft.level.getBlockState(blockPos);
+            if (veilList.stream().noneMatch(s -> me.aleksilassila.litematica.printer.utils.PinYinSearchUtils.matchName(s, veilState))) {
+                return false;
+            }
         }
         if (this.isDestroying && !this.sameDestroyTarget(blockPos)) {
             PacketUtils.sendPacket(getActionPacket(Action.ABORT_DESTROY_BLOCK, this.destroyBlockPos, direction, 0));

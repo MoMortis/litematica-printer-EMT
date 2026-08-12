@@ -412,9 +412,13 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
-        // 这很体面
-        public static final ConfigBoolean BREAK_INSTANT_MINE = bool("breakInstantOnSameTick")
+        // 纱幕-开关：数据包挖掘模式下，列表内的方块同一游戏刻同时发送开始+结束挖掘包（同 tick 秒破）
+        public static final ConfigBoolean BREAK_INSTANT_MINE = bool("breakVeilToggle")
                 .defaultValue(false)
+                .build();
+
+        // 纱幕-列表：处于列表内的方块才触发同 tick 同时发包挖掘开始与结束的逻辑
+        public static final ConfigStringList BREAK_INSTANT_MINE_LIST = stringList("breakVeilList")
                 .build();
 
         // 延迟破坏（用于同 tick 秒破）
@@ -466,6 +470,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 BREAK_CHECK_HARDNESS,
                 BREAK_INSTANT_MINE,
+                BREAK_INSTANT_MINE_LIST,
                 BREAK_USE_PACKET,
                 BREAK_AVOID_FLUID,
                 BREAK_AVOID_SUPPORT,
