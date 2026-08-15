@@ -48,10 +48,9 @@ public class BreakUtils {
     private boolean forceDelayedDestroy;
     private int externalDestroyLockTicks;
 
-    // 防流体挖掘 / 不破坏支撑方块：受保护位置集合逐tick缓存（一次扫描同时构建），命中O(1)
+    // 防流体挖掘：受保护位置集合逐tick缓存，命中O(1)
     private static final int FLUID_CACHE_RADIUS_CAP = 16;
     private static final LongOpenHashSet fluidAvoidCache = new LongOpenHashSet();
-    private static final LongOpenHashSet supportAvoidCache = new LongOpenHashSet();
     private static long fluidCacheTick = -1L;
     // 非阻塞型挖掘：记录玩家最近一次手动挖掘的游戏刻（1 tick 防抖）
     private static long lastPlayerMineGameTime = -1L;
@@ -112,7 +111,7 @@ public class BreakUtils {
         if (player == null) return false;
         int radius = avoidScanRadius();
         if (radius > FLUID_CACHE_RADIUS_CAP) {
-            return isFluidState(level.getBlockState(pos.relative(Direction.DOWN)))
+            return isFluidState(level.getBlockState(pos.relative(Direction.UP)))
                     || isFluidState(level.getBlockState(pos.relative(Direction.EAST)))
                     || isFluidState(level.getBlockState(pos.relative(Direction.WEST)))
                     || isFluidState(level.getBlockState(pos.relative(Direction.NORTH)))
@@ -123,16 +122,11 @@ public class BreakUtils {
     }
 
     /**
-     * 不破坏支撑方块判定：当前方块正下方是否是重力方块（被支撑）。
-     * 优先用逐层缓存集合（O(1)命中）；可达半径过大时降级为内联直查正下方。
+     * 不破坏支撑方块判定：待挖方块正上方是否是重力方块。
+     * 该判断只需读取一格，直接查询可避免范围缓存造成方向或移动时的漏判。
      */
     private static boolean isSupportProtected(BlockPos pos, ClientLevel level) {
-        int radius = avoidScanRadius();
-        if (radius > FLUID_CACHE_RADIUS_CAP) {
-            return isGravityBlock(level.getBlockState(pos.relative(Direction.DOWN)));
-        }
-        ensureAvoidCaches(level, LitematicaUtils.client.player, radius);
-        return supportAvoidCache.contains(pos.asLong());
+        return isGravityBlock(level.getBlockState(pos.relative(Direction.UP)));
     }
 
     private static void ensureAvoidCaches(ClientLevel level, LocalPlayer player, int radius) {
@@ -145,10 +139,9 @@ public class BreakUtils {
         }
     }
 
-    // 一次立方体扫描，同时构建"防流体"与"不破坏支撑方块"两份保护集合，减少重复 getBlockState
+    // 扫描交互范围内的流体，标记其需要保护的五个面
     private static void buildAvoidCaches(ClientLevel level, BlockPos center, int radius, long tick) {
         fluidAvoidCache.clear();
-        supportAvoidCache.clear();
         int minX = center.getX() - radius;
         int maxX = center.getX() + radius;
         int minY = center.getY() - radius;
@@ -167,10 +160,6 @@ public class BreakUtils {
                         fluidAvoidCache.add(p.relative(Direction.WEST).asLong());
                         fluidAvoidCache.add(p.relative(Direction.NORTH).asLong());
                         fluidAvoidCache.add(p.relative(Direction.SOUTH).asLong());
-                    }
-                    if (isGravityBlock(state)) {
-                        // 保护重力方块正下方一格
-                        supportAvoidCache.add(p.relative(Direction.DOWN).asLong());
                     }
                 }
             }
