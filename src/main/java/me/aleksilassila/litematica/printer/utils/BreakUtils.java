@@ -5,6 +5,7 @@ import fi.dy.masa.malilib.util.restrictions.UsageRestriction;
 import fi.dy.masa.tweakeroo.tweaks.PlacementTweaks;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
+import me.aleksilassila.litematica.printer.enums.FluidAvoidStrategyType;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
@@ -16,6 +17,8 @@ import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.FluidTags;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.Items;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.AnvilBlock;
@@ -24,10 +27,12 @@ import net.minecraft.world.level.block.FallingBlock;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.HitResult;
-import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Iterator;
 import java.util.LinkedList;
 import java.util.Map;
@@ -48,10 +53,11 @@ public class BreakUtils {
     private boolean forceDelayedDestroy;
     private int externalDestroyLockTicks;
 
-    // 防流体挖掘：受保护位置集合逐tick缓存，命中O(1)
-    private static final int FLUID_CACHE_RADIUS_CAP = 16;
-    private static final LongOpenHashSet fluidAvoidCache = new LongOpenHashSet();
-    private static long fluidCacheTick = -1L;
+    private static final Set<net.minecraft.world.level.block.Block> fluidAvoidBlocks =
+            Collections.newSetFromMap(new IdentityHashMap<>());
+    private static List<String> fluidListSnapshot = List.of();
+    private static FluidAvoidStrategyType fluidStrategySnapshot;
+    private static boolean fluidMatcherInitialized;
     // 非阻塞型挖掘：记录玩家最近一次手动挖掘的游戏刻（1 tick 防抖）
     private static long lastPlayerMineGameTime = -1L;
 
@@ -81,9 +87,32 @@ public class BreakUtils {
                 !player.blockActionRestricted(LitematicaUtils.client.level, pos, LitematicaUtils.client.gameMode.getPlayerMode());
     }
 
-    private static boolean isFluidState(BlockState state) {
-        return state != null && (state.getFluidState().is(FluidTags.WATER)
-                || state.getFluidState().is(FluidTags.LAVA));
+    private static void ensureFluidAvoidMatcher() {
+        List<String> configured = List.copyOf(Configs.Break.BREAK_FLUID_LIST.getStrings());
+        FluidAvoidStrategyType strategy = (FluidAvoidStrategyType) Configs.Break.BREAK_FLUID_STRATEGY.getOptionListValue();
+        if (fluidMatcherInitialized && fluidListSnapshot.equals(configured)) {
+            fluidStrategySnapshot = strategy;
+            return;
+        }
+        fluidAvoidBlocks.clear();
+        for (net.minecraft.world.level.block.Block block : net.minecraft.core.registries.BuiltInRegistries.BLOCK) {
+            BlockState state = block.defaultBlockState();
+            boolean matched = configured.stream().anyMatch(entry -> PinYinSearchUtils.matchBlockName(entry, state));
+            Item item = block.asItem();
+            if (!matched && item != Items.AIR) {
+                matched = configured.stream().anyMatch(entry -> PinYinSearchUtils.matchItemName(entry, new ItemStack(item)));
+            }
+            if (matched) fluidAvoidBlocks.add(block);
+        }
+        fluidListSnapshot = configured;
+        fluidStrategySnapshot = strategy;
+        fluidMatcherInitialized = true;
+    }
+
+    private static boolean isConfiguredFluid(BlockState state) {
+        if (state == null) return false;
+        if (fluidAvoidBlocks.contains(state.getBlock())) return true;
+        return !state.getFluidState().isEmpty() && fluidAvoidBlocks.contains(state.getFluidState().createLegacyBlock().getBlock());
     }
 
     // 判重：是否是会受重力作用下落的方块（沙/沙砾/红沙/混凝土粉末/铁砧/龙蛋等）
@@ -109,16 +138,14 @@ public class BreakUtils {
     private static boolean isFluidProtected(BlockPos pos, ClientLevel level) {
         LocalPlayer player = LitematicaUtils.client.player;
         if (player == null) return false;
-        int radius = avoidScanRadius();
-        if (radius > FLUID_CACHE_RADIUS_CAP) {
-            return isFluidState(level.getBlockState(pos.relative(Direction.UP)))
-                    || isFluidState(level.getBlockState(pos.relative(Direction.EAST)))
-                    || isFluidState(level.getBlockState(pos.relative(Direction.WEST)))
-                    || isFluidState(level.getBlockState(pos.relative(Direction.NORTH)))
-                    || isFluidState(level.getBlockState(pos.relative(Direction.SOUTH)));
-        }
-        ensureAvoidCaches(level, player, radius);
-        return fluidAvoidCache.contains(pos.asLong());
+        ensureFluidAvoidMatcher();
+        if (isConfiguredFluid(level.getBlockState(pos.relative(Direction.DOWN)))
+                || isConfiguredFluid(level.getBlockState(pos.relative(Direction.EAST)))
+                || isConfiguredFluid(level.getBlockState(pos.relative(Direction.WEST)))
+                || isConfiguredFluid(level.getBlockState(pos.relative(Direction.NORTH)))
+                || isConfiguredFluid(level.getBlockState(pos.relative(Direction.SOUTH)))) return true;
+        return fluidStrategySnapshot == FluidAvoidStrategyType.SIX_FACES
+                && isConfiguredFluid(level.getBlockState(pos.relative(Direction.UP)));
     }
 
     /**
@@ -129,43 +156,6 @@ public class BreakUtils {
         return isGravityBlock(level.getBlockState(pos.relative(Direction.UP)));
     }
 
-    private static void ensureAvoidCaches(ClientLevel level, LocalPlayer player, int radius) {
-        if (player == null) {
-            return;
-        }
-        long tick = level.getGameTime();
-        if (fluidCacheTick != tick) {
-            buildAvoidCaches(level, player.blockPosition(), radius, tick);
-        }
-    }
-
-    // 扫描交互范围内的流体，标记其需要保护的五个面
-    private static void buildAvoidCaches(ClientLevel level, BlockPos center, int radius, long tick) {
-        fluidAvoidCache.clear();
-        int minX = center.getX() - radius;
-        int maxX = center.getX() + radius;
-        int minY = center.getY() - radius;
-        int maxY = center.getY() + radius;
-        int minZ = center.getZ() - radius;
-        int maxZ = center.getZ() + radius;
-        for (int y = minY; y <= maxY; y++) {
-            for (int x = minX; x <= maxX; x++) {
-                for (int z = minZ; z <= maxZ; z++) {
-                    BlockPos p = new BlockPos(x, y, z);
-                    BlockState state = level.getBlockState(p);
-                    if (isFluidState(state)) {
-                        // 保护流体 下/东/西/北/南 5 面（顶面不保护）
-                        fluidAvoidCache.add(p.relative(Direction.DOWN).asLong());
-                        fluidAvoidCache.add(p.relative(Direction.EAST).asLong());
-                        fluidAvoidCache.add(p.relative(Direction.WEST).asLong());
-                        fluidAvoidCache.add(p.relative(Direction.NORTH).asLong());
-                        fluidAvoidCache.add(p.relative(Direction.SOUTH).asLong());
-                    }
-                }
-            }
-        }
-        fluidCacheTick = tick;
-    }
 
     public static boolean breakRestriction(BlockState blockState) {
         if (Configs.Break.BREAK_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {

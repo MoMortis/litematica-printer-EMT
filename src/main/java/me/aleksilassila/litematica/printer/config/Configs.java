@@ -201,6 +201,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 核心 - 原理图验证器优化
+        public static final ConfigBoolean SCHEMATIC_VERIFIER_OPTIMIZATION = bool("schematicVerifierOptimization")
+                .defaultValue(false)
+                .build();
+
         // 核心 - 检查更新
         public static final ConfigBoolean UPDATE_CHECK = bool("updateCheck")
                 .defaultValue(true)
@@ -264,6 +269,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 MOTION_AHEAD,
                 AUTO_DISABLE_PRINTER,
                 AUTO_ENABLE_PRINTER,
+                SCHEMATIC_VERIFIER_OPTIMIZATION,
                 UPDATE_CHECK,
                 DEBUG_OUTPUT,
                 CLOUD_INVENTORY,
@@ -291,6 +297,15 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ConfigInteger PLACE_BLOCKS_PER_TICK = integer("placeBlocksPerTick")
                 .defaultValue(1)
                 .range(0, 256)
+                .build();
+
+        public static final ConfigBoolean PLACE_SAME_ITEM_FIRST = bool("placeSameItemFirst")
+                .defaultValue(false)
+                .build();
+
+        public static final ConfigInteger ITEM_SWITCH_INTERVAL = integer("itemSwitchInterval")
+                .defaultValue(0)
+                .range(0, 200)
                 .build();
 
         // 放置冷却
@@ -373,6 +388,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_USE_PACKET,
                 PLACE_INTERVAL,
                 PLACE_BLOCKS_PER_TICK,
+                PLACE_SAME_ITEM_FIRST,
+                ITEM_SWITCH_INTERVAL,
                 PLACE_COOLDOWN,
                 FALLING_CHECK,
                 STORE_ORDERLY,
@@ -442,6 +459,14 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        public static final ConfigStringList BREAK_FLUID_LIST = stringList("breakFluidList")
+                .defaultValue(Blocks.WATER, Blocks.LAVA)
+                .build();
+
+        public static final ConfigOptionList BREAK_FLUID_STRATEGY = optionList("breakFluidStrategy")
+                .defaultValue(FluidAvoidStrategyType.FIVE_FACES)
+                .build();
+
         // 不破坏支撑方块：不破坏重力方块（沙子/沙砾/红沙/混凝土粉末/铁砧/龙蛋等）正下方的一格方块
         public static final ConfigBoolean BREAK_AVOID_SUPPORT = bool("breakAvoidSupport")
                 .defaultValue(false)
@@ -479,6 +504,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_INSTANT_MINE_LIST,
                 BREAK_USE_PACKET,
                 BREAK_AVOID_FLUID,
+                BREAK_FLUID_LIST,
+                BREAK_FLUID_STRATEGY,
                 BREAK_AVOID_SUPPORT,
                 BREAK_NON_BLOCKING,
                 BREAK_PARALLEL,

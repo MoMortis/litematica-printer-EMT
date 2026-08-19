@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.mixin.printer.mc;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import me.aleksilassila.litematica.printer.utils.SchematicVerifierChunkUpdater;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
 import net.minecraft.network.Connection;
@@ -28,6 +29,7 @@ public class MixinConnection {
 
     @Inject(method = "disconnect*", at = {@At("HEAD")})
     public void disconnect(Component ignored, CallbackInfo ci) {
+        SchematicVerifierChunkUpdater.clear();
         exitGameReSet();    // 退出重置
         ConfigUtils.resetAutoEnableSession();
         if (Configs.Core.AUTO_DISABLE_PRINTER.getBooleanValue() && Configs.Core.WORK_SWITCH.getBooleanValue()) {

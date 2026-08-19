@@ -43,6 +43,10 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     private Action action;
 
+    @Nullable
+    private Item activePlacementItem;
+    private long nextPlacementItemTick;
+
     private SchematicBlockContext ctx;
 
     public PrintHandler() {
@@ -70,6 +74,10 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     @Override
     public boolean canProcessPos(BlockPos blockPos) {
+        if (!Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
+            activePlacementItem = null;
+            nextPlacementItemTick = 0L;
+        }
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null) return false;
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
@@ -105,6 +113,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
         }
         Action action = Guides.INSTANCE.buildAction(ctx).orElse(null);
         if (action == null) return false;
+        Item placementItem = getPlacementItem(action);
+        if (placementItem != null && !canPlaceItemNow(placementItem)) return false;
         this.action = action;
         return true;
     }
@@ -149,6 +159,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
         }
         Item[] reqItems = action.getRequiredItems(ctx.requiredState.getBlock());
+        Item placementItem = getPlacementItem(action);
         // 潜影盒守卫 READY 时主手已切好，跳过 switchToItems
         boolean shulkerReady = Configs.Print.PRINT_ONLY_EMPTY_SHULKER.getBooleanValue()
                 && ctx.requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock
@@ -183,6 +194,9 @@ public class PrintHandler extends ClientPlayerTickHandler {
         ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
         ActionManager.INSTANCE.setWaitForHorizontalLook(action.isWaitForHorizontalLook());
         ActionManager.SendResult sendResult = ActionManager.INSTANCE.sendQueue(player);
+        if (sendResult.isSent() && placementItem != null && Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
+            activePlacementItem = placementItem;
+        }
         // 破冰放水：放冰动作已发出，标记冰已放置（下一 tick 位置变为冰后进入破冰阶段）
         PrintTaskController.INSTANCE.onIcePlaceSent(blockPos);
         if (sendResult.isWaiting() || sendResult == ActionManager.SendResult.RESERVE_LIMIT) {
@@ -193,6 +207,42 @@ public class PrintHandler extends ClientPlayerTickHandler {
         } else {
             setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
         }
+    }
+
+    @Nullable
+    private Item getPlacementItem(Action action) {
+        Item targetItem = ctx.requiredState.getBlock().asItem();
+        if (targetItem == Items.AIR) return null;
+        Item[] requiredItems = action.getRequiredItems(ctx.requiredState.getBlock());
+        if (isFreeHandClick(action, requiredItems)) return null;
+        for (Item requiredItem : requiredItems) {
+            if (requiredItem == targetItem) return targetItem;
+        }
+        return null;
+    }
+
+    private boolean canPlaceItemNow(Item item) {
+        long tick = level.getGameTime();
+        if (tick < nextPlacementItemTick) return false;
+        if (activePlacementItem == null || activePlacementItem == item) return true;
+        if (hasPendingPlacement(activePlacementItem)) return false;
+        activePlacementItem = null;
+        int interval = Configs.Placement.ITEM_SWITCH_INTERVAL.getIntegerValue();
+        nextPlacementItemTick = tick + interval;
+        return interval == 0;
+    }
+
+    private boolean hasPendingPlacement(Item item) {
+        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
+        PrinterBox box = boxRef == null ? null : boxRef.get();
+        if (schematic == null || box == null) return false;
+        for (BlockPos pos : box) {
+            if (!PlayerUtils.canInteracted(pos) || !LitematicaUtils.isSchematicBlock(pos)) continue;
+            BlockState required = schematic.getBlockState(pos);
+            if (required.getBlock().asItem() == item
+                    && !BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) return true;
+        }
+        return false;
     }
 
     /**
