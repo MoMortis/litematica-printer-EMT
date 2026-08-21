@@ -1,3 +1,4 @@
+//#if MC <= 12111
 package me.aleksilassila.litematica.printer.mixin.jackf.fix;
 
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.OpenInventoryPacket;
@@ -29,3 +30,4 @@ public class ClientUtilMixin {
         });
     }
 }
+//#endif

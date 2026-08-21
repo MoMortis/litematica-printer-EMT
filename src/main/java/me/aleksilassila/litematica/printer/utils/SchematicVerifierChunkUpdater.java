@@ -82,7 +82,11 @@ public final class SchematicVerifierChunkUpdater {
 
     public static void beginScan(SchematicVerifier verifier, ChunkAccess client, IntBoundingBox box) {
         if (!Configs.Core.SCHEMATIC_VERIFIER_OPTIMIZATION.getBooleanValue()) return;
+        //#if MC < 260102
         ScanContribution scan = new ScanContribution(client.getPos().x, client.getPos().z, box);
+        //#else
+        //$$ ScanContribution scan = new ScanContribution(client.getPos().x(), client.getPos().z(), box);
+        //#endif
         ACTIVE_SCANS.put(verifier, scan);
     }
 

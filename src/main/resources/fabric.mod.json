@@ -4,18 +4,9 @@
   "version": "${mod_version}",
   "icon": "assets/litematica-printer/icon.png",
   "name": "${mod_name}",
-  "description": "An extension for Litematica that adds the missing printer functionality.",
   "authors": [
-    "aleksilassila",
-    "zhaixianyu",
-    "BlinkWhite",
-    "bunnyi116"
+    "PetraSM"
   ],
-  "contact": {
-    "website": "${mod_homepage}",
-    "homepage": "${mod_sources}",
-    "sources": "${mod_sources}"
-  },
   "license": "${mod_license}",
   "environment": "*",
   "entrypoints": {

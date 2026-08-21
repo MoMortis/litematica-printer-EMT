@@ -25,7 +25,7 @@ val Project.modId get() = propStr("mod_id")
 val Project.wrapperModId get() = "$modId-wrapper"
 val Project.modName get() = propStr("mod_name")
 val Project.modVersion get() = propStr("mod_version")
-val Project.modMavenGroup get() = propStr("mod_maven_group")
+val Project.modMavenGroup get() = propStrOrNull("mod_maven_group") ?: ""
 val Project.modArchivesBaseName get() = propStr("mod_archives_base_name")
 
 val Project.modDescription get() = propStrOrNull("mod_description")

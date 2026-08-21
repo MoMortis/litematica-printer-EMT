@@ -1,5 +1,6 @@
 # 构建工具缓存 (Gradle/Kotlin)
 **/.gradle/
+.gradle-user-home/
 .kotlin
 build.number
 gradle-app.setting

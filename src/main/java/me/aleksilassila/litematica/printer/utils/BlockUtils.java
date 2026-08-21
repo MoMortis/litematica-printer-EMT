@@ -2,7 +2,9 @@ package me.aleksilassila.litematica.printer.utils;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.QuickShulkerModeType;
+//#if MC <= 12111
 import net.kyrptonaught.quickshulker.client.ClientUtil;
+//#endif
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -344,12 +346,16 @@ public class BlockUtils {
                     client.player);
         } else if (Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
                 == QuickShulkerModeType.INVOKE) {
+            //#if MC <= 12111
             if (ModUtils.isQuickShulkerLoaded()) {
                 try {
                     ClientUtil.CheckAndSend(stack, shulkerBoxSlot);
                 } catch (Exception ignored) {
                 }
             } else MessageUtils.addMessage(MessageUtils.literal("快捷潜影盒模组未加载！"));
+            //#else
+            //$$ MessageUtils.addMessage(MessageUtils.literal("当前版本不支持快捷潜影盒调用模式！"));
+            //#endif
         }
     }
 

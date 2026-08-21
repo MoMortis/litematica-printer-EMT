@@ -684,11 +684,19 @@ public class InventoryUtils {
             if (contents == null) {
                 continue;
             }
+            //#if MC < 260102
             for (net.minecraft.world.item.ItemStack inner : contents.nonEmptyItems()) {
                 if (inner.is(item)) {
                     count += inner.getCount();
                 }
             }
+            //#else
+            //$$ for (net.minecraft.world.item.ItemStackTemplate inner : contents.nonEmptyItems()) {
+            //$$     if (inner.item().value() == item) {
+            //$$         count += inner.count();
+            //$$     }
+            //$$ }
+            //#endif
         }
         return count;
     }

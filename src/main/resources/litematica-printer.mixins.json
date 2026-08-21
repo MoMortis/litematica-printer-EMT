@@ -4,7 +4,6 @@
   "package": "me.aleksilassila.litematica.printer.mixin",
   "compatibilityLevel": "${compatibility_level}",
   "mixins": [
-    "jackf.fix.ClientUtilMixin",
     "openinv.InventoryMixin",
     "openinv.MixinClientPlayNetworkHandler",
     "openinv.MixinGenericContainerScreenHandler",
