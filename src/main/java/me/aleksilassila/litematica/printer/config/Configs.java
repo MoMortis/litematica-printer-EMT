@@ -454,7 +454,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 防流体挖掘：不挖掘与流体（岩浆/水）紧邻（下东西北南5面）的方块
+        // 防流体挖掘：待挖方块的上、东、西、北、南侧存在目标流体时不挖；六面模式额外检查下侧
         public static final ConfigBoolean BREAK_AVOID_FLUID = bool("breakAvoidFluid")
                 .defaultValue(false)
                 .build();
@@ -467,7 +467,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(FluidAvoidStrategyType.FIVE_FACES)
                 .build();
 
-        // 不破坏支撑方块：不破坏重力方块（沙子/沙砾/红沙/混凝土粉末/铁砧/龙蛋等）正下方的一格方块
+        // 防支撑破坏：待挖方块正上方是沙子、沙砾、混凝土粉末、铁砧、龙蛋等重力方块时不挖该方块
         public static final ConfigBoolean BREAK_AVOID_SUPPORT = bool("breakAvoidSupport")
                 .defaultValue(false)
                 .build();

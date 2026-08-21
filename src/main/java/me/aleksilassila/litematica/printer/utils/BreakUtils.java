@@ -132,24 +132,24 @@ public class BreakUtils {
     }
 
     /**
-     * 防流体挖掘判定：当前方块是否被流体在下/东/西/北/南任一方向紧邻。
+     * 防流体挖掘判定：待挖方块的上/东/西/北/南侧是否存在目标流体；六面模式额外检查下侧。
      * 优先用逐tick缓存集合（O(1)命中）；可达半径过大时降级为内联直查。
      */
     private static boolean isFluidProtected(BlockPos pos, ClientLevel level) {
         LocalPlayer player = LitematicaUtils.client.player;
         if (player == null) return false;
         ensureFluidAvoidMatcher();
-        if (isConfiguredFluid(level.getBlockState(pos.relative(Direction.DOWN)))
+        if (isConfiguredFluid(level.getBlockState(pos.relative(Direction.UP)))
                 || isConfiguredFluid(level.getBlockState(pos.relative(Direction.EAST)))
                 || isConfiguredFluid(level.getBlockState(pos.relative(Direction.WEST)))
                 || isConfiguredFluid(level.getBlockState(pos.relative(Direction.NORTH)))
                 || isConfiguredFluid(level.getBlockState(pos.relative(Direction.SOUTH)))) return true;
         return fluidStrategySnapshot == FluidAvoidStrategyType.SIX_FACES
-                && isConfiguredFluid(level.getBlockState(pos.relative(Direction.UP)));
+                && isConfiguredFluid(level.getBlockState(pos.relative(Direction.DOWN)));
     }
 
     /**
-     * 不破坏支撑方块判定：待挖方块正上方是否是重力方块。
+     * 防支撑破坏判定：待挖方块正上方是否是重力方块。
      * 该判断只需读取一格，直接查询可避免范围缓存造成方向或移动时的漏判。
      */
     private static boolean isSupportProtected(BlockPos pos, ClientLevel level) {
