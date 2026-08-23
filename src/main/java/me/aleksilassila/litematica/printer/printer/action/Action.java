@@ -174,13 +174,16 @@ public class Action {
 
     @SuppressWarnings("SequencedCollectionMethodCanBeUsed")
     public @Nullable Direction getValidSide(ClientLevel world, BlockPos pos) {
-        // 强制放置方向：配置非关闭时，所有放置动作一律使用该方向
-        Direction forcedDirection = getForcedDirection();
-        if (forcedDirection != null) {
-            return forcedDirection;
-        }
+        // 固定方向由具体 Guide 优先决定，例如睡莲等必须点击特定面。
         if (this.fixedSide != null) {
             return this.fixedSide;
+        }
+        // 全局强制方向只作用于未设置方向/支撑面约束的普通方块。
+        if (!this.customSides) {
+            Direction forcedDirection = getForcedDirection();
+            if (forcedDirection != null) {
+                return forcedDirection;
+            }
         }
         List<Direction> orderedSides = getOrderedSides();
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
@@ -211,7 +214,7 @@ public class Action {
     }
 
     /**
-     * 强制放置方向：配置非关闭时返回该方向，否则返回 null
+     * 返回全局强制放置方向；仅由未设置具体 sides 的普通方块使用。
      */
     private static @Nullable Direction getForcedDirection() {
         me.aleksilassila.litematica.printer.enums.DefaultPlaceDirectionType forcedDirection =
