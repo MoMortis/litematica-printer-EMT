@@ -40,7 +40,8 @@ final class QueuedClick {
     ) {
         this.target = target;
         this.side = side;
-        this.hitModifier = hitModifier;
+        // 强制放置方向可能不在 Action 的受限 sides 集合内，此时点击偏移归零（面中心）
+        this.hitModifier = hitModifier == null ? Vec3.ZERO : hitModifier;
         this.useShift = useShift;
         this.repeatCount = Math.max(1, repeatCount);
         this.source = source;

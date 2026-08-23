@@ -7,6 +7,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -20,7 +21,7 @@ public class ClickAction extends Action {
 
     @Override
     public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player, @Nullable Item[] expectedItems) {
-        ActionManager.INSTANCE.queueClick(blockPos, side, getSides().get(side), false, this.clickRepeatCount, expectedItems, ActionManager.ActionSource.PRINT);
+        ActionManager.INSTANCE.queueClick(blockPos, side, getSides().getOrDefault(side, Vec3.ZERO), false, this.clickRepeatCount, expectedItems, ActionManager.ActionSource.PRINT);
         return this;
     }
 

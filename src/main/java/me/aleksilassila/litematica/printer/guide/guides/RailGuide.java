@@ -75,7 +75,7 @@ public class RailGuide extends Guide {
                 || isRepairPending(key)
                 || repairAttempts.getOrDefault(key, 0) >= MAX_REPAIR_ATTEMPTS
                 || !BreakUtils.canBreakBlock(blockPos)
-                || !BreakUtils.breakRestriction(currentState)) {
+                || !BreakUtils.breakRestriction(level, blockPos, currentState)) {
             return Result.SKIP;
         }
 

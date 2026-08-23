@@ -158,15 +158,19 @@ public class BreakUtils {
 
 
     public static boolean breakRestriction(BlockState blockState) {
+        return breakRestriction(LitematicaUtils.client.level, null, blockState);
+    }
+
+    public static boolean breakRestriction(@Nullable ClientLevel level, @Nullable BlockPos pos, BlockState blockState) {
         if (Configs.Break.BREAK_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {
             if (!ModUtils.isTweakerooLoaded()) return true;
             UsageRestriction.ListType listType = PlacementTweaks.BLOCK_TYPE_BREAK_RESTRICTION.getListType();
             if (listType == UsageRestriction.ListType.BLACKLIST) {
                 return fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST.getStrings().stream()
-                        .noneMatch(string -> PinYinSearchUtils.matchBlockName(string, blockState));
+                        .noneMatch(string -> matchesRule(string, level, pos, blockState));
             } else if (listType == UsageRestriction.ListType.WHITELIST) {
                 return fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST.getStrings().stream()
-                        .anyMatch(string -> PinYinSearchUtils.matchBlockName(string, blockState));
+                        .anyMatch(string -> matchesRule(string, level, pos, blockState));
             } else {
                 return true;
             }
@@ -174,14 +178,20 @@ public class BreakUtils {
             IConfigOptionListEntry optionListValue = Configs.Break.BREAK_LIMIT.getOptionListValue();
             if (optionListValue == UsageRestriction.ListType.BLACKLIST) {
                 return Configs.Break.BREAK_BLACKLIST.getStrings().stream()
-                        .noneMatch(string -> PinYinSearchUtils.matchBlockName(string, blockState));
+                        .noneMatch(string -> matchesRule(string, level, pos, blockState));
             } else if (optionListValue == UsageRestriction.ListType.WHITELIST) {
                 return Configs.Break.BREAK_WHITELIST.getStrings().stream()
-                        .anyMatch(string -> PinYinSearchUtils.matchBlockName(string, blockState));
+                        .anyMatch(string -> matchesRule(string, level, pos, blockState));
             } else {
                 return true;
             }
         }
+    }
+
+    public static boolean matchesRule(String rule, @Nullable ClientLevel level, @Nullable BlockPos pos, BlockState state) {
+        BlockNbtRule parsed = BlockNbtRule.parse(rule);
+        return PinYinSearchUtils.matchBlockName(parsed.blockMatcher(), state)
+                && parsed.matchesState(state);
     }
 
     public static boolean trySwitchToEffectiveTool(BlockPos pos, BlockState blockState) {
@@ -374,7 +384,8 @@ public class BreakUtils {
                 if (pos == null) {
                     continue;
                 }
-                if (!PlayerUtils.canInteracted(pos) || !canBreakBlock(pos) || !breakRestriction(level.getBlockState(pos))) {
+                if (!PlayerUtils.canInteracted(pos) || !canBreakBlock(pos)
+                        || !breakRestriction(level, pos, level.getBlockState(pos))) {
                     continue;
                 }
                 BlockBreakResult result = continueDestroyBlock(pos, Direction.DOWN);

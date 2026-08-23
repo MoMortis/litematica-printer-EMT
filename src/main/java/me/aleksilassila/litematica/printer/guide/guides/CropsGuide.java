@@ -92,7 +92,7 @@ public class CropsGuide extends Guide {
         if (wrongStem
                 && Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue()
                 && BreakUtils.canBreakBlock(blockPos)
-                && BreakUtils.breakRestriction(currentState)) {
+                && BreakUtils.breakRestriction(level, blockPos, currentState)) {
             BreakUtils.INSTANCE.add(context);
             return Result.SKIP;
         }

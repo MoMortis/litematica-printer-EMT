@@ -118,7 +118,7 @@ public class DefaultGuide extends Guide {
         boolean printBreakWrongBlock = Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue();
         boolean printBreakExtraBlock = Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue();
         if (printBreakWrongBlock || printBreakExtraBlock) {
-            if (BreakUtils.canBreakBlock(blockPos) && BreakUtils.breakRestriction(currentState)) {
+            if (BreakUtils.canBreakBlock(blockPos) && BreakUtils.breakRestriction(level, blockPos, currentState)) {
                 if (printBreakWrongBlock && !requiredState.isAir()) {
                     BreakUtils.INSTANCE.add(context);
                 } else if (printBreakExtraBlock && requiredState.isAir()
@@ -135,7 +135,7 @@ public class DefaultGuide extends Guide {
         if (Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue()
                 && Configs.Print.BREAK_WRONG_STATE_BLOCK.getBooleanValue()
                 && BreakUtils.canBreakBlock(blockPos)
-                && BreakUtils.breakRestriction(currentState)) {
+                && BreakUtils.breakRestriction(level, blockPos, currentState)) {
             BreakUtils.INSTANCE.add(context);
         }
         return Result.PASS;

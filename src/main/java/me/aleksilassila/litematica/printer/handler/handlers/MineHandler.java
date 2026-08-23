@@ -13,10 +13,10 @@ import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import me.aleksilassila.litematica.printer.utils.ModUtils;
-import me.aleksilassila.litematica.printer.utils.PinYinSearchUtils;
 import me.aleksilassila.litematica.printer.utils.PlayerUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.client.Minecraft;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
@@ -42,7 +42,11 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     public static boolean mineRestriction(BlockState blockState) {
-        if (!BreakUtils.breakRestriction(blockState)) {
+        return mineRestriction(null, blockState);
+    }
+
+    public static boolean mineRestriction(@Nullable BlockPos pos, BlockState blockState) {
+        if (!BreakUtils.breakRestriction(Minecraft.getInstance().level, pos, blockState)) {
             return false;
         }
         if (Configs.Mine.EXCAVATE_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {
@@ -50,10 +54,10 @@ public class MineHandler extends ClientPlayerTickHandler {
             UsageRestriction.ListType listType = PlacementTweaks.BLOCK_TYPE_BREAK_RESTRICTION.getListType();
             if (listType == UsageRestriction.ListType.BLACKLIST) {
                 return fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRICTION_BLACKLIST.getStrings().stream()
-                        .noneMatch(string -> PinYinSearchUtils.matchBlockName(string, blockState));
+                        .noneMatch(string -> BreakUtils.matchesRule(string, Minecraft.getInstance().level, pos, blockState));
             } else if (listType == UsageRestriction.ListType.WHITELIST) {
                 return fi.dy.masa.tweakeroo.config.Configs.Lists.BLOCK_TYPE_BREAK_RESTRICTION_WHITELIST.getStrings().stream()
-                        .anyMatch(string -> PinYinSearchUtils.matchBlockName(string, blockState));
+                        .anyMatch(string -> BreakUtils.matchesRule(string, Minecraft.getInstance().level, pos, blockState));
             } else {
                 return true;
             }
@@ -61,10 +65,10 @@ public class MineHandler extends ClientPlayerTickHandler {
             IConfigOptionListEntry optionListValue = Configs.Mine.EXCAVATE_LIMIT.getOptionListValue();
             if (optionListValue == UsageRestriction.ListType.BLACKLIST) {
                 return Configs.Mine.EXCAVATE_BLACKLIST.getStrings().stream()
-                        .noneMatch(string -> PinYinSearchUtils.matchBlockName(string, blockState));
+                        .noneMatch(string -> BreakUtils.matchesRule(string, Minecraft.getInstance().level, pos, blockState));
             } else if (optionListValue == UsageRestriction.ListType.WHITELIST) {
                 return Configs.Mine.EXCAVATE_WHITELIST.getStrings().stream()
-                        .anyMatch(string -> PinYinSearchUtils.matchBlockName(string, blockState));
+                        .anyMatch(string -> BreakUtils.matchesRule(string, Minecraft.getInstance().level, pos, blockState));
             } else {
                 return true;
             }
@@ -113,7 +117,7 @@ public class MineHandler extends ClientPlayerTickHandler {
         if (isOnCooldown(pos) || BlockPosCooldownManager.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)) {
             return false;
         }
-        return BreakUtils.canBreakBlock(pos) && mineRestriction(level.getBlockState(pos));
+        return BreakUtils.canBreakBlock(pos) && mineRestriction(pos, level.getBlockState(pos));
     }
 
     @Override
@@ -180,7 +184,7 @@ public class MineHandler extends ClientPlayerTickHandler {
         return pos != null
                 && PlayerUtils.canInteracted(pos)
                 && BreakUtils.canBreakBlock(pos)
-                && mineRestriction(level.getBlockState(pos));
+                && mineRestriction(pos, level.getBlockState(pos));
     }
 
     private void executeToolSession(MineBreakExecutor.Target firstTarget, double nearestDistance) {

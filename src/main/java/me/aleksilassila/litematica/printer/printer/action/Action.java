@@ -314,7 +314,7 @@ public class Action {
             ActionManager.INSTANCE.queueClick(
                     blockPos,
                     side.getOpposite(),
-                    getSides().get(side),
+                    getSides().getOrDefault(side, Vec3.ZERO),
                     useShift,
                     this.clickRepeatCount,
                     expectedItems,
@@ -324,7 +324,7 @@ public class Action {
             ActionManager.INSTANCE.queueClick(
                     blockPos.relative(side),
                     side.getOpposite(),
-                    getSides().get(side),
+                    getSides().getOrDefault(side, Vec3.ZERO),
                     useShift,
                     this.clickRepeatCount,
                     expectedItems,

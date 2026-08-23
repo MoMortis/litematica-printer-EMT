@@ -152,7 +152,7 @@ public class PinYinSearchUtils {
      * 匹配方块名称（封装matchName，提升语义）
      */
     public static boolean matchBlockName(String expectedName, BlockState blockState) {
-        return matchName(expectedName, blockState);
+        return matchName(BlockNbtRule.parse(expectedName).blockMatcher(), blockState);
     }
 
     /**
