@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.guide.Guide;
 import me.aleksilassila.litematica.printer.guide.Result;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.ObserverBlock;
 import net.minecraft.world.level.block.state.properties.Property;
@@ -35,6 +36,9 @@ public class ObserverGuide extends Guide {
         // 安全放置模式：只检查输入面（侦测面）是否与原理图一致。
         // 一致则放置，不一致则跳过，等下一轮遍历再试。
         SchematicBlockContext input = context.offset(facing);
+        if (!LitematicaUtils.isSchematicBlock(input.blockPos)) {
+            return Result.success(placementAction(facing));
+        }
         List<Property<?>> inputPropertiesToIgnore = new ArrayList<>();
         BlockMatchResult inputState = BlockMatchResult.compare(
                 input,
