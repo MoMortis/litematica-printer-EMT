@@ -178,6 +178,12 @@ public class PrintHandler extends ClientPlayerTickHandler {
         }
         Direction side = action.getValidSide(level, blockPos);
         if (side == null) return;
+        // 凭空放置的目标必须仍为空/可替换；并发玩家已先占位时不要发送旧点击请求。
+        if (Configs.Print.PLACE_IN_AIR.getBooleanValue()
+                && !action.requiresSupport()
+                && !BlockUtils.isReplaceable(level.getBlockState(blockPos))) {
+            return;
+        }
         boolean useShift;
         if (action.getShift() == null) {
             useShift = (Implementation.isInteractive(level.getBlockState(blockPos.relative(side)).getBlock()) && !(action instanceof ClickAction))

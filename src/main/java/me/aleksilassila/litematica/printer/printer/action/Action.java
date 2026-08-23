@@ -253,6 +253,10 @@ public class Action {
         return this;
     }
 
+    public boolean requiresSupport() {
+        return this.requiresSupport;
+    }
+
     public Action setRequiresSupport() {
         return this.setRequiresSupport(true);
     }
@@ -310,8 +314,7 @@ public class Action {
     }
 
     public Action queueAction(@NotNull BlockPos blockPos, @NotNull Direction side, boolean useShift, @NotNull LocalPlayer player, @Nullable Item[] expectedItems) {
-        boolean forcePlace = getForcedDirection() != null;
-        if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport && !forcePlace) {
+        if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
             ActionManager.INSTANCE.queueClick(
                     blockPos,
                     side.getOpposite(),
