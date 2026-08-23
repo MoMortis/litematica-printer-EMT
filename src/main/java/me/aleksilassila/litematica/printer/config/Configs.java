@@ -311,7 +311,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         // 放置冷却
         public static final ConfigInteger PLACE_COOLDOWN = integer("placeCooldown")
                 .defaultValue(3)
-                .range(0, 64)
+                .range(1, 64)
                 .build();
 
         // 下落方块检查

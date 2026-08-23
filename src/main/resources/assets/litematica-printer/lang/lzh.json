@@ -171,7 +171,7 @@
   "litematica_printer.config.itemSwitchInterval": "換物間隔",
   "litematica_printer.config.itemSwitchInterval.desc": "當前物品無待置目標後，換下一物品前所待之遊戲刻。",
   "litematica_printer.config.placeCooldown": "置石調息刻",
-  "litematica_printer.config.placeCooldown.desc": "置同一石後須靜候之刻數，期滿方可再置。\n§c§l非必要勿設零，否則恐致多置、誤置之患！§r",
+  "litematica_printer.config.placeCooldown.desc": "處理同一石後須靜候之刻數，期滿方可再置。",
   "litematica_printer.config.placeInAir": "淩空置石",
   "litematica_printer.config.placeInAir.desc": "無視石需支撐之常理，直於空中置石（適無支之飾石）。",
   "litematica_printer.config.placeInterval": "置石間隔刻",

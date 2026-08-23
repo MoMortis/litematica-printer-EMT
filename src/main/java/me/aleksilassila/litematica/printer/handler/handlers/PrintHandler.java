@@ -121,6 +121,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+        // 任何针对该位置的处理结果都必须等待冷却后才能再次尝试。
+        setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
         // 破冰放水：破冰阶段直接把冰入破坏队列，工具切换交给 tweakeroo
         if (PrintTaskController.INSTANCE.isBreaking(blockPos)) {
             BreakUtils.INSTANCE.add(blockPos);

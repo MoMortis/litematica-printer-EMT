@@ -171,7 +171,7 @@
   "litematica_printer.config.itemSwitchInterval": "切換物品間隔",
   "litematica_printer.config.itemSwitchInterval.desc": "目前物品沒有待放置目標後，切換下一種物品前等待的遊戲刻數。",
   "litematica_printer.config.placeCooldown": "放置冷卻時間",
-  "litematica_printer.config.placeCooldown.desc": "同一位置放置方塊後的冷卻時間(單位為遊戲刻)，冷卻結束後才會重試放置操作。\n§c§l非必要請勿設定為0，否則會導致多放方塊、無法正確放置等問題！§r",
+  "litematica_printer.config.placeCooldown.desc": "同一位置處理方塊後的冷卻時間(單位為遊戲刻)，冷卻結束後才會重試放置操作。",
   "litematica_printer.config.placeInAir": "憑空放置",
   "litematica_printer.config.placeInAir.desc": "無視方塊支撐要求，直接在空位置放置方塊(適用於無支撐的裝飾性方塊)。",
   "litematica_printer.config.placeInterval": "放置間隔時間",

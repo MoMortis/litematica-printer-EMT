@@ -171,7 +171,7 @@
   "litematica_printer.config.itemSwitchInterval": "Item Switch Interval",
   "litematica_printer.config.itemSwitchInterval.desc": "Ticks to wait before switching to another placement item.",
   "litematica_printer.config.placeCooldown": "Placement Cooldown Time",
-  "litematica_printer.config.placeCooldown.desc": "Cooldown time after placing blocks at the same location (in game ticks). Retry placement operation only after cooldown ends.\n§c§lDo not set to 0 unless necessary, otherwise it will cause placing extra blocks, inability to place correctly and other issues!§r",
+  "litematica_printer.config.placeCooldown.desc": "Cooldown time after processing a block at the same location (in game ticks). Retry placement operation only after cooldown ends.",
   "litematica_printer.config.placeInAir": "Place in Air",
   "litematica_printer.config.placeInAir.desc": "Ignore block support requirements and place blocks directly in air positions (applicable to unsupported decorative blocks).",
   "litematica_printer.config.placeInterval": "Placement Interval Time",
