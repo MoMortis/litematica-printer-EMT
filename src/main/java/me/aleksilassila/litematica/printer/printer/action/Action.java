@@ -178,12 +178,10 @@ public class Action {
         if (this.fixedSide != null) {
             return this.fixedSide;
         }
-        // 全局强制方向只作用于未设置方向/支撑面约束的普通方块。
-        if (!this.customSides) {
-            Direction forcedDirection = getForcedDirection();
-            if (forcedDirection != null) {
-                return forcedDirection;
-            }
+        // 全局强制方向作用于所有未设置固定方向的放置动作。
+        Direction forcedDirection = getForcedDirection();
+        if (forcedDirection != null) {
+            return forcedDirection;
         }
         List<Direction> orderedSides = getOrderedSides();
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
