@@ -111,6 +111,11 @@ public class PrintHandler extends ClientPlayerTickHandler {
             this.action = new Action();
             return true;
         }
+        // 侦测器安全检查本身也算一次位置处理，无论检查通过与否都必须等待冷却。
+        if (Configs.Print.SAFELY_OBSERVER.getBooleanValue()
+                && ctx.requiredState.getBlock() instanceof ObserverBlock) {
+            setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+        }
         Action action = Guides.INSTANCE.buildAction(ctx).orElse(null);
         if (action == null) return false;
         Item placementItem = getPlacementItem(action);
