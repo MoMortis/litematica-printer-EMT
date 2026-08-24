@@ -22,8 +22,10 @@ import fi.dy.masa.malilib.render.GuiContext;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class BlockNbtRuleScreen extends GuiBase {
     private static final int ROW_HEIGHT = 24;
@@ -85,19 +87,16 @@ public class BlockNbtRuleScreen extends GuiBase {
                 }
             }
         }
-        List<String> paths = new ArrayList<>();
+        Set<String> paths = new LinkedHashSet<>();
         if (target != null) {
             for (Property<?> property : target.getProperties()) {
                 paths.add("state." + property.getName());
             }
         }
-        if (paths.isEmpty()) {
-            rule.conditions().stream().map(BlockNbtRule.Condition::path)
-                    .filter(path -> path.startsWith("state."))
-                    .filter(path -> !paths.contains(path))
-                    .forEach(paths::add);
-        }
-        return paths;
+        rule.conditions().stream().map(BlockNbtRule.Condition::path)
+                .filter(path -> path.startsWith("state."))
+                .forEach(paths::add);
+        return new ArrayList<>(paths);
     }
 
     @Override

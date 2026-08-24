@@ -358,11 +358,11 @@ while (cachedIterator.hasNext()) {
                         : new GuiBlockInfo(level, null, pos);
                 gui.interacted = true;
                 gui.posInSelectionRange = true;
-                gui.execute = canProcessPos(pos) && !isOnCooldown(pos);
+                gui.execute = !isOnCooldown(pos) && canProcessPos(pos);
                 addGuiInfo(gui);
             }
     
-            if (canProcessPos(pos) && !isOnCooldown(pos)) {
+            if (!isOnCooldown(pos) && canProcessPos(pos)) {
                 executeIteration(pos, skipIteration);
     
                 if (skipIteration.get() || (maxExecs > 0 && ++execCount >= maxExecs)) {

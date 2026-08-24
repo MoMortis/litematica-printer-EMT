@@ -17,6 +17,7 @@ final class QueuedClick {
     final Direction side;
     Vec3 hitModifier;
     final boolean useShift;
+    final boolean requireReplaceableTarget;
     boolean useProtocol;
     final int repeatCount;
     final ActionManager.ActionSource source;
@@ -36,13 +37,15 @@ final class QueuedClick {
             @NotNull Vec3 hitModifier,
             boolean useShift,
             int repeatCount,
-            @NotNull ActionManager.ActionSource source
+            @NotNull ActionManager.ActionSource source,
+            boolean requireReplaceableTarget
     ) {
         this.target = target;
         this.side = side;
         // 强制放置方向可能不在 Action 的受限 sides 集合内，此时点击偏移归零（面中心）
         this.hitModifier = hitModifier == null ? Vec3.ZERO : hitModifier;
         this.useShift = useShift;
+        this.requireReplaceableTarget = requireReplaceableTarget;
         this.repeatCount = Math.max(1, repeatCount);
         this.source = source;
         Minecraft client = Minecraft.getInstance();

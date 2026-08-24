@@ -112,7 +112,13 @@ public class PrintHandler extends ClientPlayerTickHandler {
             return true;
         }
         Action action = Guides.INSTANCE.buildAction(ctx).orElse(null);
-        if (action == null) return false;
+        if (action == null) {
+            if (Configs.Print.SAFELY_OBSERVER.getBooleanValue()
+                    && ctx.requiredState.getBlock() instanceof ObserverBlock) {
+                setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+            }
+            return false;
+        }
         Item placementItem = getPlacementItem(action);
         if (placementItem != null && !canPlaceItemNow(placementItem)) return false;
         this.action = action;
@@ -181,6 +187,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         // 凭空放置的目标必须仍为空/可替换；并发玩家已先占位时不要发送旧点击请求。
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue()
                 && !action.requiresSupport()
+                && !(action instanceof ClickAction)
                 && !BlockUtils.isReplaceable(level.getBlockState(blockPos))) {
             return;
         }

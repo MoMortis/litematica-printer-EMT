@@ -119,7 +119,7 @@ public class ActionManager {
     }
 
     public boolean queueClick(@NotNull BlockPos target, @NotNull Direction side, @NotNull Vec3 hitModifier, boolean useShift, int clickRepeatCount, @Nullable Item[] expectedItems) {
-        return this.queueClick(target, side, hitModifier, useShift, clickRepeatCount, expectedItems, ActionSource.GENERIC);
+        return this.queueClick(target, side, hitModifier, useShift, clickRepeatCount, expectedItems, ActionSource.GENERIC, false);
     }
 
     public boolean queueClick(
@@ -131,10 +131,23 @@ public class ActionManager {
             @Nullable Item[] expectedItems,
             @NotNull ActionSource source
     ) {
+        return this.queueClick(target, side, hitModifier, useShift, clickRepeatCount, expectedItems, source, false);
+    }
+
+    public boolean queueClick(
+            @NotNull BlockPos target,
+            @NotNull Direction side,
+            @NotNull Vec3 hitModifier,
+            boolean useShift,
+            int clickRepeatCount,
+            @Nullable Item[] expectedItems,
+            @NotNull ActionSource source,
+            boolean requireReplaceableTarget
+    ) {
         if (this.queuedClick != null) {
             return false;
         }
-        this.queuedClick = new QueuedClick(target, side, hitModifier, useShift, clickRepeatCount, source);
+        this.queuedClick = new QueuedClick(target, side, hitModifier, useShift, clickRepeatCount, source, requireReplaceableTarget);
         this.queuedClick.expectItems(expectedItems);
         return true;
     }
@@ -193,6 +206,11 @@ public class ActionManager {
         int reserveAllowance = getReserveAllowance(player, click);
         if (reserveAllowance <= 0) {
             return this.finish(click, SendResult.RESERVE_LIMIT);
+        }
+        if (click.requireReplaceableTarget
+                && Reference.MINECRAFT.level != null
+                && !BlockUtils.isReplaceable(Reference.MINECRAFT.level.getBlockState(click.target))) {
+            return this.finish(click, SendResult.INTERACTION_REJECTED);
         }
         Direction direction;
         if (look == null) {

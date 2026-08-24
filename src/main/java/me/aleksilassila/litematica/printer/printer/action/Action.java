@@ -322,7 +322,8 @@ public class Action {
                     useShift,
                     this.clickRepeatCount,
                     expectedItems,
-                    this.actionSource
+                    this.actionSource,
+                    true
             );
         } else {
             ActionManager.INSTANCE.queueClick(

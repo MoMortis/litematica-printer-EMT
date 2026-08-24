@@ -20,6 +20,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MixinWidgetStringListEditEntry extends WidgetConfigOptionBase<String> {
     @Shadow protected int listIndex;
     @Shadow protected WidgetListStringListEdit parent;
+    @Shadow protected String initialStringValue;
+    @Shadow protected String lastAppliedValue;
     private BlockNbtRule litematica_printer$pendingRule;
 
     protected MixinWidgetStringListEditEntry(int x, int y, int width, int height,
@@ -39,6 +41,8 @@ public abstract class MixinWidgetStringListEditEntry extends WidgetConfigOptionB
         BlockNbtRule storedRule = BlockNbtRule.parse(entry);
         if (!storedRule.conditions().isEmpty() && this.textField != null) {
             this.textField.textField().setTextWrapper(storedRule.blockMatcher());
+            this.initialStringValue = storedRule.blockMatcher();
+            this.lastAppliedValue = storedRule.blockMatcher();
         }
         // Malilib places the text field at rowX + rowWidth - 138.
         ButtonGeneric button = new ButtonGeneric(this.x + this.width - 158, this.y + 4,
@@ -76,7 +80,13 @@ public abstract class MixinWidgetStringListEditEntry extends WidgetConfigOptionB
                 || config.getName().endsWith("excavateBlacklist"))) return;
         if (this.listIndex < config.getStrings().size()) {
             String blockMatcher = this.textField.textField().getTextWrapper();
-            config.getStrings().set(this.listIndex, new BlockNbtRule(blockMatcher, rule.conditions()).encode());
+            BlockNbtRule displayedRule = BlockNbtRule.parse(blockMatcher);
+            if (blockMatcher.startsWith("@nbt:")) {
+                blockMatcher = displayedRule.blockMatcher();
+            }
+            String encoded = new BlockNbtRule(blockMatcher, rule.conditions()).encode();
+            config.getStrings().set(this.listIndex, encoded);
+            this.lastAppliedValue = blockMatcher;
             config.markDirty();
             config.setModified();
         }
