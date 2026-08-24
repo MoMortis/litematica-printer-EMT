@@ -30,8 +30,11 @@ import java.util.Queue;
 import java.util.Set;
 
 public final class SchematicVerifierChunkUpdater {
+    private static final int MAX_PENDING_RELOADS = 4096;
+    private static final int MAX_RELOAD_RETRIES = 100;
     private static final Queue<ReloadRequest> QUEUE = new ArrayDeque<>();
     private static final Set<Long> QUEUED = new HashSet<>();
+    private static final Map<Long, Integer> RELOAD_RETRIES = new HashMap<>();
     private static final Map<SchematicVerifier, Map<ScanKey, ScanContribution>> SCANS = new HashMap<>();
     private static final Map<SchematicVerifier, ScanContribution> ACTIVE_SCANS = new HashMap<>();
     private static final Map<SchematicVerifier, Long2ObjectOpenHashMap<PositionSnapshot>> INTERACTIVE_SNAPSHOTS = new HashMap<>();
@@ -50,7 +53,14 @@ public final class SchematicVerifierChunkUpdater {
         }
         long key = key(x, z);
         if (QUEUED.add(key)) {
+            if (QUEUE.size() >= MAX_PENDING_RELOADS) {
+                ReloadRequest dropped = QUEUE.remove();
+                long droppedKey = key(dropped.x, dropped.z);
+                QUEUED.remove(droppedKey);
+                RELOAD_RETRIES.remove(droppedKey);
+            }
             QUEUE.add(new ReloadRequest(x, z));
+            RELOAD_RETRIES.putIfAbsent(key, 0);
         }
     }
 
@@ -71,9 +81,20 @@ public final class SchematicVerifierChunkUpdater {
         int x = request.x;
         int z = request.z;
         ClientLevelAccess chunks = getChunks(ext, x, z);
-        if (chunks == null) return;
+        if (chunks == null) {
+            QUEUE.remove();
+            QUEUE.add(request);
+            int retries = RELOAD_RETRIES.merge(key(x, z), 1, Integer::sum);
+            if (retries >= MAX_RELOAD_RETRIES) {
+                QUEUE.remove(request);
+                QUEUED.remove(key(x, z));
+                RELOAD_RETRIES.remove(key(x, z));
+            }
+            return;
+        }
         QUEUE.remove();
         QUEUED.remove(key(x, z));
+        RELOAD_RETRIES.remove(key(x, z));
         removeChunk(verifier, x, z, ext);
         ImmutableMap<String, IntBoundingBox> boxes = ext.printer$getPlacement().getBoxesWithinChunk(x, z);
         for (IntBoundingBox box : boxes.values()) ext.printer$invokeVerifyChunk(chunks.client, chunks.schematic, box);
@@ -116,10 +137,15 @@ public final class SchematicVerifierChunkUpdater {
         if (scan != null) SCANS.computeIfAbsent(verifier, ignored -> new HashMap<>()).put(scan.key(), scan);
     }
 
-    public static void clearVerifier(SchematicVerifier verifier) { SCANS.remove(verifier); ACTIVE_SCANS.remove(verifier); clearQueue(); }
+    public static void clearVerifier(SchematicVerifier verifier) {
+        SCANS.remove(verifier);
+        ACTIVE_SCANS.remove(verifier);
+        INTERACTIVE_SNAPSHOTS.remove(verifier);
+        clearQueue();
+    }
     public static void clear() { SCANS.clear(); ACTIVE_SCANS.clear(); INTERACTIVE_SNAPSHOTS.clear(); clearQueue(); }
 
-    private static void clearQueue() { QUEUE.clear(); QUEUED.clear(); }
+    private static void clearQueue() { QUEUE.clear(); QUEUED.clear(); RELOAD_RETRIES.clear(); }
 
     private static void refreshInteractiveRange(SchematicVerifier verifier, SchematicVerifierExtension ext) {
         Minecraft minecraft = Minecraft.getInstance();
@@ -161,6 +187,11 @@ public final class SchematicVerifierChunkUpdater {
                 }
             }
         }
+        snapshots.long2ObjectEntrySet().removeIf(entry -> {
+            if (visited.contains(entry.getLongKey())) return false;
+            removePositionContribution(verifier, ext, entry.getValue());
+            return true;
+        });
         ext.printer$updateOverlays();
     }
 
