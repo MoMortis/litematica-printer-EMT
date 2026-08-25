@@ -60,6 +60,17 @@ public abstract class MixinGui {
     }
 
     @Unique
+    private static final class DebugHandlerInfo {
+        private final ClientPlayerTickHandler handler;
+        private final GuiBlockInfo guiInfo;
+
+        private DebugHandlerInfo(ClientPlayerTickHandler handler, GuiBlockInfo guiInfo) {
+            this.handler = handler;
+            this.guiInfo = guiInfo;
+        }
+    }
+
+    @Unique
     private List<String> buildHandlerDebugLines(ClientPlayerTickHandler handler, GuiBlockInfo guiInfo) {
         List<String> lines = new ArrayList<>();
         lines.add("处理类型: " + handler.getId());
@@ -129,7 +140,7 @@ public abstract class MixinGui {
     @Unique
     private void drawDebugInfo(float scaledWidth, float scaledHeight) {
         Minecraft mc = Minecraft.getInstance();
-        List<ClientPlayerTickHandler> validHandlers = new ArrayList<>();
+        List<DebugHandlerInfo> validHandlers = new ArrayList<>();
         int globalMaxTextWidth = MIN_COLUMN_WIDTH;
 
         // 1. 收集有效Handler并计算全局最大宽度
@@ -137,7 +148,7 @@ public abstract class MixinGui {
             GuiBlockInfo guiInfo = handler.nextGuiInfo();
             if (guiInfo == null) continue;
 
-            validHandlers.add(handler);
+            validHandlers.add(new DebugHandlerInfo(handler, guiInfo));
             List<String> lines = buildHandlerDebugLines(handler, guiInfo);
             for (String line : lines) {
                 String cleanLine = line.replaceAll("§[0-9a-fA-Fklmnor]", "");
@@ -196,7 +207,7 @@ public abstract class MixinGui {
      * @return 实际绘制的Handler数量
      */
     @Unique
-    private int drawHandlerPanels(List<ClientPlayerTickHandler> handlers, int startIndex,
+    private int drawHandlerPanels(List<DebugHandlerInfo> handlers, int startIndex,
                                   int startX, int startY, int columnWidth,
                                   int maxColumns, int availableHeight, float scaledHeight) {
         int drawnCount = 0;
@@ -205,12 +216,10 @@ public abstract class MixinGui {
         int currentY = startY;
 
         for (int i = startIndex; i < handlers.size(); i++) {
-            ClientPlayerTickHandler handler = handlers.get(i);
-            GuiBlockInfo guiInfo = handler.nextGuiInfo();
-            if (guiInfo == null) continue;
+            DebugHandlerInfo handlerInfo = handlers.get(i);
 
             // 构建调试文本并计算面板高度
-            List<String> debugLines = buildHandlerDebugLines(handler, guiInfo);
+            List<String> debugLines = buildHandlerDebugLines(handlerInfo.handler, handlerInfo.guiInfo);
             int panelHeight = debugLines.size() * DEBUG_LINE_HEIGHT + DEBUG_PADDING * 2;
 
             // 列数满了，换行
