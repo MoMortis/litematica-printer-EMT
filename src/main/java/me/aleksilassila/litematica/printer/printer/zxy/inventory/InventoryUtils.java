@@ -161,6 +161,7 @@ public class InventoryUtils {
     static int shulkerBoxSlot = -1;
 
     public static void armHiddenShulkerSession() {
+        clearHiddenShulkerCloseAcknowledgement();
         hiddenShulkerContainerId = -1;
         hiddenShulkerTimeout = HIDDEN_SHULKER_TIMEOUT_TICKS;
         hiddenShulkerAwaitingOpen = true;
@@ -211,19 +212,27 @@ public class InventoryUtils {
         client.getConnection().send(new ServerboundContainerClosePacket(containerId));
         player.containerMenu.removed(player);
         player.containerMenu = player.inventoryMenu;
+        clearHiddenShulkerSession();
         hiddenShulkerClosedContainerId = containerId;
         hiddenShulkerClosedTimeout = HIDDEN_SHULKER_TIMEOUT_TICKS;
-        clearHiddenShulkerSession();
         return true;
     }
 
     public static void clearHiddenShulkerSession() {
         hiddenShulkerContainerId = -1;
-        hiddenShulkerClosedContainerId = -1;
         hiddenShulkerTimeout = 0;
-        hiddenShulkerClosedTimeout = 0;
         hiddenShulkerAwaitingOpen = false;
         hiddenShulkerPendingContent = false;
+    }
+
+    public static void clearHiddenShulkerState() {
+        clearHiddenShulkerSession();
+        clearHiddenShulkerCloseAcknowledgement();
+    }
+
+    private static void clearHiddenShulkerCloseAcknowledgement() {
+        hiddenShulkerClosedContainerId = -1;
+        hiddenShulkerClosedTimeout = 0;
     }
 
     public static boolean handleHiddenShulkerServerClose(int containerId) {
@@ -284,8 +293,11 @@ public class InventoryUtils {
                             me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(player.getInventory(), c);
                             // 刷新潜影盒内容必须在关闭对应菜单前完成。
                             if (shulkerBoxSlot != -1) {
-                                client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
-                                client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
+                                int refreshSlot = isHiddenShulkerContainer(sc.containerId)
+                                        ? shulkerBoxSlot + 18
+                                        : shulkerBoxSlot;
+                                client.gameMode.handleInventoryMouseClick(sc.containerId, refreshSlot, 0, ClickType.PICKUP, client.player);
+                                client.gameMode.handleInventoryMouseClick(sc.containerId, refreshSlot, 0, ClickType.PICKUP, client.player);
                             }
                             if (!closeHiddenShulker(sc.containerId)) {
                                 player.closeContainer();
