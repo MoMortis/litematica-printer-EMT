@@ -339,7 +339,7 @@ public class BlockUtils {
         lastOpenedShulkerTimeMillis = System.currentTimeMillis();
         if (Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
                 == QuickShulkerModeType.CLICK_SLOT) {
-            InventoryUtils.armHiddenShulkerSession();
+            InventoryUtils.beginAutomatedQuickShulkerScreenProtection();
             client.gameMode.handleInventoryMouseClick(
                     client.player.containerMenu.containerId,
                     shulkerBoxSlot,

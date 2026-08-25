@@ -128,10 +128,8 @@ public class SwitchItem {
                 }
                 removeItem(reSwitchItem);
                 reSwitchItem = null;
-                if (!me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils
-                        .closeHiddenShulker(sc.containerId)) {
-                    player.closeContainer();
-                }
+                me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils
+                        .closeAutomatedQuickShulkerContainer(player);
                 if (!reInv) {
                     MessageUtils.setOverlayMessage(I18n.INVENTORY_RESTORE_FAILED.getName());
                 }

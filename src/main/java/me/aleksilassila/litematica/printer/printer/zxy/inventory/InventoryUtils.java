@@ -9,12 +9,12 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.mixin.printer.litematica.InventoryUtilsAccessor;
 import me.aleksilassila.litematica.printer.printer.zxy.utils.ZxyUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.world.entity.monster.Shulker;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
@@ -50,15 +50,13 @@ import java.util.HashSet;
 import static me.aleksilassila.litematica.printer.printer.zxy.inventory.OpenInventoryPacket.openIng;
 
 public class InventoryUtils {
-    private static final int HIDDEN_SHULKER_TIMEOUT_TICKS = 40;
+    private static final int AUTOMATED_QUICK_SHULKER_SCREEN_PROTECTION_TIMEOUT_TICKS = 40;
 
     private static int shulkerCooldown = 0;
-    private static int hiddenShulkerContainerId = -1;
-    private static int hiddenShulkerClosedContainerId = -1;
-    private static int hiddenShulkerTimeout = 0;
-    private static int hiddenShulkerClosedTimeout = 0;
-    private static boolean hiddenShulkerAwaitingOpen;
-    private static boolean hiddenShulkerPendingContent;
+    private static int automatedQuickShulkerScreenProtectionTimeout;
+    private static boolean automatedQuickShulkerScreenProtection;
+    private static boolean preserveAutomatedQuickShulkerScreenOnClose;
+    private static Screen protectedScreen;
 
     private static final Minecraft client = Minecraft.getInstance();
 
@@ -100,9 +98,50 @@ public class InventoryUtils {
 
     public static boolean shouldSuppressContainerScreen() {
         LocalPlayer player = client.player;
-        return player != null
+        return automatedQuickShulkerScreenProtection
+                && player != null
                 && !player.containerMenu.equals(player.inventoryMenu)
                 && (isOpenHandler || SwitchItem.reSwitchItem != null);
+    }
+
+    public static void beginAutomatedQuickShulkerScreenProtection() {
+        automatedQuickShulkerScreenProtection = true;
+        automatedQuickShulkerScreenProtectionTimeout = AUTOMATED_QUICK_SHULKER_SCREEN_PROTECTION_TIMEOUT_TICKS;
+        preserveAutomatedQuickShulkerScreenOnClose = false;
+        protectedScreen = client.screen;
+    }
+
+    public static boolean shouldPreserveAutomatedQuickShulkerScreenOnClose(Screen screen) {
+        if (!automatedQuickShulkerScreenProtection
+                || !preserveAutomatedQuickShulkerScreenOnClose
+                || screen != null) {
+            return false;
+        }
+        preserveAutomatedQuickShulkerScreenOnClose = false;
+        automatedQuickShulkerScreenProtection = false;
+        automatedQuickShulkerScreenProtectionTimeout = 0;
+        protectedScreen = null;
+        return true;
+    }
+
+    public static void closeAutomatedQuickShulkerContainer(LocalPlayer player) {
+        if (!automatedQuickShulkerScreenProtection) {
+            player.closeContainer();
+            return;
+        }
+        preserveAutomatedQuickShulkerScreenOnClose = protectedScreen != null;
+        player.closeContainer();
+        automatedQuickShulkerScreenProtection = false;
+        automatedQuickShulkerScreenProtectionTimeout = 0;
+        preserveAutomatedQuickShulkerScreenOnClose = false;
+        protectedScreen = null;
+    }
+
+    public static void clearAutomatedQuickShulkerScreenProtection() {
+        automatedQuickShulkerScreenProtection = false;
+        automatedQuickShulkerScreenProtectionTimeout = 0;
+        preserveAutomatedQuickShulkerScreenOnClose = false;
+        protectedScreen = null;
     }
 
     public static boolean switchItem() {
@@ -160,107 +199,7 @@ public class InventoryUtils {
 
     static int shulkerBoxSlot = -1;
 
-    public static void armHiddenShulkerSession() {
-        clearHiddenShulkerCloseAcknowledgement();
-        hiddenShulkerContainerId = -1;
-        hiddenShulkerTimeout = HIDDEN_SHULKER_TIMEOUT_TICKS;
-        hiddenShulkerAwaitingOpen = true;
-        hiddenShulkerPendingContent = false;
-    }
-
-    public static boolean isAwaitingHiddenShulkerOpen() {
-        return hiddenShulkerAwaitingOpen && hiddenShulkerTimeout > 0;
-    }
-
-    public static boolean openHiddenShulkerMenu(int containerId, AbstractContainerMenu menu) {
-        LocalPlayer player = client.player;
-        if (!isAwaitingHiddenShulkerOpen() || player == null || menu == null) {
-            return false;
-        }
-        hiddenShulkerContainerId = containerId;
-        hiddenShulkerAwaitingOpen = false;
-        hiddenShulkerTimeout = HIDDEN_SHULKER_TIMEOUT_TICKS;
-        player.containerMenu = menu;
-        return true;
-    }
-
-    public static boolean isHiddenShulkerContainer(int containerId) {
-        return hiddenShulkerContainerId == containerId;
-    }
-
-    public static void markHiddenShulkerContent(int containerId) {
-        if (isHiddenShulkerContainer(containerId)) {
-            hiddenShulkerPendingContent = true;
-            hiddenShulkerTimeout = HIDDEN_SHULKER_TIMEOUT_TICKS;
-        }
-    }
-
-    public static boolean consumeHiddenShulkerContent() {
-        if (!hiddenShulkerPendingContent) {
-            return false;
-        }
-        hiddenShulkerPendingContent = false;
-        return true;
-    }
-
-    public static boolean closeHiddenShulker(int containerId) {
-        LocalPlayer player = client.player;
-        if (!isHiddenShulkerContainer(containerId) || player == null
-                || player.containerMenu.containerId != containerId) {
-            return false;
-        }
-        client.getConnection().send(new ServerboundContainerClosePacket(containerId));
-        player.containerMenu.removed(player);
-        player.containerMenu = player.inventoryMenu;
-        clearHiddenShulkerSession();
-        hiddenShulkerClosedContainerId = containerId;
-        hiddenShulkerClosedTimeout = HIDDEN_SHULKER_TIMEOUT_TICKS;
-        return true;
-    }
-
-    public static void clearHiddenShulkerSession() {
-        hiddenShulkerContainerId = -1;
-        hiddenShulkerTimeout = 0;
-        hiddenShulkerAwaitingOpen = false;
-        hiddenShulkerPendingContent = false;
-    }
-
-    public static void clearHiddenShulkerState() {
-        clearHiddenShulkerSession();
-        clearHiddenShulkerCloseAcknowledgement();
-    }
-
-    private static void clearHiddenShulkerCloseAcknowledgement() {
-        hiddenShulkerClosedContainerId = -1;
-        hiddenShulkerClosedTimeout = 0;
-    }
-
-    public static boolean handleHiddenShulkerServerClose(int containerId) {
-        if (containerId == hiddenShulkerClosedContainerId && hiddenShulkerClosedTimeout > 0) {
-            hiddenShulkerClosedContainerId = -1;
-            hiddenShulkerClosedTimeout = 0;
-            return true;
-        }
-        LocalPlayer player = client.player;
-        if (!isHiddenShulkerContainer(containerId) || player == null
-                || player.containerMenu.containerId != containerId) {
-            return false;
-        }
-        player.containerMenu.removed(player);
-        player.containerMenu = player.inventoryMenu;
-        finishQuickShulker();
-        return true;
-    }
-
-    private static void finishQuickShulker() {
-        shulkerBoxSlot = -1;
-        isOpenHandler = false;
-        lastNeedItemList = new HashSet<>();
-        clearHiddenShulkerSession();
-    }
-
     public static void switchInv() {
-        hiddenShulkerPendingContent = false;
         LocalPlayer player = Minecraft.getInstance().player;
         AbstractContainerMenu sc = player.containerMenu;
         if (sc.equals(player.inventoryMenu)) {
@@ -291,18 +230,14 @@ public class InventoryUtils {
                             ZxyUtils.switchPlayerInvToHotbarAir(c);
                             fi.dy.masa.malilib.util.InventoryUtils.swapSlots(sc, y, c);
                             me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(player.getInventory(), c);
-                            // 刷新潜影盒内容必须在关闭对应菜单前完成。
                             if (shulkerBoxSlot != -1) {
-                                int refreshSlot = isHiddenShulkerContainer(sc.containerId)
-                                        ? shulkerBoxSlot + 18
-                                        : shulkerBoxSlot;
-                                client.gameMode.handleInventoryMouseClick(sc.containerId, refreshSlot, 0, ClickType.PICKUP, client.player);
-                                client.gameMode.handleInventoryMouseClick(sc.containerId, refreshSlot, 0, ClickType.PICKUP, client.player);
+                                client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
+                                client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
                             }
-                            if (!closeHiddenShulker(sc.containerId)) {
-                                player.closeContainer();
-                            }
-                            finishQuickShulker();
+                            shulkerBoxSlot = -1;
+                            isOpenHandler = false;
+                            lastNeedItemList = new HashSet<>();
+                            closeAutomatedQuickShulkerContainer(player);
                             return;
                         } catch (Exception e) {
                             System.out.println("切换物品异常");
@@ -316,9 +251,7 @@ public class InventoryUtils {
         isOpenHandler = false;
         AbstractContainerMenu sc2 = player.containerMenu;
         if (!sc2.equals(player.inventoryMenu)) {
-            if (!closeHiddenShulker(sc2.containerId)) {
-                player.closeContainer();
-            }
+            closeAutomatedQuickShulkerContainer(player);
         }
     }
 
@@ -360,24 +293,9 @@ public class InventoryUtils {
         if (shulkerCooldown > 0) {
             shulkerCooldown--;
         }
-        if (hiddenShulkerClosedTimeout > 0) {
-            hiddenShulkerClosedTimeout--;
-            if (hiddenShulkerClosedTimeout == 0) {
-                hiddenShulkerClosedContainerId = -1;
-            }
-        }
-        if (hiddenShulkerPendingContent && hiddenShulkerContainerId >= 0
-                && isOpenHandler && SwitchItem.reSwitchItem == null) {
-            switchInv();
-        }
-        if (hiddenShulkerTimeout > 0 && --hiddenShulkerTimeout == 0) {
-            if (hiddenShulkerContainerId >= 0) {
-                if (!closeHiddenShulker(hiddenShulkerContainerId)) {
-                    finishQuickShulker();
-                }
-            } else {
-                finishQuickShulker();
-            }
+        if (automatedQuickShulkerScreenProtectionTimeout > 0
+                && --automatedQuickShulkerScreenProtectionTimeout == 0) {
+            clearAutomatedQuickShulkerScreenProtection();
         }
     }
 }

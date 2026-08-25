@@ -30,7 +30,7 @@ public class MixinConnection {
 
     @Inject(method = "disconnect*", at = {@At("HEAD")})
     public void disconnect(Component ignored, CallbackInfo ci) {
-        InventoryUtils.clearHiddenShulkerState();
+        InventoryUtils.clearAutomatedQuickShulkerScreenProtection();
         exitGameReSet();    // 退出重置
         PrintTaskController.INSTANCE.reset();
         ConfigUtils.resetAutoEnableSession();

@@ -48,6 +48,10 @@ public abstract class MixinMinecraftClient {
 
     @Inject(method = {"setScreen"}, at = {@At(value = "HEAD")}, cancellable = true)
     public void setScreen(@Nullable Screen screen, CallbackInfo ci) {
+        if (InventoryUtils.shouldPreserveAutomatedQuickShulkerScreenOnClose(screen)) {
+            ci.cancel();
+            return;
+        }
         if(ModUtils.closeScreen > 0 && /*screen != null &&*/ screen instanceof AbstractContainerScreen<?>){
             ModUtils.closeScreen--;
             ci.cancel();
