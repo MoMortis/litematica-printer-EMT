@@ -119,6 +119,11 @@ public class PrintTaskController {
             return null;
         }
 
+        // 放冰成功后等待客户端状态同步，避免在数据包放置或延迟同步时重复排队放冰。
+        if (stage == Stage.ICE_PLACED) {
+            return null;
+        }
+
         // 优化放水逻辑（开启时）：放置顺序后置，目标水源/含水方块所在层（Y 轴）还有待放置的
         // 普通方块时，不发起破冰放水，返回 null 让打印循环先处理该层普通方块。
         if (Configs.Print.PRINT_ICE_FOR_WATER_OPTIMIZED.getBooleanValue()
@@ -212,12 +217,28 @@ public class PrintTaskController {
         return stages.getOrDefault(pos.asLong(), Stage.NONE) == Stage.WAITING_WATER;
     }
 
+    /** 是否处于等待冰放置结果同步的阶段。 */
+    public boolean isIcePlaced(BlockPos pos) {
+        if (!Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue()) {
+            return false;
+        }
+        return stages.getOrDefault(pos.asLong(), Stage.NONE) == Stage.ICE_PLACED;
+    }
+
     /** 放冰动作已发出后调用，标记冰已放置（下一 tick 会因位置变为冰而进入 BREAKING） */
     public void onIcePlaceSent(BlockPos pos) {
         long key = pos.asLong();
         if (stages.getOrDefault(key, Stage.NONE) == Stage.NEED_ICE) {
             stages.put(key, Stage.ICE_PLACED);
         }
+    }
+
+    public void reset() {
+        stages.clear();
+        stageStartTicks.clear();
+        ordinaryScanTick = -1L;
+        ordinaryScanY = Integer.MIN_VALUE;
+        hasPendingOrdinaryCache = false;
     }
 
     private static long getClientTick() {

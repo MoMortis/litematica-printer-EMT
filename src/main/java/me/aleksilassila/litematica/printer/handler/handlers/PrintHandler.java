@@ -42,6 +42,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
     private boolean printerMemorySync;
 
     private Action action;
+    private boolean icePlacementTask;
 
     @Nullable
     private Item activePlacementItem;
@@ -100,10 +101,13 @@ public class PrintHandler extends ClientPlayerTickHandler {
         Action waterTask = PrintTaskController.INSTANCE.handle(ctx);
         if (waterTask != null) {
             this.action = waterTask;
+            this.icePlacementTask = true;
             return true;
         }
-        // 等待水源出现：跳过本位置（保留状态，不进入 buildAction），水出现后自动转正常流程
-        if (PrintTaskController.INSTANCE.isWaitingWater(blockPos)) {
+        this.icePlacementTask = false;
+        // 等待水源出现：跳过本位置（保留状态等待水出现）
+        if (PrintTaskController.INSTANCE.isIcePlaced(blockPos)
+                || PrintTaskController.INSTANCE.isWaitingWater(blockPos)) {
             return false;
         }
         // 破冰阶段：位置是冰，入破坏队列由 tweakeroo 决定工具破掉
@@ -200,6 +204,13 @@ public class PrintHandler extends ClientPlayerTickHandler {
         }
         action.setActionSource(ActionManager.ActionSource.PRINT);
         action.queueAction(blockPos, side, useShift, player, reqItems);
+        if (icePlacementTask) {
+            ActionManager.INSTANCE.setQueueCompletionListener(sendResult -> {
+                if (sendResult.isSent()) {
+                    PrintTaskController.INSTANCE.onIcePlaceSent(blockPos);
+                }
+            });
+        }
         Vec3 hitModifier = LitematicaUtils.usePrecisionPlacement(blockPos, ctx.requiredState);
         if (hitModifier != null) {
             ActionManager.INSTANCE.hitModifier = hitModifier;
@@ -212,8 +223,6 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (sendResult.isSent() && placementItem != null && Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
             activePlacementItem = placementItem;
         }
-        // 破冰放水：放冰动作已发出，标记冰已放置（下一 tick 位置变为冰后进入破冰阶段）
-        PrintTaskController.INSTANCE.onIcePlaceSent(blockPos);
         if (sendResult.isWaiting() || sendResult == ActionManager.SendResult.RESERVE_LIMIT) {
             skipIteration.set(true);
         }

@@ -230,8 +230,6 @@
   "litematica_printer.config.printerAutoDisable.desc": "当玩家死亡时自动关闭打印机，避免重生后打印机误操作。",
   "litematica_printer.config.printerAutoEnable": "进入服务器自启动",
   "litematica_printer.config.printerAutoEnable.desc": "开启后，玩家进入服务器时自动开启打印机；死亡重生不会重复触发，死亡自动关闭打印机仍正常工作。",
-  "litematica_printer.config.schematicVerifierOptimization": "原理图验证器优化",
-  "litematica_printer.config.schematicVerifierOptimization.desc": "原理图验证初次扫描完成后，区块重新加载时使用完整初扫描逻辑重新检测该区块。",
   "litematica_printer.config.printerInventory": "设置打印机库存热键",
   "litematica_printer.config.printerInventory.desc": "若远程取物目标位于未加载区块，取物耗时会增加；选中投影选区后按快捷键可绑定打印机库存，\n打印机工作时将优先使用该库存的物品；建议在库存区域放置假人实体，以保持区块常加载。",
   "litematica_printer.config.printerIteratorMode": "遍历顺序",

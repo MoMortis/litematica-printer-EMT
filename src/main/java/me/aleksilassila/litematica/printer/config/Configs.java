@@ -201,11 +201,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 核心 - 原理图验证器优化
-        public static final ConfigBoolean SCHEMATIC_VERIFIER_OPTIMIZATION = bool("schematicVerifierOptimization")
-                .defaultValue(false)
-                .build();
-
         // 核心 - 检查更新
         public static final ConfigBoolean UPDATE_CHECK = bool("updateCheck")
                 .defaultValue(true)
@@ -269,7 +264,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 MOTION_AHEAD,
                 AUTO_DISABLE_PRINTER,
                 AUTO_ENABLE_PRINTER,
-                SCHEMATIC_VERIFIER_OPTIMIZATION,
                 UPDATE_CHECK,
                 DEBUG_OUTPUT,
                 CLOUD_INVENTORY,

@@ -20,8 +20,6 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class MixinWidgetStringListEditEntry extends WidgetConfigOptionBase<String> {
     @Shadow protected int listIndex;
     @Shadow protected WidgetListStringListEdit parent;
-    @Shadow protected String initialStringValue;
-    @Shadow protected String lastAppliedValue;
     private BlockNbtRule litematica_printer$pendingRule;
 
     protected MixinWidgetStringListEditEntry(int x, int y, int width, int height,
@@ -41,8 +39,9 @@ public abstract class MixinWidgetStringListEditEntry extends WidgetConfigOptionB
         BlockNbtRule storedRule = BlockNbtRule.parse(entry);
         if (!storedRule.conditions().isEmpty() && this.textField != null) {
             this.textField.textField().setTextWrapper(storedRule.blockMatcher());
-            this.initialStringValue = storedRule.blockMatcher();
-            this.lastAppliedValue = storedRule.blockMatcher();
+            WidgetConfigOptionBaseAccessor accessor = (WidgetConfigOptionBaseAccessor) (Object) this;
+            accessor.litematica_printer$setInitialStringValue(storedRule.blockMatcher());
+            accessor.litematica_printer$setLastAppliedValue(storedRule.blockMatcher());
         }
         // Malilib places the text field at rowX + rowWidth - 138.
         ButtonGeneric button = new ButtonGeneric(this.x + this.width - 158, this.y + 4,
@@ -86,7 +85,8 @@ public abstract class MixinWidgetStringListEditEntry extends WidgetConfigOptionB
             }
             String encoded = new BlockNbtRule(blockMatcher, rule.conditions()).encode();
             config.getStrings().set(this.listIndex, encoded);
-            this.lastAppliedValue = blockMatcher;
+            ((WidgetConfigOptionBaseAccessor) (Object) this)
+                    .litematica_printer$setLastAppliedValue(blockMatcher);
             config.markDirty();
             config.setModified();
         }

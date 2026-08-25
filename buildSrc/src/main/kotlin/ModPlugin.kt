@@ -1,6 +1,7 @@
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.JavaVersion
+import org.gradle.jvm.toolchain.JavaLanguageVersion
 import org.gradle.api.file.DuplicatesStrategy
 import org.gradle.api.plugins.JavaPluginExtension
 import org.gradle.api.tasks.bundling.Jar
@@ -25,6 +26,7 @@ abstract class ModPlugin : Plugin<Project> {
         extensions.configure<JavaPluginExtension> {
             sourceCompatibility = javaVersion
             targetCompatibility = javaVersion
+            toolchain.languageVersion.set(JavaLanguageVersion.of(javaVersion.majorVersion.toInt()))
             // withSourcesJar()
         }
     }

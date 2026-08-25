@@ -9,7 +9,6 @@ import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
-import me.aleksilassila.litematica.printer.utils.SchematicVerifierChunkUpdater;
 import net.minecraft.client.Minecraft;
 
 public class ClientPlayerTickManager {
@@ -33,7 +32,6 @@ public class ClientPlayerTickManager {
     );
 
     public static void tick() {
-        SchematicVerifierChunkUpdater.tick();
         if (InventoryUtils.isOpenHandler || InventoryUtils.switchItem() || BreakUtils.INSTANCE.isNeedHandle()) {
             return;
         }

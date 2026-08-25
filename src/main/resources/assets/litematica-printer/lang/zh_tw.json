@@ -230,8 +230,6 @@
   "litematica_printer.config.printerAutoDisable.desc": "當玩家死亡時自動關閉印表機，避免重生後印表機誤操作。",
   "litematica_printer.config.printerAutoEnable": "進入伺服器自啟動",
   "litematica_printer.config.printerAutoEnable.desc": "開啟後，玩家進入伺服器時自動開啟印表機；死亡重生不會重複觸發，死亡自動關閉印表機仍正常運作。",
-  "litematica_printer.config.schematicVerifierOptimization": "原理圖驗證器優化",
-  "litematica_printer.config.schematicVerifierOptimization.desc": "原理圖驗證初次掃描完成後，區塊重新載入時使用完整初掃邏輯重新檢測該區塊。",
   "litematica_printer.config.printerInventory": "設定印表機庫存熱鍵",
   "litematica_printer.config.printerInventory.desc": "若遠程取物目標位於未載入區塊，取物耗時會增加；選中投影選區後按快捷鍵可綁定印表機庫存，\n印表機工作時將優先使用該庫存的物品；建議在庫存區域放置假人實體，以保持區塊常載入。",
   "litematica_printer.config.printerIteratorMode": "遍歷順序",

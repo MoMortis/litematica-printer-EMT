@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.printer;
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.selection.AreaSelection;
 import fi.dy.masa.litematica.selection.Box;
+import fi.dy.masa.litematica.util.WorldUtils;
 import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
@@ -235,11 +236,12 @@ public class PrintOrderController {
 
     /**
      * 位置是否在当前策略的作用范围内。
-     * "仅交互范围"需玩家实际可交互；全局模式不做交互距离限制（与 iterateBlocks 的 canInteracted 对齐）。
+     * "仅交互范围"需玩家实际可交互；全局模式只扫描客户端已加载区块。
      */
     private boolean isInScope(BlockPos pos) {
         if (isAnyGlobal()) {
-            return true;
+            ClientLevel level = Minecraft.getInstance().level;
+            return level != null && WorldUtils.isClientChunkLoaded(level, pos.getX() >> 4, pos.getZ() >> 4);
         }
         return PlayerUtils.canInteracted(pos);
     }

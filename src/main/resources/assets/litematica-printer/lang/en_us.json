@@ -230,8 +230,6 @@
   "litematica_printer.config.printerAutoDisable.desc": "Automatically disable printer when player dies to avoid misoperations after respawning.",
   "litematica_printer.config.printerAutoEnable": "Auto Enable on Server Join",
   "litematica_printer.config.printerAutoEnable.desc": "When enabled, the printer is automatically enabled when entering a server. Death and respawning does not trigger it again, and auto-disable on death still works.",
-  "litematica_printer.config.schematicVerifierOptimization": "Schematic Verifier Optimization",
-  "litematica_printer.config.schematicVerifierOptimization.desc": "Re-scan a schematic chunk with the full verifier scan after it reloads.",
   "litematica_printer.config.printerInventory": "Set Printer Inventory Hotkey",
   "litematica_printer.config.printerInventory.desc": "If remote item retrieval target is in unloaded chunks, retrieval time will increase; after selecting projection selection, press hotkey to bind printer inventory.\nPrinter will prioritize using items from this inventory when working; recommend placing dummy entities in inventory area to keep chunks loaded.",
   "litematica_printer.config.printerIteratorMode": "Iteration Order",

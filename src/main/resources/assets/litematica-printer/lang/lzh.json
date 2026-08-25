@@ -230,8 +230,6 @@
   "litematica_printer.config.printerAutoDisable.desc": "玩家身殞時自關機巧，防重生後誤作。",
   "litematica_printer.config.printerAutoEnable": "入服自啟",
   "litematica_printer.config.printerAutoEnable.desc": "啟後玩家入伺服器即自啟機巧；身殞重生不再復觸，身殞自閉仍如常。",
-  "litematica_printer.config.schematicVerifierOptimization": "原理圖驗證器優化",
-  "litematica_printer.config.schematicVerifierOptimization.desc": "原理圖驗證初掃完成後，區塊重載時以完整初掃邏輯重新檢測該區塊。",
   "litematica_printer.config.printerInventory": "設機巧庫藏訣",
   "litematica_printer.config.printerInventory.desc": "若隔空所取之物在未載之區塊，取時則增；選投影界後按此訣可繫定機巧庫藏，機巧工時將優先取用此庫之物；建議於庫藏區置假人實體，以保區塊常載。",
   "litematica_printer.config.printerIteratorMode": "徧歷次序",

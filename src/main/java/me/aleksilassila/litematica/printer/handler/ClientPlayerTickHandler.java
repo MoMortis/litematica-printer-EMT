@@ -63,7 +63,6 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
     private Iterator<BlockPos> cachedIterator = null;
     // 方案二：记录当前正在扫描的Y层，时间预算仅在层边界截断（保证整层Y扫完）
     private int lastSweptY = Integer.MIN_VALUE;
-    private final BlockPos lastBasePos = null;
     private int expandRange = -1;
 
     protected Minecraft mc;
