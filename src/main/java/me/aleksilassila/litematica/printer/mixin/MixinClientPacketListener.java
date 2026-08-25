@@ -6,9 +6,12 @@ import me.aleksilassila.litematica.printer.printer.zxy.inventory.SwitchItem;
 import me.aleksilassila.litematica.printer.utils.PacketUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.network.protocol.game.ClientboundContainerClosePacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
+import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.MenuType;
 import me.aleksilassila.litematica.printer.printer.zxy.utils.ZxyUtils;
 import org.spongepowered.asm.mixin.Mixin;
@@ -21,6 +24,18 @@ import static me.aleksilassila.litematica.printer.printer.zxy.inventory.SwitchIt
 
 @Mixin(ClientPacketListener.class)
 public abstract class MixinClientPacketListener {
+
+    @Inject(method = "handleOpenScreen", at = @At("HEAD"), cancellable = true)
+    private void openHiddenQuickShulker(ClientboundOpenScreenPacket packet, CallbackInfo ci) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (!InventoryUtils.isAwaitingHiddenShulkerOpen() || minecraft.player == null) {
+            return;
+        }
+        AbstractContainerMenu menu = packet.getType().create(packet.getContainerId(), minecraft.player.getInventory());
+        if (InventoryUtils.openHiddenShulkerMenu(packet.getContainerId(), menu)) {
+            ci.cancel();
+        }
+    }
 
     @Inject(
             method = "handleOpenScreen",
@@ -41,8 +56,23 @@ public abstract class MixinClientPacketListener {
         }
     }
 
+    @Inject(method = "handleContainerSetSlot", at = @At("TAIL"))
+    private void markHiddenQuickShulkerSlot(ClientboundContainerSetSlotPacket packet, CallbackInfo ci) {
+        InventoryUtils.markHiddenShulkerContent(packet.getContainerId());
+    }
+
+    @Inject(method = "handleContainerClose", at = @At("HEAD"), cancellable = true)
+    private void closeHiddenQuickShulker(ClientboundContainerClosePacket packet, CallbackInfo ci) {
+        if (InventoryUtils.handleHiddenShulkerServerClose(packet.getContainerId())) {
+            ci.cancel();
+        }
+    }
+
     @Inject(at = @At("TAIL"), method = "handleContainerContent")
     public void onInventory(ClientboundContainerSetContentPacket packet, CallbackInfo ci) {
+        if (InventoryUtils.isHiddenShulkerContainer(packet.containerId())) {
+            InventoryUtils.markHiddenShulkerContent(packet.containerId());
+        }
         if (isOpenHandler) {
             InventoryUtils.switchInv();
         }

@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.utils;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.QuickShulkerModeType;
+import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
 //#if MC <= 12111
 import net.kyrptonaught.quickshulker.client.ClientUtil;
 //#endif
@@ -338,6 +339,7 @@ public class BlockUtils {
         lastOpenedShulkerTimeMillis = System.currentTimeMillis();
         if (Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
                 == QuickShulkerModeType.CLICK_SLOT) {
+            InventoryUtils.armHiddenShulkerSession();
             client.gameMode.handleInventoryMouseClick(
                     client.player.containerMenu.containerId,
                     shulkerBoxSlot,

@@ -60,8 +60,11 @@ public class SwitchItem {
                 OpenInventoryPacket.sendOpenInventory(itemStatistics.pos, itemStatistics.key);
             } else {
                 BlockUtils.openShulker(sc.slots.get(itemStatistics.shulkerBoxSlot).getItem(), itemStatistics.shulkerBoxSlot);
+                if (me.aleksilassila.litematica.printer.config.Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
+                        != me.aleksilassila.litematica.printer.enums.QuickShulkerModeType.CLICK_SLOT) {
+                    ModUtils.closeScreen++;
+                }
             }
-            ModUtils.closeScreen++;
         } else {
             removeItem(reSwitchItem);
             reSwitchItem = null;
@@ -125,7 +128,10 @@ public class SwitchItem {
                 }
                 removeItem(reSwitchItem);
                 reSwitchItem = null;
-                player.closeContainer();
+                if (!me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils
+                        .closeHiddenShulker(sc.containerId)) {
+                    player.closeContainer();
+                }
                 if (!reInv) {
                     MessageUtils.setOverlayMessage(I18n.INVENTORY_RESTORE_FAILED.getName());
                 }

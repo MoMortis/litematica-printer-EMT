@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.mixin.printer.mc;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.printer.PrintTaskController;
+import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -29,6 +30,7 @@ public class MixinConnection {
 
     @Inject(method = "disconnect*", at = {@At("HEAD")})
     public void disconnect(Component ignored, CallbackInfo ci) {
+        InventoryUtils.clearHiddenShulkerSession();
         exitGameReSet();    // 退出重置
         PrintTaskController.INSTANCE.reset();
         ConfigUtils.resetAutoEnableSession();
