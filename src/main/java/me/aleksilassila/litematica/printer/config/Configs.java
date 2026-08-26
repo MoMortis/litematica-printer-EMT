@@ -505,11 +505,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .build();
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                BREAK_USE_PACKET,
+                BREAK_SOUND,
                 BREAK_CHECK_HARDNESS,
                 BREAK_INSTANT_MINE,
                 BREAK_INSTANT_MINE_LIST,
-                BREAK_USE_PACKET,
-                BREAK_SOUND,
                 BREAK_AVOID_FLUID,
                 BREAK_FLUID_LIST,
                 BREAK_FLUID_STRATEGY,
