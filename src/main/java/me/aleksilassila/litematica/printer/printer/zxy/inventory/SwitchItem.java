@@ -60,10 +60,6 @@ public class SwitchItem {
                 OpenInventoryPacket.sendOpenInventory(itemStatistics.pos, itemStatistics.key);
             } else {
                 BlockUtils.openShulker(sc.slots.get(itemStatistics.shulkerBoxSlot).getItem(), itemStatistics.shulkerBoxSlot);
-                if (me.aleksilassila.litematica.printer.config.Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
-                        != me.aleksilassila.litematica.printer.enums.QuickShulkerModeType.CLICK_SLOT) {
-                    ModUtils.closeScreen++;
-                }
             }
         } else {
             removeItem(reSwitchItem);

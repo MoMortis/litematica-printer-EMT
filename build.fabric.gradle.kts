@@ -89,15 +89,6 @@ dependencies {
     implementation("red.jackf.jackfredlib:jackfredlib:${prop("jackfredlib")}")
     implementation("red.jackf:chesttracker:${prop("chesttracker")}")
     implementation("red.jackf:whereisit:${prop("whereisit")}")
-
-    // 快捷潜影盒
-    val quickshulkerUrl = prop("quickshulker").toString()
-    if (quickshulkerUrl.isNotEmpty()) {
-        val quickshulkerFile = downloadDependencyMod(quickshulkerUrl)
-        if (quickshulkerFile != null && quickshulkerFile.exists()) {
-            implementation(files(quickshulkerFile))
-        }
-    }
 }
 
 loom {

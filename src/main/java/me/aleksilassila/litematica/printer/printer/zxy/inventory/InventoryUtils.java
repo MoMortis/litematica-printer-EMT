@@ -273,10 +273,6 @@ public class InventoryUtils {
                             //$$ if (ModUtils.isLoadMod("chesttracker")) InteractionTracker.INSTANCE.clear();
                             //#endif
                             BlockUtils.openShulker(stack, shulkerBoxSlot);
-                            if (Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
-                                    != me.aleksilassila.litematica.printer.enums.QuickShulkerModeType.CLICK_SLOT) {
-                                ModUtils.closeScreen++;
-                            }
                             isOpenHandler = true;
                             shulkerCooldown = Configs.Placement.QUICK_SHULKER_COOLDOWN.getIntegerValue();
                             return true;

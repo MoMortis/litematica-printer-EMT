@@ -1,11 +1,7 @@
 package me.aleksilassila.litematica.printer.utils;
 
 import me.aleksilassila.litematica.printer.config.Configs;
-import me.aleksilassila.litematica.printer.enums.QuickShulkerModeType;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
-//#if MC <= 12111
-import net.kyrptonaught.quickshulker.client.ClientUtil;
-//#endif
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -337,28 +333,13 @@ public class BlockUtils {
         // 需在 2gt 窗口内避免被 isEmptyShulker 误判为"空盒"
         lastOpenedShulkerSlot = shulkerBoxSlot;
         lastOpenedShulkerTimeMillis = System.currentTimeMillis();
-        if (Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
-                == QuickShulkerModeType.CLICK_SLOT) {
-            InventoryUtils.beginAutomatedQuickShulkerScreenProtection();
-            client.gameMode.handleInventoryMouseClick(
-                    client.player.containerMenu.containerId,
-                    shulkerBoxSlot,
-                    1,
-                    ClickType.PICKUP,
-                    client.player);
-        } else if (Configs.Placement.QUICK_SHULKER_MODE.getOptionListValue()
-                == QuickShulkerModeType.INVOKE) {
-            //#if MC <= 12111
-            if (ModUtils.isQuickShulkerLoaded()) {
-                try {
-                    ClientUtil.CheckAndSend(stack, shulkerBoxSlot);
-                } catch (Exception ignored) {
-                }
-            } else MessageUtils.addMessage(MessageUtils.literal("快捷潜影盒模组未加载！"));
-            //#else
-            //$$ MessageUtils.addMessage(MessageUtils.literal("当前版本不支持快捷潜影盒调用模式！"));
-            //#endif
-        }
+        InventoryUtils.beginAutomatedQuickShulkerScreenProtection();
+        client.gameMode.handleInventoryMouseClick(
+                client.player.containerMenu.containerId,
+                shulkerBoxSlot,
+                1,
+                ClickType.PICKUP,
+                client.player);
     }
 
     /** 最近打开过的潜影盒槽位（防 2gt 变空盒误判） */

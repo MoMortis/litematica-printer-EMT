@@ -116,25 +116,6 @@ dependencies {
         modImplementation("dev.isxander:yet-another-config-lib:${prop("yacl")}")
         modImplementation("com.blamejared.searchables:${prop("searchables")}")
     }
-
-    // 快捷潜影盒
-    if (mcVersionInt >= 12006) {
-        val quickshulkerUrl = prop("quickshulker").toString()
-        if (quickshulkerUrl.isNotEmpty()) {
-            val quickshulkerFile = downloadDependencyMod(quickshulkerUrl)
-            if (quickshulkerFile != null && quickshulkerFile.exists()) {
-                modImplementation(files(quickshulkerFile))
-            }
-        }
-        if (mcVersionInt == 12006) {  // 1.20.6 是 Haocen2004/quickshulker 分支, 所以还是使用之前老版本的依赖
-            modImplementation("net.kyrptonaught:kyrptconfig:${prop("kyrptconfig")}")
-        } else {
-            modImplementation("me.fallenbreath:conditional-mixin-fabric:0.6.4")
-        }
-    } else {
-        modImplementation("curse.maven:quick-shulker-362669:${prop("quick_shulker")}")
-        modImplementation("net.kyrptonaught:kyrptconfig:${prop("kyrptconfig")}")
-    }
 }
 
 loom {

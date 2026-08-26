@@ -318,11 +318,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 快捷潜影盒 - 工作模式
-        public static final ConfigOptionList QUICK_SHULKER_MODE = optionList("quickShulkerMode")
-                .defaultValue(QuickShulkerModeType.INVOKE)
-                .build();
-
         // 快捷潜影盒 - 冷却时间
         public static final ConfigInteger QUICK_SHULKER_COOLDOWN = integer("quickShulkerCooldown")
                 .defaultValue(10)
@@ -395,7 +390,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 REFILL_SCROLL_REVERSE,
                 PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE,
                 QUICK_SHULKER,
-                QUICK_SHULKER_MODE,
                 QUICK_SHULKER_COOLDOWN
         );
     }

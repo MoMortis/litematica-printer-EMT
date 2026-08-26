@@ -40,10 +40,6 @@ public class ModUtils {
         return isLoadMod("cloudstore");
     }
 
-    public static boolean isQuickShulkerLoaded(){
-        return isLoadMod("quickshulker");
-    }
-
     public static boolean isBedrockMinerLoaded() {
         //#if MC >= 11900
         return isLoadMod("bedrockminer");

@@ -49,7 +49,6 @@
 ### 可选
 - [Twrakeroo](https://modrinth.com/mod/twra-keroo) - 破基岩模式
 - [Chest Tracker](https://modrinth.com/mod/chest-tracker) (≤1.21.4) - 箱子追踪
-- [Quick Shulker](https://modrinth.com/mod/quick-shulker) - 快捷潜影盒
 
 ---
 
@@ -64,7 +63,7 @@
 ### ⏩ 功能改进
 - 修复迭代水时因缺少水源卡死的 bug
 - 填充功能（使用投影选区范围）
-- 双兼容快捷潜影盒（支持 AxShulkers 和 Quick Shulker）
+- 快捷潜影盒模拟点击取货（需服务器支持背包内打开潜影盒）
 - 珊瑚替换（用活珊瑚打印投影内的死珊瑚）
 - 破坏错误方块优化（破冰、放水）
 - 48 种范围迭代逻辑
@@ -178,7 +177,7 @@ cd litematica-printer
 
 **解决方案：**
 - 在 Litematica 设置中调整 `pickBlockableSlots`（快捷选择栏位）值
-- 确认所选择的工作模式是正确的
+- 确认服务器支持在背包中打开潜影盒
 
 > [!NOTE]
 > 快捷潜影盒功能仍处于测试阶段，如遇问题请提交 [Issue](https://github.com/BiliXWhite/litematica-printer/issues)
@@ -190,7 +189,6 @@ cd litematica-printer
 - [bunny_i](https://github.com/bunnyi116) - 开发者之一
 - [aleksilassila](https://github.com/aleksilassila/litematica-printer) - 原创基础
 - [zhaixianyu](https://github.com/zhaixianyu/litematica-printer) - 二改版本
-- [MoRanpcy](https://github.com/MoRanpcy/quickshulker) - 快捷潜影盒支持
 - [bunnyi116](https://github.com/bunnyi116/fabric-bedrock-miner) - 新的破基岩
 
 以及所有支持开发的朋友，包括你！💖
