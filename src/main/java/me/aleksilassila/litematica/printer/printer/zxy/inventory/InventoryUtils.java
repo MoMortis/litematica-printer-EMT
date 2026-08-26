@@ -208,9 +208,6 @@ public class InventoryUtils {
             return;
         }
         NonNullList<Slot> slots = sc.slots;
-        if (InventoryUtilsAccessor.getPICK_BLOCKABLE_SLOTS().isEmpty()) {
-            return;
-        }
         int maxStacks = Configs.Placement.QUICK_SHULKER_MAX_STACKS.getIntegerValue();
         int allowedStacks = quickShulkerEmptySlots > 0
                 ? Math.min(maxStacks, quickShulkerEmptySlots)
@@ -228,10 +225,20 @@ public class InventoryUtils {
                     continue;
                 }
                 try {
-                    int c = InventoryUtilsAccessor.getEmptyPickBlockableHotbarSlot(player.getInventory());
-                    if (c == -1) {
-                        c = InventoryUtilsAccessor.getPickBlockTargetSlot(player);
+                    if (quickShulkerEmptySlots > 0) {
+                        client.gameMode.handleInventoryMouseClick(
+                                sc.containerId,
+                                y,
+                                0,
+                                ClickType.QUICK_MOVE,
+                                player);
+                        movedStacks++;
+                        continue;
                     }
+                    if (InventoryUtilsAccessor.getPICK_BLOCKABLE_SLOTS().isEmpty()) {
+                        break;
+                    }
+                    int c = InventoryUtilsAccessor.getPickBlockTargetSlot(player);
                     if (c == -1) {
                         break;
                     }
@@ -245,7 +252,6 @@ public class InventoryUtils {
                     } else {
                         SwitchItem.newItem(source, null, null, y, shulkerBoxSlot);
                     }
-                    ZxyUtils.switchPlayerInvToHotbarAir(c);
                     fi.dy.masa.malilib.util.InventoryUtils.swapSlots(sc, y, c);
                     me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(player.getInventory(), c);
                     movedStacks++;
