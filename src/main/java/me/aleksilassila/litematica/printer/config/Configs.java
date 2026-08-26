@@ -281,6 +281,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 打印音效
+        public static final ConfigBoolean PRINT_SOUND = bool("printSound")
+                .defaultValue(true)
+                .build();
+
         // 核心 - 工作间隔
         public static final ConfigInteger PLACE_INTERVAL = integer("placeInterval")
                 .defaultValue(1)
@@ -375,6 +380,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 PRINT_USE_PACKET,
+                PRINT_SOUND,
                 PLACE_INTERVAL,
                 PLACE_BLOCKS_PER_TICK,
                 PLACE_SAME_ITEM_FIRST,
@@ -397,6 +403,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
     public static class Break {
         public static final ConfigBoolean BREAK_USE_PACKET = bool("breakUsePacket")
                 .defaultValue(false)
+                .build();
+
+        // 挖掘音效
+        public static final ConfigBoolean BREAK_SOUND = bool("breakSound")
+                .defaultValue(true)
                 .build();
 
         public static final ConfigInteger BREAK_PROGRESS_THRESHOLD = integer("breakProgressThreshold")
@@ -491,6 +502,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_INSTANT_MINE,
                 BREAK_INSTANT_MINE_LIST,
                 BREAK_USE_PACKET,
+                BREAK_SOUND,
                 BREAK_AVOID_FLUID,
                 BREAK_FLUID_LIST,
                 BREAK_FLUID_STRATEGY,

@@ -220,6 +220,9 @@ public class PrintHandler extends ClientPlayerTickHandler {
         ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
         ActionManager.INSTANCE.setWaitForHorizontalLook(action.isWaitForHorizontalLook());
         ActionManager.SendResult sendResult = ActionManager.INSTANCE.sendQueue(player);
+        if (sendResult.isSent() && Configs.Placement.PRINT_USE_PACKET.getBooleanValue()) {
+            PacketSoundConfirmationTracker.trackPlacement(blockPos, ctx.requiredState);
+        }
         if (sendResult.isSent() && placementItem != null && Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
             activePlacementItem = placementItem;
         }

@@ -3,8 +3,10 @@ package me.aleksilassila.litematica.printer.mixin.printer.mc;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
+import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import me.aleksilassila.litematica.printer.utils.PacketSoundConfirmationTracker;
 import me.aleksilassila.litematica.printer.utils.PacketUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -18,7 +20,6 @@ import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
@@ -287,6 +288,9 @@ if (this.delayedDestroyLocalPrediction) {
         this.isDestroying = false;
         this.destroyProgress = 0.0F;
         PacketUtils.sendPacket(sequence -> getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence));
+        if (Configs.Break.BREAK_SOUND.getBooleanValue() && this.minecraft.level != null) {
+            PacketSoundConfirmationTracker.trackBreak(blockPos, this.minecraft.level.getBlockState(blockPos));
+        }
         PacketUtils.sendPacket(sequence -> getActionPacket(Action.STOP_DESTROY_BLOCK, blockPos, direction, sequence));
         return true;
     }
@@ -575,12 +579,9 @@ if (this.delayedDestroyLocalPrediction) {
         }
     }
 
-    // 非数据包挖掘/打印：本地播放方块破坏音效与粒子（数据包模式保持静音）
+    // 本地播放方块破坏粒子，破坏音效由挖掘音效开关单独控制（不受数据包挖掘影响）
     @Unique
     private void litematica_printer$playBreakEffect(BlockPos pos, BlockState state) {
-        if (Configs.Break.BREAK_USE_PACKET.getBooleanValue()) {
-            return;
-        }
         ClientLevel level = this.minecraft.level;
         if (level == null || pos == null) {
             return;
@@ -592,7 +593,11 @@ if (this.delayedDestroyLocalPrediction) {
             }
         }
         level.addDestroyBlockEffect(pos, state);
-        level.playLocalSound(pos, state.getSoundType().getBreakSound(), SoundSource.BLOCKS, 1.0F, 0.8F, false);
+        if (Configs.Break.BREAK_USE_PACKET.getBooleanValue()) {
+            PacketSoundConfirmationTracker.trackBreak(pos, state);
+        } else if (Configs.Break.BREAK_SOUND.getBooleanValue()) {
+            level.playLocalSound(pos, state.getSoundType().getBreakSound(), net.minecraft.sounds.SoundSource.BLOCKS, 1.0F, 0.8F, false);
+        }
     }
 
     @Unique

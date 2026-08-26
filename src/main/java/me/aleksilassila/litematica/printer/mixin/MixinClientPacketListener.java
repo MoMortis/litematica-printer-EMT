@@ -3,9 +3,11 @@ package me.aleksilassila.litematica.printer.mixin;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.SwitchItem;
+import me.aleksilassila.litematica.printer.utils.PacketSoundConfirmationTracker;
 import me.aleksilassila.litematica.printer.utils.PacketUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
+import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
@@ -39,6 +41,11 @@ public abstract class MixinClientPacketListener {
             PacketUtils.sendPacket(new ServerboundContainerClosePacket(packet.getContainerId()));
             ci.cancel();
         }
+    }
+
+    @Inject(at = @At("TAIL"), method = "handleBlockUpdate")
+    private void confirmPacketSound(ClientboundBlockUpdatePacket packet, CallbackInfo ci) {
+        PacketSoundConfirmationTracker.confirmServerBlockUpdate(packet.getPos(), packet.getBlockState());
     }
 
     @Inject(at = @At("TAIL"), method = "handleContainerContent")
