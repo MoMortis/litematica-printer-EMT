@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.EndRodBlock;
@@ -35,8 +36,8 @@ public class RodGuide extends Guide {
                 return Result.success(new Action().setSides(facing));
             }
             // 投影中前面有同向末地烛 → 等待
-            BlockState forwardSchematic = schematic.getBlockState(forwardPos);
-            if (forwardSchematic.is(requiredBlock)
+            BlockState forwardSchematic = LitematicaUtils.getSchematicBlockState(forwardPos);
+            if (forwardSchematic != null && forwardSchematic.is(requiredBlock)
                     && ConfigUtils.isPositionInSelectionRange(client.player, forwardPos, Configs.Print.PRINT_SELECTION_TYPE)
                     && getProperty(forwardSchematic, EndRodBlock.FACING).orElseThrow() == facing) {
                 if (statesEqual(forwardSchematic, forwardState)) {

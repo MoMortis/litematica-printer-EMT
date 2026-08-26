@@ -4,6 +4,7 @@ import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.utils.BlockUtils;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.PinYinSearchUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
@@ -81,8 +82,11 @@ public enum BlockPrintState {
     }
 
     public static BlockPrintState get(BlockPos pos, Property<?>... propertiesToIgnore) {
-        BlockState requiredState = SchematicWorldHandler.getSchematicWorld().getBlockState(pos);
+        BlockState requiredState = LitematicaUtils.getSchematicBlockState(pos);
         BlockState currentState = Minecraft.getInstance().level.getBlockState(pos);
+        if (requiredState == null) {
+            return null;
+        }
         return get(requiredState, currentState, propertiesToIgnore);
     }
 }

@@ -21,6 +21,6 @@ public class RepeaterGuide extends Guide {
         if (!getProperty(requiredState, RepeaterBlock.DELAY).equals(getProperty(currentState, RepeaterBlock.DELAY))) {
             return Result.success(new ClickAction());
         }
-        return Result.SKIP;
+        return Result.PASS;
     }
 }

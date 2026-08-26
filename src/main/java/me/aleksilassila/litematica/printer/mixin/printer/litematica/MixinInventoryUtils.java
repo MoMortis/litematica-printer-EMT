@@ -45,7 +45,7 @@ public class MixinInventoryUtils {
         if (!inMain && inShulkers
                 && (Configs.Core.CLOUD_INVENTORY.getBooleanValue()
                 || Configs.Placement.QUICK_SHULKER.getBooleanValue())) {
-            me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.lastNeedItemList.add(item);
+            me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.switchItem();
             return;
         }

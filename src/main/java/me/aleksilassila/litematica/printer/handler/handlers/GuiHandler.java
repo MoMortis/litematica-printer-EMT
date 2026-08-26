@@ -10,6 +10,7 @@ import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.level.block.LiquidBlock;
 
@@ -49,6 +50,9 @@ public class GuiHandler extends ClientPlayerTickHandler {
         if (ConfigUtils.isPrintMode()) {
             WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
             if (schematic != null) {
+                if (LitematicaUtils.getSchematicBlockState(blockPos) == null) {
+                    return;
+                }
                 SchematicBlockContext context = new SchematicBlockContext(client, level, schematic, blockPos);
                 if (!context.requiredState.isAir()) {
                     if (BlockPrintState.get(context) == BlockPrintState.CORRECT) {

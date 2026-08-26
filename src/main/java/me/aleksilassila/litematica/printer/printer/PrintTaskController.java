@@ -185,8 +185,8 @@ public class PrintTaskController {
             if (!LitematicaUtils.isSchematicBlock(pos)) {
                 continue;
             }
-            BlockState required = schematic.getBlockState(pos);
-            if (required.isAir()) {
+            BlockState required = LitematicaUtils.getSchematicBlockState(pos);
+            if (required == null || required.isAir()) {
                 continue;
             }
             // 所有液体方块（水源/流动水/岩浆等）与含水方块由破冰放水/流体相关流程处理，不算普通方块

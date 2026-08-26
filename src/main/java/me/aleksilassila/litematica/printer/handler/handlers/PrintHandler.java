@@ -81,6 +81,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         }
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null) return false;
+        if (LitematicaUtils.getSchematicBlockState(blockPos) == null) return false;
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
         if (Configs.Print.PRINT_SKIP.getBooleanValue()) {
             Set<String> skipSet = new HashSet<>(Configs.Print.PRINT_SKIP_LIST.getStrings()); // 转换为 HashSet
@@ -164,7 +165,9 @@ public class PrintHandler extends ClientPlayerTickHandler {
             if (FallingBlock.isFree(level.getBlockState(downPos))) {
                 MessageUtils.setOverlayMessage(I18n.BLOCK_NO_SUPPORT.getName(ctx.getRequiredBlockName().getString()));
                 return;
-            } else if (level.getBlockState(downPos) != ctx.schematic.getBlockState(downPos)) {
+                    } else if (LitematicaUtils.getSchematicBlockState(downPos) == null
+                            || !BlockStateUtils.statesEqualIgnoreProperties(
+                            level.getBlockState(downPos), LitematicaUtils.getSchematicBlockState(downPos))) {
                     MessageUtils.setOverlayMessage(I18n.BLOCK_MISMATCH.getName(ctx.getRequiredBlockName().getString()));
                     return;
                 }
@@ -265,7 +268,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (schematic == null || box == null) return false;
         for (BlockPos pos : box) {
             if (!PlayerUtils.canInteracted(pos) || !LitematicaUtils.isSchematicBlock(pos)) continue;
-            BlockState required = schematic.getBlockState(pos);
+            BlockState required = LitematicaUtils.getSchematicBlockState(pos);
+            if (required == null) continue;
             if (required.getBlock().asItem() == item
                     && !BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) return true;
         }

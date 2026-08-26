@@ -165,8 +165,8 @@ public class ShulkerPlacementGuard {
             if (!LitematicaUtils.isSchematicBlock(pos)) {
                 continue;
             }
-            BlockState required = schematic.getBlockState(pos);
-            if (required.isAir()) {
+            BlockState required = LitematicaUtils.getSchematicBlockState(pos);
+            if (required == null || required.isAir()) {
                 continue;
             }
             // 液体/含水由破冰放水或流体流程处理，不算普通方块

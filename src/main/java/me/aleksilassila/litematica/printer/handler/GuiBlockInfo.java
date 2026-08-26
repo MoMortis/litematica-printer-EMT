@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.handler;
 
 import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
@@ -31,7 +32,7 @@ public class GuiBlockInfo {
         if (schematic == null) {
             this.requiredState = null;
         } else {
-            this.requiredState = schematic.getBlockState(pos.above());
+            this.requiredState = LitematicaUtils.getSchematicBlockState(pos.above());
         }
     }
 

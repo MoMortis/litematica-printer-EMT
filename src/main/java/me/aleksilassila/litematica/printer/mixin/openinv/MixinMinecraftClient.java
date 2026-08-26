@@ -77,7 +77,7 @@ public abstract class MixinMinecraftClient {
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic != null && LitematicaUtils.isSchematicBlock(pos)) {
             // 位置在原理图内 → 取原理图预期方块（即使原理图该位置为空气，也按原理图计）
-            BlockState schematicState = schematic.getBlockState(pos);
+            BlockState schematicState = LitematicaUtils.getSchematicBlockState(pos);
             item = (schematicState == null || schematicState.isAir())
                     ? net.minecraft.world.item.Items.AIR
                     : schematicState.getBlock().asItem();
@@ -107,7 +107,7 @@ public abstract class MixinMinecraftClient {
             if (!inMain && inShulkers
                     && (Configs.Core.CLOUD_INVENTORY.getBooleanValue()
                     || Configs.Placement.QUICK_SHULKER.getBooleanValue())) {
-                InventoryUtils.lastNeedItemList.add(item);
+                InventoryUtils.addQuickShulkerDemand(item);
                 InventoryUtils.switchItem();
                 return;
             }
@@ -130,7 +130,7 @@ public abstract class MixinMinecraftClient {
     //$$     int slotWithStack = original.call(instance, stack);
     //$$     if(!player.getAbilities().instabuild && (Configs.Core.CLOUD_INVENTORY.getBooleanValue() || Configs.Placement.QUICK_SHULKER.getBooleanValue()) && slotWithStack == -1){
     //$$         Item item = stack.getItem();
-    //$$         InventoryUtils.lastNeedItemList.add(item);
+    //$$         InventoryUtils.addQuickShulkerDemand(item);
     //$$         InventoryUtils.switchItem();
     //$$         return -1;
     //$$     }

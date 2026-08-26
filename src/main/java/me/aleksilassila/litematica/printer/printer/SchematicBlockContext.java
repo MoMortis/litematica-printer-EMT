@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.printer;
 import fi.dy.masa.litematica.world.WorldSchematic;
 import lombok.ToString;
 import me.aleksilassila.litematica.printer.utils.BlockUtils;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -29,7 +30,7 @@ public class SchematicBlockContext {
         this.schematic = schematic;
         this.blockPos = blockPos;
         this.currentState = level.getBlockState(blockPos);
-        this.requiredState = schematic.getBlockState(blockPos);
+        this.requiredState = LitematicaUtils.getSchematicBlockState(blockPos);
     }
 
     public static <T extends Comparable<T>> Optional<T> getProperty(BlockState blockState, Property<T> property) {

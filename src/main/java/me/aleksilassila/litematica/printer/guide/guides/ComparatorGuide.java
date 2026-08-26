@@ -21,6 +21,6 @@ public class ComparatorGuide extends Guide {
         if (!getProperty(requiredState, ComparatorBlock.MODE).equals(getProperty(currentState, ComparatorBlock.MODE))) {
             return Result.success(new ClickAction());
         }
-        return Result.SKIP;
+        return Result.PASS;
     }
 }

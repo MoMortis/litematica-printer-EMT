@@ -334,13 +334,6 @@ public class PrintOrderController {
 
     /** 读取投影目标方块状态；不在投影内返回 null */
     private BlockState getRequiredState(BlockPos pos) {
-        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
-        if (schematic == null) {
-            return null;
-        }
-        if (!LitematicaUtils.isSchematicBlock(pos)) {
-            return null;
-        }
-        return schematic.getBlockState(pos);
+        return LitematicaUtils.getSchematicBlockState(pos);
     }
 }

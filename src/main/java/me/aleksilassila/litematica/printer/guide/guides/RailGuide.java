@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.guide.Result;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
+import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.resources.ResourceKey;
@@ -139,8 +140,9 @@ public class RailGuide extends Guide {
     }
 
     private boolean connectionReady(BlockPos pos) {
-        BlockState schematicState = schematic.getBlockState(pos);
-        return !BaseRailBlock.isRail(schematicState) || BaseRailBlock.isRail(level.getBlockState(pos));
+        BlockState schematicState = LitematicaUtils.getSchematicBlockState(pos);
+        return schematicState == null || !BaseRailBlock.isRail(schematicState)
+                || BaseRailBlock.isRail(level.getBlockState(pos));
     }
 
     private record RailRepairKey(ResourceKey<Level> dimension, BlockPos pos, RailShape requiredShape) {

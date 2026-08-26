@@ -92,7 +92,7 @@ public class InventoryUtils {
                     return true;
                 }
             }
-            me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.lastNeedItemList.add(item);
+            me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
         }
         return false;
     }
@@ -486,7 +486,7 @@ public class InventoryUtils {
                 orderlyStoreItem = itemStack;
                 return InventoryUtils.setPickedItemToHand(slot, itemStack, client);
             }
-            lastNeedItemList.add(item);
+            me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
         }
         return false;
     }

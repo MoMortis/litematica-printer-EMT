@@ -1,9 +1,12 @@
 package me.aleksilassila.litematica.printer.utils;
 
 import fi.dy.masa.litematica.data.DataManager;
+import fi.dy.masa.litematica.schematic.LitematicaSchematic;
+import fi.dy.masa.litematica.schematic.container.LitematicaBlockStateContainer;
 import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
 import fi.dy.masa.litematica.schematic.placement.SchematicPlacementManager;
 import fi.dy.masa.litematica.schematic.placement.SubRegionPlacement;
+import fi.dy.masa.litematica.util.SchematicUtils;
 import fi.dy.masa.litematica.selection.AreaSelection;
 import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.litematica.selection.SelectionMode;
@@ -62,28 +65,40 @@ public class LitematicaUtils {
      * @return 如果位置属于图纸结构的一部分，则返回 true，否则返回 false
      */
     public static boolean isSchematicBlock(BlockPos pos) {
-        SchematicPlacementManager schematicPlacementManager = DataManager.getSchematicPlacementManager();
-        //#if MC < 11900
-        //$$ List<SchematicPlacementManager.PlacementPart> allPlacementsTouchingChunk = schematicPlacementManager.getAllPlacementsTouchingSubChunk(new SubChunkPos(pos));
-        //#else
-        List<SchematicPlacementManager.PlacementPart> allPlacementsTouchingChunk = schematicPlacementManager.getAllPlacementsTouchingChunk(pos);
-        //#endif
+        return getSchematicBlockState(pos) != null;
+    }
 
-        for (SchematicPlacementManager.PlacementPart placementPart : allPlacementsTouchingChunk) {
-            if (placementPart.getBox().containsPos(pos)) {
-                SchematicPlacement placement = placementPart.getPlacement();
-                if (placement == null) {
-                    return true;
+    /** Reads the target state directly from schematic data, independent of render chunks. */
+    public static BlockState getSchematicBlockState(BlockPos pos) {
+        if (pos == null) {
+            return null;
+        }
+        SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
+        for (SchematicPlacement placement : manager.getAllSchematicsPlacements()) {
+            for (Map.Entry<String, Box> entry : placement.getSubRegionBoxes(
+                    SubRegionPlacement.RequiredEnabled.PLACEMENT_ENABLED).entrySet()) {
+                String regionName = entry.getKey();
+                if (!new PrinterBox(entry.getValue().getPos1(), entry.getValue().getPos2()).contains(pos)) {
+                    continue;
                 }
-                for (Box box : placement.getSubRegionBoxes(
-                        SubRegionPlacement.RequiredEnabled.RENDERING_ENABLED).values()) {
-                    if (new PrinterBox(box.getPos1(), box.getPos2()).contains(pos)) {
-                        return true;
-                    }
+                SubRegionPlacement region = placement.getRelativeSubRegionPlacement(regionName);
+                if (region == null || !region.matchesRequirement(
+                        SubRegionPlacement.RequiredEnabled.PLACEMENT_ENABLED)) {
+                    continue;
+                }
+                LitematicaSchematic schematic = placement.getSchematic();
+                LitematicaBlockStateContainer container = schematic.getSubRegionContainer(regionName);
+                if (container == null) {
+                    continue;
+                }
+                BlockPos local = SchematicUtils.getSchematicContainerPositionFromWorldPosition(
+                        pos, schematic, regionName, placement, region, container);
+                if (local != null) {
+                    return container.get(local.getX(), local.getY(), local.getZ());
                 }
             }
         }
-        return false;
+        return null;
     }
 
     public static boolean isWithinSelection1ModeRange(BlockPos pos) {

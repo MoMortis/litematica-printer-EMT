@@ -51,10 +51,13 @@ import static me.aleksilassila.litematica.printer.printer.zxy.inventory.OpenInve
 
 public class InventoryUtils {
     private static final int AUTOMATED_QUICK_SHULKER_SCREEN_PROTECTION_TIMEOUT_TICKS = 40;
+    private static final long QUICK_SHULKER_SEARCH_TIMEOUT_NANOS = 1_000_000_000L;
 
     private static int shulkerCooldown = 0;
+    private static long quickShulkerSearchDeadlineNanos;
     private static int automatedQuickShulkerScreenProtectionTimeout;
     private static boolean automatedQuickShulkerScreenProtection;
+    private static boolean automatedQuickShulkerOpened;
     private static boolean preserveAutomatedQuickShulkerScreenOnClose;
     private static Screen protectedScreen;
 
@@ -96,6 +99,13 @@ public class InventoryUtils {
     public static HashSet<Item> lastNeedItemList = new HashSet<>();
     public static boolean isOpenHandler = false;
 
+    public static void addQuickShulkerDemand(Item item) {
+        if (lastNeedItemList.isEmpty() && Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
+            quickShulkerSearchDeadlineNanos = System.nanoTime() + QUICK_SHULKER_SEARCH_TIMEOUT_NANOS;
+        }
+        lastNeedItemList.add(item);
+    }
+
     public static boolean shouldSuppressContainerScreen() {
         LocalPlayer player = client.player;
         return automatedQuickShulkerScreenProtection
@@ -106,6 +116,7 @@ public class InventoryUtils {
 
     public static void beginAutomatedQuickShulkerScreenProtection() {
         automatedQuickShulkerScreenProtection = true;
+        automatedQuickShulkerOpened = false;
         automatedQuickShulkerScreenProtectionTimeout = AUTOMATED_QUICK_SHULKER_SCREEN_PROTECTION_TIMEOUT_TICKS;
         preserveAutomatedQuickShulkerScreenOnClose = false;
         protectedScreen = client.screen;
@@ -125,13 +136,19 @@ public class InventoryUtils {
     }
 
     public static void closeAutomatedQuickShulkerContainer(LocalPlayer player) {
+        if (!automatedQuickShulkerOpened) {
+            clearAutomatedQuickShulkerScreenProtection();
+            return;
+        }
         if (!automatedQuickShulkerScreenProtection) {
             player.closeContainer();
+            automatedQuickShulkerOpened = false;
             return;
         }
         preserveAutomatedQuickShulkerScreenOnClose = protectedScreen != null;
         player.closeContainer();
         automatedQuickShulkerScreenProtection = false;
+        automatedQuickShulkerOpened = false;
         automatedQuickShulkerScreenProtectionTimeout = 0;
         preserveAutomatedQuickShulkerScreenOnClose = false;
         protectedScreen = null;
@@ -139,6 +156,7 @@ public class InventoryUtils {
 
     public static void clearAutomatedQuickShulkerScreenProtection() {
         automatedQuickShulkerScreenProtection = false;
+        automatedQuickShulkerOpened = false;
         automatedQuickShulkerScreenProtectionTimeout = 0;
         preserveAutomatedQuickShulkerScreenOnClose = false;
         protectedScreen = null;
@@ -191,6 +209,7 @@ public class InventoryUtils {
                     //#endif
                 }
                 lastNeedItemList = new HashSet<>();
+                quickShulkerSearchDeadlineNanos = 0L;
                 isOpenHandler = false;
             }
         }
@@ -260,10 +279,6 @@ public class InventoryUtils {
                 }
             }
         }
-        if (shulkerBoxSlot != -1 && movedStacks > 0) {
-            client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
-            client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
-        }
         finishQuickShulkerTransfer(player);
     }
 
@@ -272,6 +287,7 @@ public class InventoryUtils {
         quickShulkerEmptySlots = 0;
         quickShulkerHasNonShulkerItem = false;
         lastNeedItemList = new HashSet<>();
+        quickShulkerSearchDeadlineNanos = 0L;
         isOpenHandler = false;
         AbstractContainerMenu currentMenu = player.containerMenu;
         if (!currentMenu.equals(player.inventoryMenu)) {
@@ -313,6 +329,7 @@ public class InventoryUtils {
                             //$$ if (ModUtils.isLoadMod("chesttracker")) InteractionTracker.INSTANCE.clear();
                             //#endif
                             BlockUtils.openShulker(stack, shulkerBoxSlot);
+                            automatedQuickShulkerOpened = true;
                             isOpenHandler = true;
                             shulkerCooldown = Configs.Placement.QUICK_SHULKER_COOLDOWN.getIntegerValue();
                             return true;
@@ -325,7 +342,27 @@ public class InventoryUtils {
         return false;
     }
 
+    private static void abandonExpiredQuickShulkerSearch() {
+        if (quickShulkerSearchDeadlineNanos == 0L || isOpenHandler
+                || System.nanoTime() < quickShulkerSearchDeadlineNanos) {
+            return;
+        }
+        LocalPlayer player = client.player;
+        if (player != null) {
+            finishQuickShulkerTransfer(player);
+        } else {
+            lastNeedItemList = new HashSet<>();
+            quickShulkerSearchDeadlineNanos = 0L;
+            shulkerBoxSlot = -1;
+            quickShulkerEmptySlots = 0;
+            quickShulkerHasNonShulkerItem = false;
+            isOpenHandler = false;
+            clearAutomatedQuickShulkerScreenProtection();
+        }
+    }
+
     public static void tick() {
+        abandonExpiredQuickShulkerSearch();
         if (shulkerCooldown > 0) {
             shulkerCooldown--;
         }
