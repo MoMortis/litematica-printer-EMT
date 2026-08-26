@@ -261,6 +261,8 @@
   "litematica_printer.config.motionAheadBlocks.desc": "仅影响并行破坏。沿玩家移动主方向额外延伸的扫描格数（格），让并行破坏时正在进入的新层提前被扫描。0为不延伸。",
   "litematica_printer.config.quickShulker": "快捷潜影盒 - 开关",
   "litematica_printer.config.quickShulker.desc": "直接从背包内的潜影盒中拿取需要的材料，便于快速取物。",
+  "litematica_printer.config.quickShulkerMaxStacks": "快捷潜影盒 - 最大取货数量",
+  "litematica_printer.config.quickShulkerMaxStacks.desc": "每次最多从潜影盒中取出的匹配物品堆数量，范围为1到27。",
   "litematica_printer.config.quickShulkerCooldown": "快捷潜影盒 - 冷却时间",
   "litematica_printer.config.quickShulkerCooldown.desc": "快捷潜影盒功能的冷却时间(单位为游戏刻)，部分插件服对于该功能有冷却限制。设置为0关闭冷却。",
   "litematica_printer.config.removePrintInventory": "清空打印机库存热键",

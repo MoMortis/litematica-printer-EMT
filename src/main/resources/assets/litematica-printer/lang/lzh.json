@@ -261,6 +261,8 @@
   "litematica_printer.config.motionAheadBlocks.desc": "惟影響並行破壞。沿玩家移動主方向另延掃描格數（格），使並行破壞時新入之層得以先掃。設0則不延。",
   "litematica_printer.config.quickShulker": "速啟潛影盒 - 開關",
   "litematica_printer.config.quickShulker.desc": "直自囊中潛影盒取所需之材，以便速取。",
+  "litematica_printer.config.quickShulkerMaxStacks": "速啟潛影盒 - 至多取貨數",
+  "litematica_printer.config.quickShulkerMaxStacks.desc": "每次自潛影盒所取匹配物品堆之至多數，範圍一至二十七。",
   "litematica_printer.config.quickShulkerCooldown": "速啟潛影盒 - 調息刻",
   "litematica_printer.config.quickShulkerCooldown.desc": "速啟潛影盒功能之調息刻數，部分插件服對此有限。設零則閉調息。",
   "litematica_printer.config.removePrintInventory": "清機巧庫藏訣",

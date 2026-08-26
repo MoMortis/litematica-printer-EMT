@@ -198,6 +198,8 @@ public class InventoryUtils {
     }
 
     static int shulkerBoxSlot = -1;
+    private static int quickShulkerEmptySlots;
+    private static boolean quickShulkerHasNonShulkerItem;
 
     public static void switchInv() {
         LocalPlayer player = Minecraft.getInstance().player;
@@ -206,52 +208,83 @@ public class InventoryUtils {
             return;
         }
         NonNullList<Slot> slots = sc.slots;
+        if (InventoryUtilsAccessor.getPICK_BLOCKABLE_SLOTS().isEmpty()) {
+            return;
+        }
+        int maxStacks = Configs.Placement.QUICK_SHULKER_MAX_STACKS.getIntegerValue();
+        int allowedStacks = quickShulkerEmptySlots > 0
+                ? Math.min(maxStacks, quickShulkerEmptySlots)
+                : (quickShulkerHasNonShulkerItem ? 1 : 0);
+        if (allowedStacks == 0) {
+            MessageUtils.setOverlayMessage(I18n.INVENTORY_BACKPACK_FULL.getName());
+            finishQuickShulkerTransfer(player);
+            return;
+        }
+        int movedStacks = 0;
         for (Item item : lastNeedItemList) {
-            for (int y = 0; y < slots.get(0).container.getContainerSize(); y++) {
-                if (slots.get(y).getItem().getItem().equals(item)) {
-                    String[] str = fi.dy.masa.litematica.config.Configs.Generic.PICK_BLOCKABLE_SLOTS.getStringValue().split(",");
-                    if (str.length == 0) return;
-                    for (String s : str) {
-                        if (s == null) break;
-                        try {
-                            int c = Integer.parseInt(s) - 1;
-                            if (BuiltInRegistries.ITEM.getKey(player.getInventory().getItem(c).getItem()).toString().contains("shulker_box") &&
-                                    Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
-                                MessageUtils.setOverlayMessage(I18n.INVENTORY_SHULKER_PRESELECT.getName());
-                                continue;
-                            }
-                            if (OpenInventoryPacket.key != null) {
-                                SwitchItem.newItem(slots.get(y).getItem(), OpenInventoryPacket.pos, OpenInventoryPacket.key, y, -1);
-                            } else SwitchItem.newItem(slots.get(y).getItem(), null, null, y, shulkerBoxSlot);
-                            int a = InventoryUtilsAccessor.getEmptyPickBlockableHotbarSlot(player.getInventory()) == -1 ?
-                                    InventoryUtilsAccessor.getPickBlockTargetSlot(player) :
-                                    InventoryUtilsAccessor.getEmptyPickBlockableHotbarSlot(player.getInventory());
-                            c = a == -1 ? c : a;
-                            ZxyUtils.switchPlayerInvToHotbarAir(c);
-                            fi.dy.masa.malilib.util.InventoryUtils.swapSlots(sc, y, c);
-                            me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(player.getInventory(), c);
-                            if (shulkerBoxSlot != -1) {
-                                client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
-                                client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
-                            }
-                            shulkerBoxSlot = -1;
-                            isOpenHandler = false;
-                            lastNeedItemList = new HashSet<>();
-                            closeAutomatedQuickShulkerContainer(player);
-                            return;
-                        } catch (Exception e) {
-                            System.out.println("切换物品异常");
-                        }
+            for (int y = 0; y < slots.get(0).container.getContainerSize() && movedStacks < allowedStacks; y++) {
+                ItemStack source = slots.get(y).getItem();
+                if (!source.getItem().equals(item)) {
+                    continue;
+                }
+                try {
+                    int c = InventoryUtilsAccessor.getEmptyPickBlockableHotbarSlot(player.getInventory());
+                    if (c == -1) {
+                        c = InventoryUtilsAccessor.getPickBlockTargetSlot(player);
                     }
+                    if (c == -1) {
+                        break;
+                    }
+                    if (BuiltInRegistries.ITEM.getKey(player.getInventory().getItem(c).getItem()).toString().contains("shulker_box")
+                            && Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
+                        MessageUtils.setOverlayMessage(I18n.INVENTORY_SHULKER_PRESELECT.getName());
+                        continue;
+                    }
+                    if (OpenInventoryPacket.key != null) {
+                        SwitchItem.newItem(source, OpenInventoryPacket.pos, OpenInventoryPacket.key, y, -1);
+                    } else {
+                        SwitchItem.newItem(source, null, null, y, shulkerBoxSlot);
+                    }
+                    ZxyUtils.switchPlayerInvToHotbarAir(c);
+                    fi.dy.masa.malilib.util.InventoryUtils.swapSlots(sc, y, c);
+                    me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(player.getInventory(), c);
+                    movedStacks++;
+                } catch (Exception e) {
+                    System.out.println("切换物品异常");
                 }
             }
         }
+        if (shulkerBoxSlot != -1 && movedStacks > 0) {
+            client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
+            client.gameMode.handleInventoryMouseClick(sc.containerId, shulkerBoxSlot, 0, ClickType.PICKUP, client.player);
+        }
+        finishQuickShulkerTransfer(player);
+    }
+
+    private static void finishQuickShulkerTransfer(LocalPlayer player) {
         shulkerBoxSlot = -1;
+        quickShulkerEmptySlots = 0;
+        quickShulkerHasNonShulkerItem = false;
         lastNeedItemList = new HashSet<>();
         isOpenHandler = false;
-        AbstractContainerMenu sc2 = player.containerMenu;
-        if (!sc2.equals(player.inventoryMenu)) {
+        AbstractContainerMenu currentMenu = player.containerMenu;
+        if (!currentMenu.equals(player.inventoryMenu)) {
             closeAutomatedQuickShulkerContainer(player);
+        } else {
+            clearAutomatedQuickShulkerScreenProtection();
+        }
+    }
+
+    private static void snapshotQuickShulkerInventory(net.minecraft.world.entity.player.Inventory inventory) {
+        quickShulkerEmptySlots = 0;
+        quickShulkerHasNonShulkerItem = false;
+        for (int slot = 0; slot < Math.min(36, inventory.getContainerSize()); slot++) {
+            ItemStack stack = inventory.getItem(slot);
+            if (stack.isEmpty()) {
+                quickShulkerEmptySlots++;
+            } else if (!BuiltInRegistries.ITEM.getKey(stack.getItem()).toString().contains("shulker_box")) {
+                quickShulkerHasNonShulkerItem = true;
+            }
         }
     }
 
@@ -269,6 +302,7 @@ public class InventoryUtils {
                     if (items1.stream().anyMatch(s1 -> s1.getItem().equals(item))) {
                         try {
                             shulkerBoxSlot = i;
+                            snapshotQuickShulkerInventory(Minecraft.getInstance().player.getInventory());
                             //#if MC >= 12001 
                             //$$ if (ModUtils.isLoadMod("chesttracker")) InteractionTracker.INSTANCE.clear();
                             //#endif

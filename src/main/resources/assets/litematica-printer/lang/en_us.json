@@ -261,6 +261,8 @@
   "litematica_printer.config.motionAheadBlocks.desc": "Affects parallel breaking only. Extra block layers (in blocks) scanned ahead along the player's dominant movement axis, so newly entered layers are scanned earlier during parallel breaking. 0 disables the extension.",
   "litematica_printer.config.quickShulker": "Quick Shulker - Toggle",
   "litematica_printer.config.quickShulker.desc": "Directly take needed materials from shulker boxes in inventory for quick item retrieval.",
+  "litematica_printer.config.quickShulkerMaxStacks": "Quick Shulker - Maximum Stacks",
+  "litematica_printer.config.quickShulkerMaxStacks.desc": "Maximum number of matching item stacks to take from a shulker box per retrieval, from 1 to 27.",
   "litematica_printer.config.quickShulkerCooldown": "Quick Shulker - Cooldown Time",
   "litematica_printer.config.quickShulkerCooldown.desc": "Cooldown time for quick shulker function (in game ticks). Some plugin servers have cooldown restrictions for this function. Set to 0 to disable cooldown.",
   "litematica_printer.config.removePrintInventory": "Clear Printer Inventory Hotkey",

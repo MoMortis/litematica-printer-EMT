@@ -323,6 +323,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 快捷潜影盒 - 最大取货数量（物品堆数）
+        public static final ConfigInteger QUICK_SHULKER_MAX_STACKS = integer("quickShulkerMaxStacks")
+                .defaultValue(1)
+                .range(1, 27)
+                .build();
+
         // 快捷潜影盒 - 冷却时间
         public static final ConfigInteger QUICK_SHULKER_COOLDOWN = integer("quickShulkerCooldown")
                 .defaultValue(10)
@@ -396,6 +402,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 REFILL_SCROLL_REVERSE,
                 PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE,
                 QUICK_SHULKER,
+                QUICK_SHULKER_MAX_STACKS,
                 QUICK_SHULKER_COOLDOWN
         );
     }
