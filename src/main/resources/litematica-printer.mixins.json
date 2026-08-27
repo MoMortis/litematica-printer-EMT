@@ -59,7 +59,8 @@
     "printer.mc.BeaconBlockEntityAccessor",
     "printer.mc.BeaconButtonAccessor",
     "printer.mc.BeaconScreenMixin",
-    "printer.tweakeroo.MixinInputHandler"
+    "printer.tweakeroo.MixinInputHandler",
+    "printer.tweakeroo.MixinTweakerooInventoryUtils"
   ],
   "injectors": {
     "defaultRequire": 1

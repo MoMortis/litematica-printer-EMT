@@ -219,6 +219,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
             ActionManager.INSTANCE.hitModifier = hitModifier;
             ActionManager.INSTANCE.useProtocol = true;
         }
+        ActionManager.INSTANCE.setQueuedDirectionalPlacement(
+                Configs.Print.PRINT_FAST_DIRECTIONAL_PLACEMENT.getBooleanValue() && action.isDirectional());
         ActionManager.INSTANCE.setLook(action.getPlayerLook());
         ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
         ActionManager.INSTANCE.setWaitForHorizontalLook(action.isWaitForHorizontalLook());

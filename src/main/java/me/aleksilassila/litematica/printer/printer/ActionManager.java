@@ -68,6 +68,10 @@ public class ActionManager {
     private float lastQueuedLookPitch;
     private boolean printerInteractionActive;
     private boolean easyPlaceProtocolActive;
+    private boolean queuedDirectionalPlacement;
+
+    private static final double FAST_DIRECTIONAL_SPEED_BLOCKS_PER_SECOND = 14.0D;
+    private static final double FAST_DIRECTIONAL_STALE_DISTANCE = 2.0D;
     private ActionSource activeSource = ActionSource.GENERIC;
 
     // 打印耗材"在途未确认消耗"计数（按手持物品）。客户端背包数在服务端确认前不会下降，
@@ -172,6 +176,10 @@ public class ActionManager {
         }
         this.queuedClick.expectStack(expectedStackPredicate);
         return true;
+    }
+
+    public void setQueuedDirectionalPlacement(boolean directional) {
+        this.queuedDirectionalPlacement = directional;
     }
 
     public SendResult sendQueue(@Nullable LocalPlayer player) {
@@ -470,6 +478,12 @@ public class ActionManager {
     }
 
     private boolean shouldWaitForServerLook(LocalPlayer player, QueuedClick click) {
+        // The movement-packet mixin supplies the queued look to vanilla; avoid waiting for
+        // the physical camera during fast directional placement (important while gliding).
+        if (Configs.Print.PRINT_FAST_DIRECTIONAL_PLACEMENT.getBooleanValue()
+                && this.queuedDirectionalPlacement) {
+            return false;
+        }
         if ((!this.waitForHorizontalLook && !this.actionRequiresWaitModifyLook)
                 || click.useProtocol
                 || this.needWaitModifyLook
@@ -485,11 +499,17 @@ public class ActionManager {
         if (!this.needWaitModifyLook || click.queuedPlayerPosition == null) {
             return false;
         }
+        double speed = player.getDeltaMovement().length() * 20.0D;
+        double staleDistance = Configs.Print.PRINT_FAST_DIRECTIONAL_PLACEMENT.getBooleanValue()
+                && this.queuedDirectionalPlacement
+                && speed > FAST_DIRECTIONAL_SPEED_BLOCKS_PER_SECOND
+                ? FAST_DIRECTIONAL_STALE_DISTANCE
+                : Math.sqrt(STALE_WAIT_MOVE_DISTANCE_SQR);
         long currentTick = Reference.MINECRAFT.level == null ? Long.MIN_VALUE : Reference.MINECRAFT.level.getGameTime();
         if (currentTick == Long.MIN_VALUE || currentTick <= click.queuedTick) {
             return false;
         }
-        return player.position().distanceToSqr(click.queuedPlayerPosition) > STALE_WAIT_MOVE_DISTANCE_SQR;
+        return player.position().distanceToSqr(click.queuedPlayerPosition) > staleDistance * staleDistance;
     }
 
     private static boolean isHoldingExpectedItem(LocalPlayer player, QueuedClick click) {
@@ -540,6 +560,7 @@ public class ActionManager {
         this.printerInteractionActive = false;
         this.easyPlaceProtocolActive = false;
         this.activeSource = ActionSource.GENERIC;
+        this.queuedDirectionalPlacement = false;
     }
 
     public void resetRuntime() {

@@ -100,7 +100,7 @@ public class InventoryUtils {
     public static boolean isOpenHandler = false;
 
     public static void addQuickShulkerDemand(Item item) {
-        if (lastNeedItemList.isEmpty() && Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
+        if (lastNeedItemList.isEmpty() && Configs.Core.QUICK_SHULKER.getBooleanValue()) {
             quickShulkerSearchDeadlineNanos = System.nanoTime() + QUICK_SHULKER_SEARCH_TIMEOUT_NANOS;
         }
         lastNeedItemList.add(item);
@@ -169,12 +169,12 @@ public class InventoryUtils {
             if (!player.containerMenu.equals(player.inventoryMenu)) return false;
             //排除合成栏 装备栏 副手
             if (Configs.Placement.STORE_ORDERLY.getBooleanValue() && sc.slots.stream().skip(9).limit(sc.slots.size() - 10).noneMatch(slot -> slot.getItem().isEmpty())
-                    && (Configs.Placement.QUICK_SHULKER.getBooleanValue() || Configs.Core.CLOUD_INVENTORY.getBooleanValue())) {
+                    && (Configs.Core.QUICK_SHULKER.getBooleanValue() || Configs.Core.CLOUD_INVENTORY.getBooleanValue())) {
                 SwitchItem.checkItems();
                 return true;
             }
 
-            if (Configs.Placement.QUICK_SHULKER.getBooleanValue() && openShulker(lastNeedItemList)) {
+            if (Configs.Core.QUICK_SHULKER.getBooleanValue() && openShulker(lastNeedItemList)) {
                 return true;
             } else if (Configs.Core.CLOUD_INVENTORY.getBooleanValue()) {
                 for (Item item : lastNeedItemList) {
@@ -227,7 +227,7 @@ public class InventoryUtils {
             return;
         }
         NonNullList<Slot> slots = sc.slots;
-        int maxStacks = Configs.Placement.QUICK_SHULKER_MAX_STACKS.getIntegerValue();
+        int maxStacks = Configs.Core.QUICK_SHULKER_MAX_STACKS.getIntegerValue();
         int allowedStacks = quickShulkerEmptySlots > 0
                 ? Math.min(maxStacks, quickShulkerEmptySlots)
                 : (quickShulkerHasNonShulkerItem ? 1 : 0);
@@ -262,7 +262,7 @@ public class InventoryUtils {
                         break;
                     }
                     if (BuiltInRegistries.ITEM.getKey(player.getInventory().getItem(c).getItem()).toString().contains("shulker_box")
-                            && Configs.Placement.QUICK_SHULKER.getBooleanValue()) {
+                            && Configs.Core.QUICK_SHULKER.getBooleanValue()) {
                         MessageUtils.setOverlayMessage(I18n.INVENTORY_SHULKER_PRESELECT.getName());
                         continue;
                     }
@@ -331,7 +331,7 @@ public class InventoryUtils {
                             BlockUtils.openShulker(stack, shulkerBoxSlot);
                             automatedQuickShulkerOpened = true;
                             isOpenHandler = true;
-                            shulkerCooldown = Configs.Placement.QUICK_SHULKER_COOLDOWN.getIntegerValue();
+                            shulkerCooldown = Configs.Core.QUICK_SHULKER_COOLDOWN.getIntegerValue();
                             return true;
                         } catch (Exception e) {
                         }

@@ -44,7 +44,7 @@ public class MixinInventoryUtils {
         // 快捷潜影盒优先：主栏没有但潜影盒里有 → 从背包潜影盒取
         if (!inMain && inShulkers
                 && (Configs.Core.CLOUD_INVENTORY.getBooleanValue()
-                || Configs.Placement.QUICK_SHULKER.getBooleanValue())) {
+                || Configs.Core.QUICK_SHULKER.getBooleanValue())) {
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.switchItem();
             return;

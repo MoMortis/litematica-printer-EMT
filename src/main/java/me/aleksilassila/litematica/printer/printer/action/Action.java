@@ -86,6 +86,11 @@ public class Action {
         return this;
     }
 
+    /** True when the guide supplied orientation or a restricted placement face. */
+    public boolean isDirectional() {
+        return this.playerLook != null || this.customSides || this.fixedSide != null;
+    }
+
     public Action() {
         this.sides = createDefaultSides();
         this.customSides = false;

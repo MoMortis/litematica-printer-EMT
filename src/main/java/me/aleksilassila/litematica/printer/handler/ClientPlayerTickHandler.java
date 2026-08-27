@@ -176,8 +176,13 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
 
         // 运动感知：按玩家移动主导轴优先扫描新进入的层，减少高速移动漏扫
         // 该配置仅作用于并行破坏（MINE）模式，不影响放置等其他模式
-        boolean adaptive = Configs.Core.MOVE_ADAPTIVE_ITERATION.getBooleanValue()
-                && getPrintMode() == PrintModeType.MINE;
+        boolean fastDirectionalPrint = Configs.Print.PRINT_FAST_DIRECTIONAL_PLACEMENT.getBooleanValue()
+                && getPrintMode() == PrintModeType.PRINTER;
+        boolean adaptive = (Configs.Core.MOVE_ADAPTIVE_ITERATION.getBooleanValue()
+                && getPrintMode() == PrintModeType.MINE) || fastDirectionalPrint;
+        if (fastDirectionalPrint && player.getDeltaMovement().length() * 20.0D < 14.0D) {
+            adaptive = false;
+        }
         int dominantAxis = -1;
         int dominantSign = 1;
         if (adaptive && this.prevPlayerBlockPos != null) {
@@ -199,6 +204,24 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
             }
             if (adx == 0 && ady == 0 && adz == 0) {
                 dominantAxis = -1;
+            }
+        }
+        if (fastDirectionalPrint && adaptive && dominantAxis < 0) {
+            double dxMotion = player.getDeltaMovement().x;
+            double dyMotion = player.getDeltaMovement().y;
+            double dzMotion = player.getDeltaMovement().z;
+            double axMotion = Math.abs(dxMotion);
+            double ayMotion = Math.abs(dyMotion);
+            double azMotion = Math.abs(dzMotion);
+            if (axMotion >= ayMotion && axMotion >= azMotion) {
+                dominantAxis = 0;
+                dominantSign = dxMotion >= 0.0D ? 1 : -1;
+            } else if (ayMotion >= azMotion) {
+                dominantAxis = 1;
+                dominantSign = dyMotion >= 0.0D ? 1 : -1;
+            } else {
+                dominantAxis = 2;
+                dominantSign = dzMotion >= 0.0D ? 1 : -1;
             }
         }
         this.prevPlayerBlockPos = eyePos;

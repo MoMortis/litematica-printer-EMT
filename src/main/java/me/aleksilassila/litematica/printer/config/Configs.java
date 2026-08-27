@@ -211,6 +211,28 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 核心 - 自动补货-快捷潜影盒适配
+        public static final ConfigBoolean HAND_RESTOCK_SHULKER_COMPAT = bool("handRestockShulkerCompat")
+                .defaultValue(false)
+                .build();
+
+        // 核心 - 快捷潜影盒开关
+        public static final ConfigBoolean QUICK_SHULKER = bool("quickShulker")
+                .defaultValue(false)
+                .build();
+
+        // 核心 - 快捷潜影盒最大取货数量（物品堆数）
+        public static final ConfigInteger QUICK_SHULKER_MAX_STACKS = integer("quickShulkerMaxStacks")
+                .defaultValue(1)
+                .range(1, 27)
+                .build();
+
+        // 核心 - 快捷潜影盒冷却时间
+        public static final ConfigInteger QUICK_SHULKER_COOLDOWN = integer("quickShulkerCooldown")
+                .defaultValue(10)
+                .range(0, 20)
+                .build();
+
         // 远程交互 - 开关
         public static final ConfigBoolean CLOUD_INVENTORY = bool("cloudInventory")
                 .defaultValue(false)
@@ -266,6 +288,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 AUTO_ENABLE_PRINTER,
                 UPDATE_CHECK,
                 DEBUG_OUTPUT,
+                HAND_RESTOCK_SHULKER_COMPAT,
+                QUICK_SHULKER,
+                QUICK_SHULKER_MAX_STACKS,
+                QUICK_SHULKER_COOLDOWN,
                 CLOUD_INVENTORY,
                 AUTO_INVENTORY,
                 INVENTORY_LIST,
@@ -317,23 +343,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ConfigBoolean FALLING_CHECK = bool("printFallingBlockCheck")
             .defaultValue(true)
             .build();
-
-        // 快捷潜影盒 - 开关
-        public static final ConfigBoolean QUICK_SHULKER = bool("quickShulker")
-                .defaultValue(false)
-                .build();
-
-        // 快捷潜影盒 - 最大取货数量（物品堆数）
-        public static final ConfigInteger QUICK_SHULKER_MAX_STACKS = integer("quickShulkerMaxStacks")
-                .defaultValue(1)
-                .range(1, 27)
-                .build();
-
-        // 快捷潜影盒 - 冷却时间
-        public static final ConfigInteger QUICK_SHULKER_COOLDOWN = integer("quickShulkerCooldown")
-                .defaultValue(10)
-                .range(0, 20)
-                .build();
 
         // 储存管理 - 有序存放
         public static final ConfigBoolean STORE_ORDERLY = bool("storeOrderly")
@@ -400,10 +409,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_CLOUD_STORE_REFILL_AMOUNT,
                 REFILL_AMOUNT_ADJUST,
                 REFILL_SCROLL_REVERSE,
-                PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE,
-                QUICK_SHULKER,
-                QUICK_SHULKER_MAX_STACKS,
-                QUICK_SHULKER_COOLDOWN
+                PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE
         );
     }
 
@@ -552,6 +558,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         // 放置面排序
         public static final ConfigBoolean PRINT_SORT_SIDES = bool("printSortSides")
+                .defaultValue(false)
+                .build();
+
+        // 快速方向性方块放置（纯客户端原版交互优化）
+        public static final ConfigBoolean PRINT_FAST_DIRECTIONAL_PLACEMENT = bool("printFastDirectionalPlacement")
                 .defaultValue(false)
                 .build();
 
@@ -714,6 +725,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BONEMEAL_CROPS_CLICKS,
                 PRINT_SORT_TARGETS,
                 PRINT_SORT_SIDES,
+                PRINT_FAST_DIRECTIONAL_PLACEMENT,
                 PRINT_ONLY_EMPTY_SHULKER,
                 PRINT_SKIP_SHULKER,
                 PRINT_PRIORITY_LIST,
