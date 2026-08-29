@@ -183,9 +183,11 @@ public class Action {
         if (this.fixedSide != null) {
             return this.fixedSide;
         }
-        // 全局强制方向仅作用于未设置受限 sides 的普通方块，
-        // 不干扰漏斗/箱子等 Guide 精确指定的点击面。
-        if (!this.customSides) {
+        // 全局强制方向仅作用于完全未指定朝向信息的普通方块：
+        // 漏斗/箱子等 Guide 通过受限 sides 决定点击面，
+        // 活塞/侦测器等 Guide 通过指定视角决定朝向，
+        // 强制方向对它们一律不生效（与 AAA 版强制关闭时的行为一致）。
+        if (!this.customSides && this.playerLook == null) {
             Direction forcedDirection = getForcedDirection();
             if (forcedDirection != null) {
                 return forcedDirection;

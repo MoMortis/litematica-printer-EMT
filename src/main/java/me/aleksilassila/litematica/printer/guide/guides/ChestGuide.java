@@ -1,12 +1,10 @@
 package me.aleksilassila.litematica.printer.guide.guides;
 
-import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.guide.Guide;
 import me.aleksilassila.litematica.printer.guide.Result;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
-import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 import net.minecraft.world.level.block.state.properties.ChestType;
@@ -97,17 +95,8 @@ public class ChestGuide extends Guide {
 
     @Override
     protected Result onBuildActionWrongState(BlockMatchResult state) {
-        // 朝向放错的箱子无法通过交互修正，破坏后重放；
-        // ChestType（单箱/双箱半边）差异由 missing 分支的合并流程处理，不能破坏，保持跳过
-        Direction requiredFacing = getProperty(requiredState, ChestBlock.FACING).orElse(null);
-        Direction currentFacing = getProperty(currentState, ChestBlock.FACING).orElse(null);
-        if (requiredFacing != null && currentFacing != requiredFacing
-                && Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue()
-                && Configs.Print.BREAK_WRONG_STATE_BLOCK.getBooleanValue()
-                && BreakUtils.canBreakBlock(blockPos)
-                && BreakUtils.breakRestriction(level, blockPos, currentState)) {
-            BreakUtils.INSTANCE.add(context);
-        }
+        // ChestType（单箱/双箱半边）差异由 missing 分支的合并流程处理；
+        // 朝向差异依赖服务器已同步状态，不做破坏重放（与 AAA 版行为一致）
         return Result.SKIP;
     }
 
