@@ -295,6 +295,9 @@ public class InventoryUtils {
         } else {
             clearAutomatedQuickShulkerScreenProtection();
         }
+        // 通知自动补货适配：取货结束，可执行"物品放回消耗前槽位"
+        me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat
+                .onQuickShulkerTransferFinished(player);
     }
 
     private static void snapshotQuickShulkerInventory(net.minecraft.world.entity.player.Inventory inventory) {
@@ -362,6 +365,9 @@ public class InventoryUtils {
     }
 
     public static void tick() {
+        if (client.player != null) {
+            me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat.clientTick(client.player);
+        }
         abandonExpiredQuickShulkerSearch();
         if (shulkerCooldown > 0) {
             shulkerCooldown--;
