@@ -53,6 +53,7 @@
       "printer.mc.MixinClientLevel",
       "printer.mc.MixinClientPacketListener",
       "printer.mc.MixinGui",
+    "printer.mc.MixinLivingEntity",
     "printer.mc.MixinLocalPlayer",
     "printer.mc.MixinMultiPlayerGameMode",
     "printer.mc.MixinMouseHandler",

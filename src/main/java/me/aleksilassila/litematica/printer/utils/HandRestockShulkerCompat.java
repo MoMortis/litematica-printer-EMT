@@ -7,6 +7,7 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 
 /**
  * 快捷潜影盒 - 自动补货。
@@ -47,14 +48,30 @@ public final class HandRestockShulkerCompat {
                 || before == null || before.isEmpty()) {
             return;
         }
-        if (!Configs.Core.HAND_RESTOCK_SHULKER_COMPAT.getBooleanValue()
-                || !Configs.Core.QUICK_SHULKER.getBooleanValue()) {
-            return;
-        }
 
         Item item = before.getItem();
-        // 物品被形态转换（如奶桶→铁桶）不算同物品消耗
-        if (after != null && !after.isEmpty() && !after.is(item)) {
+        boolean shrunk = after == null || after.isEmpty() || (!after.is(item) ? false : after.getCount() < before.getCount());
+        // 滑翔中使用烟花火箭：客户端不预测扣减（反编译确认消耗仅在服务端执行），
+        // 数量差检测不可用，改用"滑翔中使用火箭即视为消耗"判定
+        boolean rocketLaunched = item == Items.FIREWORK_ROCKET
+                && player.isFallFlying()
+                && !player.isCreative()
+                && after != null && after.is(item);
+
+        if (shrunk || rocketLaunched) {
+            tryRestockFromShulker(localPlayer, hand, item);
+        }
+    }
+
+    /**
+     * 补货入口：主背包（含副手）已没有该物品、但潜影盒里有时，
+     * 交给快捷潜影盒取出并回置到手部槽位。
+     */
+    private static void tryRestockFromShulker(LocalPlayer localPlayer,
+                                              InteractionHand hand,
+                                              Item item) {
+        if (!Configs.Core.HAND_RESTOCK_SHULKER_COMPAT.getBooleanValue()
+                || !Configs.Core.QUICK_SHULKER.getBooleanValue()) {
             return;
         }
 
@@ -64,13 +81,23 @@ public final class HandRestockShulkerCompat {
             return;
         }
 
-        // 主背包没有该物品，但潜影盒里有 → 交给快捷潜影盒取出
-        if (InventoryUtils.countMatchingMainInventory(localPlayer, s -> s.is(item)) == 0
+        // 主背包（含副手槽）没有该物品，但潜影盒里有 → 交给快捷潜影盒取出
+        if (countMainInventoryIncludingOffhand(localPlayer, item) == 0
                 && InventoryUtils.countAvailableIncludingShulkers(localPlayer, item) > 0) {
             recordPendingReturn(localPlayer, hand, item);
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.switchItem();
         }
+    }
+
+    /** 统计主背包 0-35 与副手槽 40 中某物品的总数量。 */
+    private static int countMainInventoryIncludingOffhand(LocalPlayer player, Item item) {
+        int count = InventoryUtils.countMatchingMainInventory(player, s -> s.is(item));
+        ItemStack offhand = player.getInventory().getItem(OFFHAND_INVENTORY_SLOT);
+        if (!offhand.isEmpty() && offhand.is(item)) {
+            count += offhand.getCount();
+        }
+        return count;
     }
 
     /** 记录"取货完成后把物品放回原手部槽位"的待办（仅主手/副手补货请求）。 */

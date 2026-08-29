@@ -608,53 +608,56 @@ if (this.delayedDestroyLocalPrediction) {
     }
 
     // ===== 快捷潜影盒-自动补货：自主检测主手/副手物品消耗 =====
-    // 仅按方法名匹配并 require=0，兼容两个 MC 版本的不同方法签名
+    // 显式参数逐手注入：只对比本次使用的手，避免把另一只手卷进判定
     @Unique
-    private ItemStack litematica_printer$restockSnapshotMain = ItemStack.EMPTY;
+    private ItemStack litematica_printer$restockSnapshot = ItemStack.EMPTY;
     @Unique
-    private ItemStack litematica_printer$restockSnapshotOff = ItemStack.EMPTY;
+    private InteractionHand litematica_printer$restockSnapshotHand;
 
     @Inject(method = "useItem", at = @At("HEAD"), require = 0)
-    private void litematica_printer$captureUseItem(CallbackInfoReturnable<InteractionResult> cir) {
-        litematica_printer$captureHandSnapshots();
+    private void litematica_printer$captureUseItem(net.minecraft.world.entity.player.Player player,
+                                                   InteractionHand hand,
+                                                   CallbackInfoReturnable<InteractionResult> cir) {
+        litematica_printer$captureHandSnapshot(player, hand);
     }
 
     @Inject(method = "useItem", at = @At("TAIL"), require = 0)
-    private void litematica_printer$detectUseItemConsumption(CallbackInfoReturnable<InteractionResult> cir) {
-        litematica_printer$detectHandConsumption();
+    private void litematica_printer$detectUseItemConsumption(net.minecraft.world.entity.player.Player player,
+                                                             InteractionHand hand,
+                                                             CallbackInfoReturnable<InteractionResult> cir) {
+        litematica_printer$detectHandConsumption(player, hand);
     }
 
     @Inject(method = "useItemOn", at = @At("HEAD"), require = 0)
-    private void litematica_printer$captureUseItemOn(CallbackInfoReturnable<InteractionResult> cir) {
-        litematica_printer$captureHandSnapshots();
+    private void litematica_printer$captureUseItemOn(LocalPlayer player,
+                                                     InteractionHand hand,
+                                                     BlockHitResult blockHitResult,
+                                                     CallbackInfoReturnable<InteractionResult> cir) {
+        litematica_printer$captureHandSnapshot(player, hand);
     }
 
     @Inject(method = "useItemOn", at = @At("TAIL"), require = 0)
-    private void litematica_printer$detectUseItemOnConsumption(CallbackInfoReturnable<InteractionResult> cir) {
-        litematica_printer$detectHandConsumption();
+    private void litematica_printer$detectUseItemOnConsumption(LocalPlayer player,
+                                                               InteractionHand hand,
+                                                               BlockHitResult blockHitResult,
+                                                               CallbackInfoReturnable<InteractionResult> cir) {
+        litematica_printer$detectHandConsumption(player, hand);
     }
 
     @Unique
-    private void litematica_printer$captureHandSnapshots() {
-        LocalPlayer player = this.minecraft.player;
-        if (player == null) {
-            return;
-        }
-        this.litematica_printer$restockSnapshotMain = player.getMainHandItem().copy();
-        this.litematica_printer$restockSnapshotOff = player.getOffhandItem().copy();
+    private void litematica_printer$captureHandSnapshot(net.minecraft.world.entity.player.Player player,
+                                                        InteractionHand hand) {
+        this.litematica_printer$restockSnapshot = player.getItemInHand(hand).copy();
+        this.litematica_printer$restockSnapshotHand = hand;
     }
 
     @Unique
-    private void litematica_printer$detectHandConsumption() {
-        LocalPlayer player = this.minecraft.player;
-        if (player == null) {
+    private void litematica_printer$detectHandConsumption(net.minecraft.world.entity.player.Player player,
+                                                          InteractionHand hand) {
+        if (this.litematica_printer$restockSnapshotHand != hand) {
             return;
         }
         me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat.onHandStackConsumed(
-                player, InteractionHand.MAIN_HAND,
-                this.litematica_printer$restockSnapshotMain, player.getMainHandItem());
-        me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat.onHandStackConsumed(
-                player, InteractionHand.OFF_HAND,
-                this.litematica_printer$restockSnapshotOff, player.getOffhandItem());
+                player, hand, this.litematica_printer$restockSnapshot, player.getItemInHand(hand));
     }
 }
