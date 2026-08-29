@@ -302,4 +302,8 @@ public final class HandRestockShulkerCompat {
         }
         return -1;
     }
+
+    private static long currentTick(net.minecraft.world.entity.player.Player player) {
+        return player.level() == null ? 0L : player.level().getGameTime();
+    }
 }
