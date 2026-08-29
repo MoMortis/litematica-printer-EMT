@@ -19,6 +19,7 @@ import net.minecraft.network.protocol.game.ServerboundPlayerActionPacket.Action;
 import net.minecraft.network.protocol.game.ServerboundUseItemOnPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
+import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
@@ -659,5 +660,15 @@ if (this.delayedDestroyLocalPrediction) {
         }
         me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat.onHandStackConsumed(
                 player, hand, this.litematica_printer$restockSnapshot, player.getItemInHand(hand));
+    }
+
+    @Inject(method = "handleInventoryMouseClick", at = @At("HEAD"), require = 0)
+    private void litematica_printer$markThrowDrop(int containerId, int slotId, int mouseButton,
+                                                  ClickType clickType,
+                                                  net.minecraft.world.entity.player.Player player,
+                                                  CallbackInfo ci) {
+        if (clickType == ClickType.THROW) {
+            me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat.markLocalDrop();
+        }
     }
 }

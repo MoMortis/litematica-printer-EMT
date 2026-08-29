@@ -142,6 +142,16 @@ public final class HandRestockShulkerCompat {
 
     // ===== 被动消耗检测：覆盖无手部 use 事件的消耗（弓/弩箭矢、不死图腾等） =====
     private static final ItemStack[] prevSlots = new ItemStack[OFFHAND_INVENTORY_SLOT + 1];
+    private static final int DROP_SUPPRESS_TICKS = 3;
+    private static long lastLocalDropTick = Long.MIN_VALUE;
+
+    /** 本地发生丢弃（Q/Ctrl+Q/背包界面扔出）时调用，抑制随后数 tick 内的被动补货判定。 */
+    public static void markLocalDrop() {
+        Minecraft client = Minecraft.getInstance();
+        if (client.player != null) {
+            lastLocalDropTick = currentTick(client.player);
+        }
+    }
 
     /** 每客户端 tick 调用（zxy InventoryUtils#tick），执行被动消耗检测。 */
     public static void clientTick(LocalPlayer player) {
@@ -149,29 +159,30 @@ public final class HandRestockShulkerCompat {
     }
 
     /**
-     * 对比相邻两 tick 的背包槽位（0-35 + 副手 40）：同一物品数量减少且期间
-     * 无本地背包操作，即判定该物品被消耗（箭矢射出、图腾弹出等），
-     * 按补货流程处理并回置到该槽位。每个 tick 至多处理一个槽位。
+     * 仅检测"槽位从非空变空"：同一物品全背包总量确实减少（排除背包内移动/换位）、
+     * 且近期无本地丢弃，即判定该物品被消耗（箭矢射出、图腾弹出等），
+     * 按补货流程处理并回置到该槽位。
      */
     private static void detectPassiveConsumption(LocalPlayer player) {
         net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
-        // 仅在自身背包界面、光标空闲、玩家存活时判定，避免把背包整理/容器操作误判为消耗
+        // 仅在自身背包界面、光标空闲、玩家存活时判定，避免把容器操作误判为消耗
         boolean quiet = player.isAlive()
                 && player.containerMenu.equals(player.inventoryMenu)
                 && player.inventoryMenu.getCarried().isEmpty();
         if (quiet) {
-            for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT; slot++) {
+            long tick = currentTick(player);
+            boolean dropRecent = tick - lastLocalDropTick <= DROP_SUPPRESS_TICKS;
+            for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT && !dropRecent; slot++) {
                 if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
                     continue;
                 }
                 ItemStack before = prevSlots[slot];
-                ItemStack after = inventory.getItem(slot);
-                // after 为空 = 该槽物品刚好耗尽（最后一支箭/图腾弹出），必须纳入判定
-                boolean consumed = before != null && !before.isEmpty()
-                        && (after.isEmpty()
-                            || (after.is(before.getItem()) && after.getCount() < before.getCount()));
-                if (consumed) {
-                    tryRestockFromShulker(player, before.getItem(), 0, slot);
+                if (before == null || before.isEmpty() || !inventory.getItem(slot).isEmpty()) {
+                    continue;
+                }
+                Item item = before.getItem();
+                if (countItem(prevSlots, item) > countItem(inventory, item)) {
+                    tryRestockFromShulker(player, item, 0, slot);
                     break;
                 }
             }
@@ -182,6 +193,34 @@ public final class HandRestockShulkerCompat {
             }
             prevSlots[slot] = inventory.getItem(slot).copy();
         }
+    }
+
+    private static int countItem(ItemStack[] slots, Item item) {
+        int count = 0;
+        for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT; slot++) {
+            if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
+                continue;
+            }
+            ItemStack stack = slots[slot];
+            if (stack != null && !stack.isEmpty() && stack.is(item)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    private static int countItem(net.minecraft.world.entity.player.Inventory inventory, Item item) {
+        int count = 0;
+        for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT; slot++) {
+            if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
+                continue;
+            }
+            ItemStack stack = inventory.getItem(slot);
+            if (!stack.isEmpty() && stack.is(item)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
     }
 
     public static void clearPendingReturn() {

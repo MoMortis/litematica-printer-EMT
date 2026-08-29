@@ -147,4 +147,11 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
         }
         return Optional.empty();
     }
+
+    // ===== 快捷潜影盒-自动补货：本地丢弃标记（抑制 Ctrl+Q 误触发） =====
+    @Inject(method = "drop", at = @At("HEAD"))
+    private void litematica_printer$markLocalDrop(boolean dropAll,
+                                                  org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable<Boolean> cir) {
+        me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat.markLocalDrop();
+    }
 }
