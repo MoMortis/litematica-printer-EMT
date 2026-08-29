@@ -52,7 +52,8 @@ public class PistonGuide extends Guide {
     private boolean isObserverOutputChainReady(Direction direction) {
         Set<BlockPos> visited = new HashSet<>();
         SchematicBlockContext temp = context.offset(direction);
-        while (temp.requiredState.getBlock() instanceof ObserverBlock) {
+        // 链上位置可能超出投影范围，此时 requiredState 为 null，视为非观察者（链路就绪）
+        while (temp.requiredState != null && temp.requiredState.getBlock() instanceof ObserverBlock) {
             if (!visited.add(temp.blockPos)) {
                 return true;
             }
@@ -61,7 +62,8 @@ public class PistonGuide extends Guide {
                 return false;
             }
             SchematicBlockContext observed = temp.offset(observerFacing);
-            if (observerFacing == direction && BlockMatchResult.compare(observed) != BlockMatchResult.CORRECT) {
+            if (observerFacing == direction && observed.requiredState != null
+                    && BlockMatchResult.compare(observed) != BlockMatchResult.CORRECT) {
                 return false;
             }
             temp = observed;
