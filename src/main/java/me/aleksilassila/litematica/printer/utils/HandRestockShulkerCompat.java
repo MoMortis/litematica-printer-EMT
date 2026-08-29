@@ -171,7 +171,9 @@ public final class HandRestockShulkerCompat {
                 && player.inventoryMenu.getCarried().isEmpty();
         if (quiet) {
             long tick = currentTick(player);
-            boolean dropRecent = tick - lastLocalDropTick <= DROP_SUPPRESS_TICKS;
+            boolean dropRecent = lastLocalDropTick != Long.MIN_VALUE
+                    && tick >= lastLocalDropTick
+                    && tick - lastLocalDropTick <= DROP_SUPPRESS_TICKS;
             for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT && !dropRecent; slot++) {
                 if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
                     continue;
