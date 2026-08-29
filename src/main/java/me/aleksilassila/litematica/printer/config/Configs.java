@@ -315,7 +315,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         // 核心 - 工作间隔
         public static final ConfigInteger PLACE_INTERVAL = integer("placeInterval")
                 .defaultValue(1)
-                .range(0, 20)
+                .range(1, 20)
                 .build();
 
         // 每刻放置方块数
