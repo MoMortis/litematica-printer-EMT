@@ -211,7 +211,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 核心 - 自动补货-快捷潜影盒适配
+        // 核心 - 快捷潜影盒-自动补货
         public static final ConfigBoolean HAND_RESTOCK_SHULKER_COMPAT = bool("handRestockShulkerCompat")
                 .defaultValue(false)
                 .build();

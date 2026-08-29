@@ -7,19 +7,15 @@ import net.minecraft.world.InteractionHand;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
 
 /**
- * Tweakeroo 自动补货 - 快捷潜影盒适配。
+ * 快捷潜影盒 - 自动补货。
  *
- * Tweakeroo 的 hand restock 只搜索玩家背包本身，不会翻找背包内潜影盒的内容。
- * 本适配在其补货请求进入时判定：主背包没有该物品、但潜影盒里有时，
- * 转交给"快捷潜影盒"流程取出物品放入背包；取出完成后再把物品放回
+ * 自主检测主手/副手物品的消耗（Mixin 捕获 MultiPlayerGameMode#useItem /
+ * useItemOn 前后的手部物品快照，数量减少即视为消耗）：
+ * 消耗后若主背包已没有该物品、但背包内潜影盒里还有，
+ * 则交给"快捷潜影盒"流程取出物品放入背包；取出完成后再把物品放回
  * 该物品消耗前所在的手部槽位（主手/副手）。
- *
- * 另外适配 Tweakeroo 的飞行烟花火箭自动切换（equipBestFlightRockets）：
- * 该功能只在主背包中寻找烟花火箭，滑翔中火箭用尽后不会再有消耗事件触发
- * hand restock，因此在其入口额外检查潜影盒。
  */
 public final class HandRestockShulkerCompat {
     private HandRestockShulkerCompat() {
@@ -40,15 +36,15 @@ public final class HandRestockShulkerCompat {
     private static long pendingExpireTick;
 
     /**
-     * 由 Mixin 在 tweakeroo InventoryUtils#restockNewStackToHand 入口调用。
-     * 不取消原逻辑：背包里确实找不到物品时 tweakeroo 自身也无事可做。
+     * 由 Mixin 在 MultiPlayerGameMode#useItem / useItemOn 结束时调用：
+     * 对比使用前后该手部的物品快照，数量减少（或耗尽为空）即判定发生消耗。
      */
-    public static void onTweakerooRestockRequest(net.minecraft.world.entity.player.Player player,
-                                                 InteractionHand hand,
-                                                 ItemStack stackReference) {
+    public static void onHandStackConsumed(net.minecraft.world.entity.player.Player player,
+                                           InteractionHand hand,
+                                           ItemStack before,
+                                           ItemStack after) {
         if (!(player instanceof LocalPlayer localPlayer)
-                || stackReference == null
-                || stackReference.isEmpty()) {
+                || before == null || before.isEmpty()) {
             return;
         }
         if (!Configs.Core.HAND_RESTOCK_SHULKER_COMPAT.getBooleanValue()
@@ -56,14 +52,15 @@ public final class HandRestockShulkerCompat {
             return;
         }
 
-        Item item = stackReference.getItem();
-        if (item == Items.AIR) {
+        Item item = before.getItem();
+        // 物品被形态转换（如奶桶→铁桶）不算同物品消耗
+        if (after != null && !after.isEmpty() && !after.is(item)) {
             return;
         }
 
         // 快捷潜影盒正在开盒取货（此时本地 CONTAINER 数据被临时清空，不可信）
         if (me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler
-                || hasRecentlyOpenedShulker(localPlayer)) {
+                || InventoryUtils.hasRecentlyOpenedShulker(localPlayer)) {
             return;
         }
 
@@ -71,40 +68,6 @@ public final class HandRestockShulkerCompat {
         if (InventoryUtils.countMatchingMainInventory(localPlayer, s -> s.is(item)) == 0
                 && InventoryUtils.countAvailableIncludingShulkers(localPlayer, item) > 0) {
             recordPendingReturn(localPlayer, hand, item);
-            me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
-            me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.switchItem();
-        }
-    }
-
-    /**
-     * 由 Mixin 在 tweakeroo InventoryUtils#equipBestFlightRockets 入口调用。
-     * 滑翔中烟花火箭用尽后玩家点击不再产生消耗事件，hand restock 不会再次触发；
-     * 该方法本身也只搜索主背包，因此在这里补一次潜影盒检查。
-     */
-    public static void onTweakerooRocketSwapRequest(net.minecraft.world.entity.player.Player player) {
-        if (!(player instanceof LocalPlayer localPlayer)) {
-            return;
-        }
-        if (!Configs.Core.HAND_RESTOCK_SHULKER_COMPAT.getBooleanValue()
-                || !Configs.Core.QUICK_SHULKER.getBooleanValue()) {
-            return;
-        }
-
-        // 任一手部仍有烟花火箭时由 tweakeroo 自己完成切换
-        if (localPlayer.getMainHandItem().is(Items.FIREWORK_ROCKET)
-                || localPlayer.getOffhandItem().is(Items.FIREWORK_ROCKET)) {
-            return;
-        }
-
-        if (me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler
-                || hasRecentlyOpenedShulker(localPlayer)) {
-            return;
-        }
-
-        Item item = Items.FIREWORK_ROCKET;
-        // 主背包里已有火箭时无需翻潜影盒，取货成功后 tweakeroo 会自动装备
-        if (InventoryUtils.countMatchingMainInventory(localPlayer, s -> s.is(item)) == 0
-                && InventoryUtils.countAvailableIncludingShulkers(localPlayer, item) > 0) {
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.switchItem();
         }
@@ -226,10 +189,6 @@ public final class HandRestockShulkerCompat {
         }
         // Inventory 0-8 是快捷栏；InventoryMenu 中快捷栏对应 36-44
         return inventorySlot < 9 ? inventorySlot + 36 : inventorySlot;
-    }
-
-    private static boolean hasRecentlyOpenedShulker(LocalPlayer player) {
-        return InventoryUtils.hasRecentlyOpenedShulker(player);
     }
 
     private static long currentTick(net.minecraft.world.entity.player.Player player) {
