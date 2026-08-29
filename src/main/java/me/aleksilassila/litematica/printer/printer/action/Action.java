@@ -183,10 +183,13 @@ public class Action {
         if (this.fixedSide != null) {
             return this.fixedSide;
         }
-        // 全局强制方向作用于所有未设置固定方向的放置动作。
-        Direction forcedDirection = getForcedDirection();
-        if (forcedDirection != null) {
-            return forcedDirection;
+        // 全局强制方向仅作用于未设置受限 sides 的普通方块，
+        // 不干扰漏斗/箱子等 Guide 精确指定的点击面。
+        if (!this.customSides) {
+            Direction forcedDirection = getForcedDirection();
+            if (forcedDirection != null) {
+                return forcedDirection;
+            }
         }
         List<Direction> orderedSides = getOrderedSides();
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
