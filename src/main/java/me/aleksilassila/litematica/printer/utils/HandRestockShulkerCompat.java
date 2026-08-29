@@ -132,8 +132,9 @@ public final class HandRestockShulkerCompat {
         }
     }
 
-    /** 每客户端 tick 调用（zxy InventoryUtils#tick），执行延迟的"放回手部槽位"。 */
+    /** 每客户端 tick 调用（zxy InventoryUtils#tick），执行被动消耗检测与延迟的"放回手部槽位"。 */
     public static void clientTick(LocalPlayer player) {
+        detectPassiveHandConsumption(player);
         if (pendingItem == null || pendingTargetInventorySlot < 0) {
             return;
         }
@@ -159,6 +160,40 @@ public final class HandRestockShulkerCompat {
         }
         moveStackToInventorySlot(player, pendingItem, pendingTargetInventorySlot);
         clearPendingReturn();
+    }
+
+    // ===== 被动消耗检测：覆盖无 use 事件的纯服务端消耗（如不死图腾生效） =====
+    private static ItemStack prevMainHand = ItemStack.EMPTY;
+    private static ItemStack prevOffHand = ItemStack.EMPTY;
+
+    /**
+     * 对比相邻两 tick 的手部物品：同一物品数量减少且期间无本地背包操作，
+     * 即判定该物品被服务端消耗（图腾弹出等），按补货流程处理。
+     */
+    private static void detectPassiveHandConsumption(LocalPlayer player) {
+        ItemStack main = player.getMainHandItem();
+        ItemStack off = player.getOffhandItem();
+        // 仅在自身背包界面、光标空闲、玩家存活时判定，避免把背包整理/容器操作误判为消耗
+        boolean quiet = player.isAlive()
+                && player.containerMenu.equals(player.inventoryMenu)
+                && player.inventoryMenu.getCarried().isEmpty();
+        if (quiet) {
+            checkPassiveConsumption(player, InteractionHand.MAIN_HAND, prevMainHand, main);
+            checkPassiveConsumption(player, InteractionHand.OFF_HAND, prevOffHand, off);
+        }
+        prevMainHand = main.copy();
+        prevOffHand = off.copy();
+    }
+
+    private static void checkPassiveConsumption(LocalPlayer player,
+                                                InteractionHand hand,
+                                                ItemStack before,
+                                                ItemStack after) {
+        if (before.isEmpty() || after.isEmpty() || !after.is(before.getItem())
+                || after.getCount() >= before.getCount()) {
+            return;
+        }
+        tryRestockFromShulker(player, hand, before.getItem(), 0);
     }
 
     public static void clearPendingReturn() {
