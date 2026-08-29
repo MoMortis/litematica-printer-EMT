@@ -4,7 +4,9 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.world.InteractionHand;
+import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.ClickType;
+import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
@@ -13,28 +15,20 @@ import net.minecraft.world.item.Items;
  * 快捷潜影盒 - 自动补货。
  *
  * 自主检测主手/副手物品的消耗（Mixin 捕获 MultiPlayerGameMode#useItem /
- * useItemOn 前后的手部物品快照，数量减少即视为消耗）：
+ * useItemOn 前后的手部物品快照、LivingEntity 释放消耗、tick 被动检测）：
  * 消耗后若主背包已没有该物品、但背包内潜影盒里还有，
- * 则交给"快捷潜影盒"流程取出物品放入背包；取出完成后再把物品放回
- * 该物品消耗前所在的手部槽位（主手/副手）。
+ * 则交给"快捷潜影盒"流程取出物品放入背包；并在同一 tick、
+ * 关闭潜影盒容器之前，把物品放回该物品消耗前所在的手部槽位（主手/副手）。
  */
 public final class HandRestockShulkerCompat {
     private HandRestockShulkerCompat() {
     }
 
-    /** 取货完成后等待容器关闭/数据同步的延迟（tick）。 */
-    private static final int HAND_RETURN_DELAY_TICKS = 2;
-    /** 待回置请求的最长有效期（tick），超时自动丢弃。 */
-    private static final int HAND_RETURN_TIMEOUT_TICKS = 100;
     /** 副手在玩家背包（Inventory）中的槽位号。 */
     private static final int OFFHAND_INVENTORY_SLOT = 40;
-    /** 副手在玩家背包界面（InventoryMenu）中的槽位号。 */
-    private static final int OFFHAND_MENU_SLOT = 45;
 
     private static Item pendingItem;
     private static int pendingTargetInventorySlot = -1;
-    private static long pendingExecuteTick;
-    private static long pendingExpireTick;
 
     /**
      * 由 Mixin 在 MultiPlayerGameMode#useItem / useItemOn 结束时调用：
@@ -62,7 +56,7 @@ public final class HandRestockShulkerCompat {
     }
 
     /**
-     * 补货入口：主背包（含副手）已没有该物品、但潜影盒里有时，
+     * 补货入口：主背包（含副手，含预测消耗量）已没有该物品、但潜影盒里有时，
      * 交给快捷潜影盒取出并回置到手部槽位。
      */
     private static void tryRestockFromShulker(LocalPlayer localPlayer,
@@ -109,62 +103,35 @@ public final class HandRestockShulkerCompat {
         }
         pendingItem = item;
         pendingTargetInventorySlot = inventorySlot;
-        long tick = currentTick(player);
-        pendingExecuteTick = tick + HAND_RETURN_DELAY_TICKS;
-        pendingExpireTick = tick + HAND_RETURN_TIMEOUT_TICKS;
     }
 
     /**
      * 由快捷潜影盒取货流程在取货结束时调用（zxy InventoryUtils#finishQuickShulkerTransfer）。
+     * 此时潜影盒容器尚未关闭，在取出物品进背包的同一 tick 内，
+     * 直接通过当前容器菜单把物品放回消耗前的手部槽位。
      */
     public static void onQuickShulkerTransferFinished(net.minecraft.world.entity.player.Player player) {
-        if (pendingItem == null || pendingTargetInventorySlot < 0) {
-            return;
-        }
-        // 放回目标槽位已被占用则直接放弃本次回置
-        if (!player.getInventory().getItem(pendingTargetInventorySlot).isEmpty()) {
-            clearPendingReturn();
-            return;
-        }
-        if (pendingExecuteTick == 0L) {
-            long tick = player.level() == null ? 0L : player.level().getGameTime();
-            pendingExecuteTick = tick + HAND_RETURN_DELAY_TICKS;
-        }
-    }
-
-    /** 每客户端 tick 调用（zxy InventoryUtils#tick），执行被动消耗检测与延迟的"放回手部槽位"。 */
-    public static void clientTick(LocalPlayer player) {
-        detectPassiveHandConsumption(player);
-        if (pendingItem == null || pendingTargetInventorySlot < 0) {
-            return;
-        }
-        long tick = currentTick(player);
-        if (tick > pendingExpireTick) {
-            clearPendingReturn();
-            return;
-        }
-        if (tick < pendingExecuteTick) {
-            return;
-        }
-        // 只在玩家自身背包界面（无其他容器打开、光标空闲）时执行
-        Minecraft client = Minecraft.getInstance();
-        if (client.gameMode == null
-                || !player.containerMenu.equals(player.inventoryMenu)
-                || !player.inventoryMenu.getCarried().isEmpty()) {
-            return;
-        }
-        if (!player.getInventory().getItem(pendingTargetInventorySlot).isEmpty()) {
-            // 目标槽位已有物品则不移动
-            clearPendingReturn();
-            return;
-        }
-        moveStackToInventorySlot(player, pendingItem, pendingTargetInventorySlot);
+        Item item = pendingItem;
+        int targetInventorySlot = pendingTargetInventorySlot;
         clearPendingReturn();
+        if (item == null || targetInventorySlot < 0 || !(player instanceof LocalPlayer localPlayer)) {
+            return;
+        }
+        // 放回目标槽位已被占用则不移动
+        if (!player.getInventory().getItem(targetInventorySlot).isEmpty()) {
+            return;
+        }
+        moveStackToInventorySlot(localPlayer, item, targetInventorySlot);
     }
 
     // ===== 被动消耗检测：覆盖无 use 事件的纯服务端消耗（如不死图腾生效） =====
     private static ItemStack prevMainHand = ItemStack.EMPTY;
     private static ItemStack prevOffHand = ItemStack.EMPTY;
+
+    /** 每客户端 tick 调用（zxy InventoryUtils#tick），执行被动消耗检测。 */
+    public static void clientTick(LocalPlayer player) {
+        detectPassiveHandConsumption(player);
+    }
 
     /**
      * 对比相邻两 tick 的手部物品：同一物品数量减少且期间无本地背包操作，
@@ -199,60 +166,80 @@ public final class HandRestockShulkerCompat {
     public static void clearPendingReturn() {
         pendingItem = null;
         pendingTargetInventorySlot = -1;
-        pendingExecuteTick = 0L;
-        pendingExpireTick = 0L;
     }
 
     /**
-     * 把主背包中一件目标物品移动到指定的玩家背包槽位（调用方保证目标槽位为空）。
-     * 通过背包点击完成：拾起源槽位 → 放入目标槽位；若目标槽位被服务器侧数据
-     * 占用导致交换，则把光标物品放回源槽位并放弃。
+     * 把玩家背包中的一件目标物品移动到指定背包槽位（调用方保证目标槽位为空）。
+     * 通过当前打开的容器菜单（潜影盒）点击完成；副手不在容器菜单中，
+     * 用 SWAP(按钮 40) 与源槽位交换。若拾取后目标槽位被服务器侧数据占用
+     * 导致交换，则把光标物品放回源槽位并放弃。
      */
     private static void moveStackToInventorySlot(LocalPlayer player, Item item, int targetInventorySlot) {
-        int targetMenuSlot = toMenuSlot(targetInventorySlot);
-        if (targetMenuSlot < 0) {
+        Minecraft client = Minecraft.getInstance();
+        if (client.gameMode == null) {
             return;
         }
+        AbstractContainerMenu menu = player.containerMenu;
+
         net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
+        int sourceInventorySlot = -1;
         int size = Math.min(36, inventory.getContainerSize());
         for (int slot = 0; slot < size; slot++) {
             if (slot == targetInventorySlot) {
                 continue;
             }
             ItemStack stack = inventory.getItem(slot);
-            if (stack.isEmpty() || !stack.is(item)) {
-                continue;
+            if (!stack.isEmpty() && stack.is(item)) {
+                sourceInventorySlot = slot;
+                break;
             }
-            int sourceMenuSlot = toMenuSlot(slot);
-            if (sourceMenuSlot < 0) {
-                continue;
-            }
-            Minecraft client = Minecraft.getInstance();
-            client.gameMode.handleInventoryMouseClick(
-                    player.inventoryMenu.containerId, sourceMenuSlot, 0, ClickType.PICKUP, player);
-            client.gameMode.handleInventoryMouseClick(
-                    player.inventoryMenu.containerId, targetMenuSlot, 0, ClickType.PICKUP, player);
-            if (!player.inventoryMenu.getCarried().isEmpty()) {
-                client.gameMode.handleInventoryMouseClick(
-                        player.inventoryMenu.containerId, sourceMenuSlot, 0, ClickType.PICKUP, player);
-            }
+        }
+        // 主背包中没找到时，副手可作为来源
+        if (sourceInventorySlot < 0
+                && targetInventorySlot != OFFHAND_INVENTORY_SLOT
+                && !inventory.getItem(OFFHAND_INVENTORY_SLOT).isEmpty()
+                && inventory.getItem(OFFHAND_INVENTORY_SLOT).is(item)) {
+            sourceInventorySlot = OFFHAND_INVENTORY_SLOT;
+        }
+        if (sourceInventorySlot < 0) {
             return;
         }
+        int sourceMenuSlot = findMenuSlotForInventorySlot(menu, player, sourceInventorySlot);
+        if (sourceMenuSlot < 0) {
+            return;
+        }
+
+        if (targetInventorySlot == OFFHAND_INVENTORY_SLOT) {
+            // 副手不在任何容器菜单中：SWAP 按钮 40 = 与副手交换
+            client.gameMode.handleInventoryMouseClick(
+                    menu.containerId, sourceMenuSlot, 40, ClickType.SWAP, player);
+            return;
+        }
+        int targetMenuSlot = findMenuSlotForInventorySlot(menu, player, targetInventorySlot);
+        if (targetMenuSlot < 0) {
+            return;
+        }
+        client.gameMode.handleInventoryMouseClick(
+                menu.containerId, sourceMenuSlot, 0, ClickType.PICKUP, player);
+        client.gameMode.handleInventoryMouseClick(
+                menu.containerId, targetMenuSlot, 0, ClickType.PICKUP, player);
+        if (!menu.getCarried().isEmpty()) {
+            client.gameMode.handleInventoryMouseClick(
+                    menu.containerId, sourceMenuSlot, 0, ClickType.PICKUP, player);
+        }
     }
 
-    /** 玩家背包（Inventory）槽位号 → 背包界面（InventoryMenu）槽位号。 */
-    private static int toMenuSlot(int inventorySlot) {
-        if (inventorySlot == OFFHAND_INVENTORY_SLOT) {
-            return OFFHAND_MENU_SLOT;
+    /** 在当前容器菜单中查找"玩家背包指定槽位"对应的菜单槽位号。 */
+    private static int findMenuSlotForInventorySlot(AbstractContainerMenu menu,
+                                                    LocalPlayer player,
+                                                    int inventorySlot) {
+        for (int i = 0; i < menu.slots.size(); i++) {
+            Slot slot = menu.slots.get(i);
+            if (slot.container == player.getInventory()
+                    && slot.getContainerSlot() == inventorySlot) {
+                return i;
+            }
         }
-        if (inventorySlot < 0 || inventorySlot > 35) {
-            return -1;
-        }
-        // Inventory 0-8 是快捷栏；InventoryMenu 中快捷栏对应 36-44
-        return inventorySlot < 9 ? inventorySlot + 36 : inventorySlot;
-    }
-
-    private static long currentTick(net.minecraft.world.entity.player.Player player) {
-        return player.level() == null ? 0L : player.level().getGameTime();
+        return -1;
     }
 }

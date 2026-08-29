@@ -289,15 +289,15 @@ public class InventoryUtils {
         lastNeedItemList = new HashSet<>();
         quickShulkerSearchDeadlineNanos = 0L;
         isOpenHandler = false;
+        // 通知自动补货适配：趁潜影盒容器未关闭，与取出物品同一 tick 执行"物品放回消耗前槽位"
+        me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat
+                .onQuickShulkerTransferFinished(player);
         AbstractContainerMenu currentMenu = player.containerMenu;
         if (!currentMenu.equals(player.inventoryMenu)) {
             closeAutomatedQuickShulkerContainer(player);
         } else {
             clearAutomatedQuickShulkerScreenProtection();
         }
-        // 通知自动补货适配：取货结束，可执行"物品放回消耗前槽位"
-        me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat
-                .onQuickShulkerTransferFinished(player);
     }
 
     private static void snapshotQuickShulkerInventory(net.minecraft.world.entity.player.Inventory inventory) {
