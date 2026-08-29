@@ -47,6 +47,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
     @Nullable
     private Item activePlacementItem;
     private long nextPlacementItemTick;
+    private long lastActivePlacementTick;
 
     private SchematicBlockContext ctx;
 
@@ -78,6 +79,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (!Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
             activePlacementItem = null;
             nextPlacementItemTick = 0L;
+            lastActivePlacementTick = 0L;
         }
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null) return false;
@@ -230,6 +232,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         }
         if (sendResult.isSent() && placementItem != null && Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
             activePlacementItem = placementItem;
+            lastActivePlacementTick = level.getGameTime();
         }
         if (sendResult.isWaiting() || sendResult == ActionManager.SendResult.RESERVE_LIMIT) {
             skipIteration.set(true);
@@ -257,7 +260,12 @@ public class PrintHandler extends ClientPlayerTickHandler {
         long tick = level.getGameTime();
         if (tick < nextPlacementItemTick) return false;
         if (activePlacementItem == null || activePlacementItem == item) return true;
-        if (hasPendingPlacement(activePlacementItem)) return false;
+        if (hasPendingPlacement(activePlacementItem)
+                && tick - lastActivePlacementTick <= Configs.Placement.ITEM_SWITCH_INTERVAL.getIntegerValue() * 5L) {
+            return false;
+        }
+        // 活跃物品的待放方块已放完，或虽有余量但长时间(物品切换间隔*5)未成功放置
+        // (可能被侦测器安全放置、下落方块检查等规则卡住)，先跳过它尝试下一种物品
         activePlacementItem = null;
         int interval = Configs.Placement.ITEM_SWITCH_INTERVAL.getIntegerValue();
         nextPlacementItemTick = tick + interval;
