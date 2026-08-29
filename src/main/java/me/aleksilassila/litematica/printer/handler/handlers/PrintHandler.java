@@ -261,7 +261,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (tick < nextPlacementItemTick) return false;
         if (activePlacementItem == null || activePlacementItem == item) return true;
         if (hasPendingPlacement(activePlacementItem)
-                && tick - lastActivePlacementTick <= Configs.Placement.ITEM_SWITCH_INTERVAL.getIntegerValue() * 5L) {
+                && tick - lastActivePlacementTick <= Math.max(Configs.Placement.ITEM_SWITCH_INTERVAL.getIntegerValue() * 5L, 1)) {
             return false;
         }
         // 活跃物品的待放方块已放完，或虽有余量但长时间(物品切换间隔*5)未成功放置
