@@ -92,7 +92,7 @@
   "litematica_printer.config.cloudInventory.desc": "於伺服器容允或獨遊時，可隔空與容器交互，交互之位乃投影預設之容器處。",
   "litematica_printer.config.debugOutput": "顯除錯之文",
   "litematica_printer.config.handRestockShulkerCompat": "捷盒 - 自補貨",
-  "litematica_printer.config.handRestockShulkerCompat.desc": "自察主副手之物用盡：若囊中已無是物而潛影盒猶有，則循快捷潛影盒之則自取若干納囊，且試還其於耗前之手位（主副手皆可；若彼位已有物，則不移）。須同啟快捷潛影盒。",
+  "litematica_printer.config.handRestockShulkerCompat.desc": "自察諸物之耗（主副手之用、弓弩發矢、不死圖騰顯驗等）：若囊中已無是物而潛影盒猶有，則循快捷潛影盒之則自取若干納囊，且試還其於耗前之位（若彼位已有物，則不移）。須同啟快捷潛影盒。",
   "litematica_printer.config.debugOutput.desc": "啟則控制檯吐機巧除錯之文。若§6§l顯工態§r亦開，則介面亦顯若干訊息。",
   "litematica_printer.config.delete": "刪當前容器",
   "litematica_printer.config.delete.desc": "解繫當前所繫之容器",

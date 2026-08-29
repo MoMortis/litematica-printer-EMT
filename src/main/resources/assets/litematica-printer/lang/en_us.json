@@ -92,7 +92,7 @@
   "litematica_printer.config.cloudInventory.desc": "In servers supporting remote container interaction or in single-player mode, remote item interaction can be achieved.\nInteraction position is the container position preset in the projection.",
   "litematica_printer.config.debugOutput": "Show Debug Information",
   "litematica_printer.config.handRestockShulkerCompat": "Quick Shulker - Auto Restock",
-  "litematica_printer.config.handRestockShulkerCompat.desc": "Detects item consumption in the main hand or offhand automatically: when the main inventory has none of the item left but shulker boxes do, extracts some via Quick Shulker and tries to return it to the hand slot it was consumed from (main/offhand; skipped if the target slot is occupied). Requires Quick Shulker.",
+  "litematica_printer.config.handRestockShulkerCompat.desc": "Detects item consumption automatically (hand uses, bow/crossbow arrows, totem pops, etc.): when the main inventory has none of the item left but shulker boxes do, extracts some via Quick Shulker and tries to return it to the slot it was consumed from (skipped if the target slot is occupied). Requires Quick Shulker.",
   "litematica_printer.config.debugOutput.desc": "When enabled, console will output printer debug information.\nIf §6§lShow Work Status§r is also enabled, some information will also be displayed in the operation interface.",
   "litematica_printer.config.delete": "Delete Current Container",
   "litematica_printer.config.delete.desc": "Delete the currently bound container",

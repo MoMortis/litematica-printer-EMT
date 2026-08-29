@@ -14,8 +14,9 @@ import net.minecraft.world.item.Items;
 /**
  * 快捷潜影盒 - 自动补货。
  *
- * 自主检测主手/副手物品的消耗（Mixin 捕获 MultiPlayerGameMode#useItem /
- * useItemOn 前后的手部物品快照、LivingEntity 释放消耗、tick 被动检测）：
+ * 自主检测物品的消耗（Mixin 捕获 MultiPlayerGameMode#useItem /
+ * useItemOn 前后的手部物品快照、LivingEntity 释放消耗、tick 全背包被动检测，
+ * 覆盖弓/弩箭矢、不死图腾等无手部扣减场景）：
  * 消耗后若主背包已没有该物品、但背包内潜影盒里还有，
  * 则交给"快捷潜影盒"流程取出物品放入背包；并在同一 tick、
  * 关闭潜影盒容器之前，把物品放回该物品消耗前所在的手部槽位（主手/副手）。
@@ -75,9 +76,30 @@ public final class HandRestockShulkerCompat {
         }
 
         // 主背包（含副手槽，含预测消耗量）没有该物品，但潜影盒里有 → 交给快捷潜影盒取出
+        int targetSlot = hand == InteractionHand.OFF_HAND
+                ? OFFHAND_INVENTORY_SLOT
+                : localPlayer.getInventory().getSelectedSlot();
+        tryRestockFromShulker(localPlayer, item, predictedDepletion, targetSlot);
+    }
+
+    private static void tryRestockFromShulker(LocalPlayer localPlayer,
+                                              Item item,
+                                              int predictedDepletion,
+                                              int targetSlot) {
+        if (!Configs.Core.HAND_RESTOCK_SHULKER_COMPAT.getBooleanValue()
+                || !Configs.Core.QUICK_SHULKER.getBooleanValue()) {
+            return;
+        }
+        if (me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler
+                || InventoryUtils.hasRecentlyOpenedShulker(localPlayer)) {
+            return;
+        }
+        if (targetSlot < 0) {
+            return;
+        }
         if (countMainInventoryIncludingOffhand(localPlayer, item) - predictedDepletion <= 0
                 && InventoryUtils.countAvailableIncludingShulkers(localPlayer, item) > 0) {
-            recordPendingReturn(localPlayer, hand, item);
+            recordPendingReturn(targetSlot, item);
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.switchItem();
         }
@@ -93,14 +115,8 @@ public final class HandRestockShulkerCompat {
         return count;
     }
 
-    /** 记录"取货完成后把物品放回原手部槽位"的待办（仅主手/副手补货请求）。 */
-    private static void recordPendingReturn(LocalPlayer player, InteractionHand hand, Item item) {
-        int inventorySlot = hand == InteractionHand.OFF_HAND
-                ? OFFHAND_INVENTORY_SLOT
-                : player.getInventory().getSelectedSlot();
-        if (inventorySlot < 0) {
-            return;
-        }
+    /** 记录"取货完成后把物品放回消耗前槽位"的待办。 */
+    private static void recordPendingReturn(int inventorySlot, Item item) {
         pendingItem = item;
         pendingTargetInventorySlot = inventorySlot;
     }
@@ -124,43 +140,46 @@ public final class HandRestockShulkerCompat {
         moveStackToInventorySlot(localPlayer, item, targetInventorySlot);
     }
 
-    // ===== 被动消耗检测：覆盖无 use 事件的纯服务端消耗（如不死图腾生效） =====
-    private static ItemStack prevMainHand = ItemStack.EMPTY;
-    private static ItemStack prevOffHand = ItemStack.EMPTY;
+    // ===== 被动消耗检测：覆盖无手部 use 事件的消耗（弓/弩箭矢、不死图腾等） =====
+    private static final ItemStack[] prevSlots = new ItemStack[OFFHAND_INVENTORY_SLOT + 1];
 
     /** 每客户端 tick 调用（zxy InventoryUtils#tick），执行被动消耗检测。 */
     public static void clientTick(LocalPlayer player) {
-        detectPassiveHandConsumption(player);
+        detectPassiveConsumption(player);
     }
 
     /**
-     * 对比相邻两 tick 的手部物品：同一物品数量减少且期间无本地背包操作，
-     * 即判定该物品被服务端消耗（图腾弹出等），按补货流程处理。
+     * 对比相邻两 tick 的背包槽位（0-35 + 副手 40）：同一物品数量减少且期间
+     * 无本地背包操作，即判定该物品被消耗（箭矢射出、图腾弹出等），
+     * 按补货流程处理并回置到该槽位。每个 tick 至多处理一个槽位。
      */
-    private static void detectPassiveHandConsumption(LocalPlayer player) {
-        ItemStack main = player.getMainHandItem();
-        ItemStack off = player.getOffhandItem();
+    private static void detectPassiveConsumption(LocalPlayer player) {
+        net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
         // 仅在自身背包界面、光标空闲、玩家存活时判定，避免把背包整理/容器操作误判为消耗
         boolean quiet = player.isAlive()
                 && player.containerMenu.equals(player.inventoryMenu)
                 && player.inventoryMenu.getCarried().isEmpty();
         if (quiet) {
-            checkPassiveConsumption(player, InteractionHand.MAIN_HAND, prevMainHand, main);
-            checkPassiveConsumption(player, InteractionHand.OFF_HAND, prevOffHand, off);
+            for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT; slot++) {
+                if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
+                    continue;
+                }
+                ItemStack before = prevSlots[slot];
+                ItemStack after = inventory.getItem(slot);
+                if (before != null && !before.isEmpty() && !after.isEmpty()
+                        && after.is(before.getItem())
+                        && after.getCount() < before.getCount()) {
+                    tryRestockFromShulker(player, before.getItem(), 0, slot);
+                    break;
+                }
+            }
         }
-        prevMainHand = main.copy();
-        prevOffHand = off.copy();
-    }
-
-    private static void checkPassiveConsumption(LocalPlayer player,
-                                                InteractionHand hand,
-                                                ItemStack before,
-                                                ItemStack after) {
-        if (before.isEmpty() || after.isEmpty() || !after.is(before.getItem())
-                || after.getCount() >= before.getCount()) {
-            return;
+        for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT; slot++) {
+            if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
+                continue;
+            }
+            prevSlots[slot] = inventory.getItem(slot).copy();
         }
-        tryRestockFromShulker(player, hand, before.getItem(), 0);
     }
 
     public static void clearPendingReturn() {

@@ -92,7 +92,7 @@
   "litematica_printer.config.cloudInventory.desc": "在服务器支持远程容器交互或单机模式下，可实现远程物品交互\n交互位置为投影预设的容器位置。",
   "litematica_printer.config.debugOutput": "显示调试信息",
   "litematica_printer.config.handRestockShulkerCompat": "快捷潜影盒-自动补货",
-  "litematica_printer.config.handRestockShulkerCompat.desc": "自动检测主手/副手物品的消耗：当主背包中已没有该物品、而背包内潜影盒中还有时，按快捷潜影盒规则自动取出一定数量放入背包，并尝试放回该物品消耗前的手部槽位（主手/副手，目标槽位已有物品则不移动）。需同时开启快捷潜影盒。",
+  "litematica_printer.config.handRestockShulkerCompat.desc": "自动检测物品消耗（主手/副手使用、弓/弩消耗箭矢、不死图腾生效等）：当主背包中已没有该物品、而背包内潜影盒中还有时，按快捷潜影盒规则自动取出一定数量放入背包，并尝试放回该物品消耗前的槽位（目标槽位已有物品则不移动）。需同时开启快捷潜影盒。",
   "litematica_printer.config.debugOutput.desc": "启用后，控制台会输出打印机的调试信息。\n如果同时开启了§6§l显示工作状态§r,那么在操作界面也会显示一些信息。",
   "litematica_printer.config.delete": "删除当前容器",
   "litematica_printer.config.delete.desc": "删除当前绑定的容器",
