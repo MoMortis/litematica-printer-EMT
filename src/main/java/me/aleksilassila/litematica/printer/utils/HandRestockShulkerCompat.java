@@ -166,9 +166,11 @@ public final class HandRestockShulkerCompat {
                 }
                 ItemStack before = prevSlots[slot];
                 ItemStack after = inventory.getItem(slot);
-                if (before != null && !before.isEmpty() && !after.isEmpty()
-                        && after.is(before.getItem())
-                        && after.getCount() < before.getCount()) {
+                // after 为空 = 该槽物品刚好耗尽（最后一支箭/图腾弹出），必须纳入判定
+                boolean consumed = before != null && !before.isEmpty()
+                        && (after.isEmpty()
+                            || (after.is(before.getItem()) && after.getCount() < before.getCount()));
+                if (consumed) {
                     tryRestockFromShulker(player, before.getItem(), 0, slot);
                     break;
                 }
