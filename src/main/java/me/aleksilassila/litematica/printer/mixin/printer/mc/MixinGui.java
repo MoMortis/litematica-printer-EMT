@@ -1,6 +1,7 @@
 package me.aleksilassila.litematica.printer.mixin.printer.mc;
 
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
+import me.aleksilassila.litematica.printer.handler.GuiDebugHandlerInfo;
 import me.aleksilassila.litematica.printer.utils.RenderUtils;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.WorkingModeType;
@@ -57,17 +58,6 @@ public abstract class MixinGui {
         int totalDigits = total == 0 ? 1 : String.valueOf(total).length();
         DecimalFormat formatter = new DecimalFormat(String.format("%0" + totalDigits + "d", 0));
         return formatter.format(current);
-    }
-
-    @Unique
-    private static final class DebugHandlerInfo {
-        private final ClientPlayerTickHandler handler;
-        private final GuiBlockInfo guiInfo;
-
-        private DebugHandlerInfo(ClientPlayerTickHandler handler, GuiBlockInfo guiInfo) {
-            this.handler = handler;
-            this.guiInfo = guiInfo;
-        }
     }
 
     @Unique
@@ -140,7 +130,7 @@ public abstract class MixinGui {
     @Unique
     private void drawDebugInfo(float scaledWidth, float scaledHeight) {
         Minecraft mc = Minecraft.getInstance();
-        List<DebugHandlerInfo> validHandlers = new ArrayList<>();
+        List<GuiDebugHandlerInfo> validHandlers = new ArrayList<>();
         int globalMaxTextWidth = MIN_COLUMN_WIDTH;
 
         // 1. 收集有效Handler并计算全局最大宽度
@@ -148,7 +138,7 @@ public abstract class MixinGui {
             GuiBlockInfo guiInfo = handler.nextGuiInfo();
             if (guiInfo == null) continue;
 
-            validHandlers.add(new DebugHandlerInfo(handler, guiInfo));
+            validHandlers.add(new GuiDebugHandlerInfo(handler, guiInfo));
             List<String> lines = buildHandlerDebugLines(handler, guiInfo);
             for (String line : lines) {
                 String cleanLine = line.replaceAll("§[0-9a-fA-Fklmnor]", "");
@@ -207,7 +197,7 @@ public abstract class MixinGui {
      * @return 实际绘制的Handler数量
      */
     @Unique
-    private int drawHandlerPanels(List<DebugHandlerInfo> handlers, int startIndex,
+    private int drawHandlerPanels(List<GuiDebugHandlerInfo> handlers, int startIndex,
                                   int startX, int startY, int columnWidth,
                                   int maxColumns, int availableHeight, float scaledHeight) {
         int drawnCount = 0;
@@ -216,7 +206,7 @@ public abstract class MixinGui {
         int currentY = startY;
 
         for (int i = startIndex; i < handlers.size(); i++) {
-            DebugHandlerInfo handlerInfo = handlers.get(i);
+            GuiDebugHandlerInfo handlerInfo = handlers.get(i);
 
             // 构建调试文本并计算面板高度
             List<String> debugLines = buildHandlerDebugLines(handlerInfo.handler, handlerInfo.guiInfo);
