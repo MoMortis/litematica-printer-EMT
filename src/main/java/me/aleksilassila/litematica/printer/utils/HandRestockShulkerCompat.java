@@ -51,15 +51,13 @@ public final class HandRestockShulkerCompat {
 
         Item item = before.getItem();
         boolean shrunk = after == null || after.isEmpty() || (!after.is(item) ? false : after.getCount() < before.getCount());
-        // 滑翔中使用烟花火箭：客户端不预测扣减（反编译确认消耗仅在服务端执行），
-        // 数量差检测不可用，改用"滑翔中使用火箭即视为消耗"判定
-        boolean rocketLaunched = item == Items.FIREWORK_ROCKET
-                && player.isFallFlying()
-                && !player.isCreative()
-                && after != null && after.is(item);
 
-        if (shrunk || rocketLaunched) {
-            tryRestockFromShulker(localPlayer, hand, item);
+        if (item == Items.FIREWORK_ROCKET && !player.isCreative()) {
+            // 烟花火箭：客户端不预测扣减（反编译确认消耗仅在服务端执行），
+            // 直接预测：生存模式使用必然消耗 1 个，预测剩余为 0 时立即补货
+            tryRestockFromShulker(localPlayer, hand, item, 1);
+        } else if (shrunk) {
+            tryRestockFromShulker(localPlayer, hand, item, 0);
         }
     }
 
@@ -69,7 +67,8 @@ public final class HandRestockShulkerCompat {
      */
     private static void tryRestockFromShulker(LocalPlayer localPlayer,
                                               InteractionHand hand,
-                                              Item item) {
+                                              Item item,
+                                              int predictedDepletion) {
         if (!Configs.Core.HAND_RESTOCK_SHULKER_COMPAT.getBooleanValue()
                 || !Configs.Core.QUICK_SHULKER.getBooleanValue()) {
             return;
@@ -81,8 +80,8 @@ public final class HandRestockShulkerCompat {
             return;
         }
 
-        // 主背包（含副手槽）没有该物品，但潜影盒里有 → 交给快捷潜影盒取出
-        if (countMainInventoryIncludingOffhand(localPlayer, item) == 0
+        // 主背包（含副手槽，含预测消耗量）没有该物品，但潜影盒里有 → 交给快捷潜影盒取出
+        if (countMainInventoryIncludingOffhand(localPlayer, item) - predictedDepletion <= 0
                 && InventoryUtils.countAvailableIncludingShulkers(localPlayer, item) > 0) {
             recordPendingReturn(localPlayer, hand, item);
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
