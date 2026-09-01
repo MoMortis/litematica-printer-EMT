@@ -14,6 +14,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.world.item.Items;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.LiquidBlock;
+import net.minecraft.world.level.block.ShulkerBoxBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
@@ -28,8 +29,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * ① 先放置冰（new Action().setItem(Items.ICE)）→ ② 通过破坏队列直接破冰（工具切换交给 tweakeroo）→
  * ③ 本地预测到位置出现水（fluidState 非空）→ ④ 状态完成，交还普通 Guide 立即放置含水方块/水源判定。
  *
- * 放置顺序后置：新发起破冰放水前，必须等玩家交互距离内**目标水源/含水方块所在层（Y 轴）**
- * 的所有"非水"普通方块都放置完毕，否则一直等待（不接管，让该层普通方块先被打印）。
+ * 放置顺序后置：新发起破冰放水前，必须等玩家交换范围（canInteracted）内的所有"非水/非含水"
+ * 普通方块都放置完毕，否则一直等待（不接管，让范围内的普通方块先被打印）。
  * 流动水等液体方块不计入，避免误判。
  *
  * 破坏队列非空时打印循环会整体暂停（MixinLocalPlayer.tick），天然充当破冰期间的等待，
@@ -52,9 +53,9 @@ public class PrintTaskController {
     private final Map<Long, Stage> stages = new HashMap<>();
     private final Map<Long, Long> stageStartTicks = new HashMap<>();
 
-    /** 普通方块扫描缓存（每 tick + 层 Y 一次） */
+    /** 普通方块扫描缓存（每 tick + 排除模式各一份） */
     private long ordinaryScanTick = -1L;
-    private int ordinaryScanY = Integer.MIN_VALUE;
+    private boolean ordinaryScanExcludeShulkers;
     private boolean hasPendingOrdinaryCache;
 
     private PrintTaskController() {
@@ -124,10 +125,10 @@ public class PrintTaskController {
             return null;
         }
 
-        // 优化放水逻辑（开启时）：放置顺序后置，目标水源/含水方块所在层（Y 轴）还有待放置的
-        // 普通方块时，不发起破冰放水，返回 null 让打印循环先处理该层普通方块。
+        // 优化放水逻辑（开启时）：放置顺序后置，玩家交换范围内还有待放置的
+        // 普通方块（不含水/含水）时，不发起破冰放水，返回 null 让打印循环先处理普通方块。
         if (Configs.Print.PRINT_ICE_FOR_WATER_OPTIMIZED.getBooleanValue()
-                && hasPendingOrdinaryBlock(pos.getY())) {
+                && hasPendingOrdinaryInRange(false)) {
             return null;
         }
 
@@ -137,26 +138,28 @@ public class PrintTaskController {
     }
 
     /**
-     * 目标层（Y 轴）内是否仍有"待放置的普通方块"。
-     * 只统计目标水源/含水方块所在的那一层，其他层不影响；
-     * 排除所有液体方块（含流动水/岩浆）与含水方块，避免误判。
-     * 带每 tick + 层 Y 缓存，避免对同一层多个候选方块重复扫描。
+     * 玩家交换范围 ∩ 投影渲染层内是否仍有"待放置的普通方块"。
+     * 范围 = PlayerUtils.canInteracted(pos)（交互距离 + WORK_RANGE + ITERATOR_SHAPE）
+     * 且 LitematicaUtils.isPositionWithinRange(pos)（当前投影渲染层）。
+     * 排除所有液体方块与含水方块（由破冰放水/流体流程处理）；
+     * excludeShulkers=true 时再排除其他潜影盒（它们同为后置放置，避免互相等待死锁）。
+     * 带每 tick + 排除模式缓存，避免对同一批候选方块重复扫描。
      */
-    private boolean hasPendingOrdinaryBlock(int targetY) {
+    public boolean hasPendingOrdinaryInRange(boolean excludeShulkers) {
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level == null) {
             return false;
         }
         long tick = minecraft.level.getGameTime();
-        if (tick != ordinaryScanTick || targetY != ordinaryScanY) {
+        if (tick != ordinaryScanTick || excludeShulkers != ordinaryScanExcludeShulkers) {
             ordinaryScanTick = tick;
-            ordinaryScanY = targetY;
-            hasPendingOrdinaryCache = scanPendingOrdinaryBlock(targetY);
+            ordinaryScanExcludeShulkers = excludeShulkers;
+            hasPendingOrdinaryCache = scanPendingOrdinaryInRange(excludeShulkers);
         }
         return hasPendingOrdinaryCache;
     }
 
-    private boolean scanPendingOrdinaryBlock(int targetY) {
+    private boolean scanPendingOrdinaryInRange(boolean excludeShulkers) {
         Minecraft minecraft = Minecraft.getInstance();
         ClientLevel level = minecraft.level;
         if (level == null) {
@@ -175,11 +178,12 @@ public class PrintTaskController {
             return false;
         }
         for (BlockPos pos : box) {
-            // 只看目标层
-            if (pos.getY() != targetY) {
+            // 玩家交换范围之外的位置不参与"是否放完"判定
+            if (!PlayerUtils.canInteracted(pos)) {
                 continue;
             }
-            if (!PlayerUtils.canInteracted(pos)) {
+            // 投影渲染层之外的位置不参与"是否放完"判定
+            if (!LitematicaUtils.isPositionWithinRange(pos)) {
                 continue;
             }
             if (!LitematicaUtils.isSchematicBlock(pos)) {
@@ -191,6 +195,10 @@ public class PrintTaskController {
             }
             // 所有液体方块（水源/流动水/岩浆等）与含水方块由破冰放水/流体相关流程处理，不算普通方块
             if (required.getBlock() instanceof LiquidBlock || BlockStateUtils.isWaterBlock(required)) {
+                continue;
+            }
+            // 其他潜影盒同为后置放置，互相不算（避免潜影盒之间互相等待）
+            if (excludeShulkers && required.getBlock() instanceof ShulkerBoxBlock) {
                 continue;
             }
             if (BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) {
@@ -237,7 +245,7 @@ public class PrintTaskController {
         stages.clear();
         stageStartTicks.clear();
         ordinaryScanTick = -1L;
-        ordinaryScanY = Integer.MIN_VALUE;
+        ordinaryScanExcludeShulkers = false;
         hasPendingOrdinaryCache = false;
     }
 

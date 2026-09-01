@@ -576,17 +576,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 优先放置方块列表（按列表顺序优先放置）
-        public static final ConfigStringList PRINT_PRIORITY_LIST = stringList("printPriorityList")
-                .build();
-
-        // 后置放置方块列表（按列表顺序最后放置，晚于普通方块）
-        public static final ConfigStringList PRINT_POSTPONED_LIST = stringList("printPostponedList")
-                .build();
-
-        // 方块放置优先级策略（同时控制优先/后置放置列表的生效范围）
-        public static final ConfigOptionList PRINT_ORDER_STRATEGY = optionList("printOrderStrategy")
-                .defaultValue(PrintPriorityType.OFF)
+        // 潜影盒后置：交换范围∩渲染层内普通方块（不含水/含水）未放完时跳过潜影盒的放置
+        public static final ConfigBoolean PRINT_SHULKER_AFTER_ORDINARY = bool("printShulkerAfterOrdinary")
+                .defaultValue(true)
                 .build();
 
         // 强制放置方向（所有放置动作一律使用该方向，无视实际支撑面要求）
@@ -644,7 +636,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 优化放水逻辑：开启后破冰放水放置顺序后置（先放完目标层普通方块再破冰放水）
+        // 优化放水逻辑：开启后破冰放水放置顺序后置（先放完交换范围∩渲染层内的普通方块再破冰放水）
         public static final ConfigBoolean PRINT_ICE_FOR_WATER_OPTIMIZED = bool("printIceForWaterOptimized")
                 .defaultValue(false)
                 .build();
@@ -727,10 +719,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_SORT_SIDES,
                 PRINT_FAST_DIRECTIONAL_PLACEMENT,
                 PRINT_ONLY_EMPTY_SHULKER,
+                PRINT_SHULKER_AFTER_ORDINARY,
                 PRINT_SKIP_SHULKER,
-                PRINT_PRIORITY_LIST,
-                PRINT_POSTPONED_LIST,
-                PRINT_ORDER_STRATEGY,
                 PLACE_DEFAULT_DIRECTION,
                 REPAIR_RAIL_SHAPE,
                 PRINT_RESERVE_ITEMS,

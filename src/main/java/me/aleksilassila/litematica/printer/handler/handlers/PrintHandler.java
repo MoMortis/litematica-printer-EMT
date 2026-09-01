@@ -96,8 +96,10 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 && ctx.requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock) {
             return false;
         }
-        // 放置顺序：优先列表 → 普通方块 → 后置列表 → 潜影盒 → 破冰放水
-        if (!PrintOrderController.INSTANCE.shouldAllow(ctx, blockPos)) {
+        // 潜影盒后置：交换范围∩渲染层内还有普通方块（不含水/含水，不含其他潜影盒）未放完 → 跳过本位置
+        if (Configs.Print.PRINT_SHULKER_AFTER_ORDINARY.getBooleanValue()
+                && ctx.requiredState.getBlock() instanceof net.minecraft.world.level.block.ShulkerBoxBlock
+                && PrintTaskController.INSTANCE.hasPendingOrdinaryInRange(true)) {
             return false;
         }
         // 破冰放水：水源/含水方块缺水时由任务控制器优先接管（放冰），避免普通 Guide 先放"干方块"

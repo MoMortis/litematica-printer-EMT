@@ -1,32 +1,22 @@
 package me.aleksilassila.litematica.printer.guide.guides;
 
-import fi.dy.masa.litematica.world.WorldSchematic;
-import me.aleksilassila.litematica.printer.config.Configs;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
-import me.aleksilassila.litematica.printer.printer.PrinterBox;
+import me.aleksilassila.litematica.printer.printer.PrintTaskController;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
-import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
 import me.aleksilassila.litematica.printer.utils.BlockUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
-import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
-import me.aleksilassila.litematica.printer.utils.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.block.LiquidBlock;
-import net.minecraft.world.level.block.ShulkerBoxBlock;
-import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.HashMap;
 import java.util.Map;
-import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * 潜影盒放置守卫（只打印空盒时生效）：
- * 1. 放置顺序靠后：目标所在层还有其它非潜影盒普通方块待放置时，等待；
+ * 1. 放置顺序靠后：玩家交换范围 ∩ 投影渲染层内还有其它普通方块（非水/非含水/非潜影盒）待放置时，等待；
  * 2. 放置前停下其他操作并关闭打开的容器；
  * 3. 锁定选中的空盒槽位，等待 5gt 复查确认确实是空盒后再放置，
  *    避免 QuickShulker 打开瞬间（本地 CONTAINER 短暂变空盒）把有内容的潜影盒误放出去。
@@ -71,7 +61,7 @@ public class ShulkerPlacementGuard {
     }
 
     public enum GuardResult {
-        WAIT_OTHER_BLOCKS, // 该层还有其他非潜影盒普通方块待放（后置）
+        WAIT_OTHER_BLOCKS, // 交换范围∩渲染层内还有其他普通方块待放（后置）
         WAIT_CLOSE,        // 已关闭容器，等待
         WAIT_CONFIRM,      // 等待 5gt 空盒确认
         READY,             // 已确认空盒，主手已设置，可放置
@@ -94,8 +84,8 @@ public class ShulkerPlacementGuard {
         long tick = level.getGameTime();
         refreshReadyTick(tick);
 
-        // 1. 放置顺序靠后：目标所在层还有其他非潜影盒普通方块待放置 → 等待
-        if (hasPendingOtherLayerBlock(ctx)) {
+        // 1. 放置顺序靠后：交换范围∩渲染层内还有其他普通方块（非水/非含水/非潜影盒）待放置 → 等待
+        if (PrintTaskController.INSTANCE.hasPendingOrdinaryInRange(true)) {
             return GuardResult.WAIT_OTHER_BLOCKS;
         }
 
@@ -135,54 +125,6 @@ public class ShulkerPlacementGuard {
         }
         readyMap.put(key, tick);
         return GuardResult.READY;
-    }
-
-    /**
-     * 目标所在层（Y 轴）内是否还有其他"非潜影盒、非水"的待放置普通方块。
-     */
-    private boolean hasPendingOtherLayerBlock(SchematicBlockContext ctx) {
-        ClientLevel level = ctx.level;
-        WorldSchematic schematic = ctx.schematic;
-        AtomicReference<PrinterBox> boxRef = ClientPlayerTickManager.PRINT.getBoxRef();
-        if (boxRef == null) {
-            return false;
-        }
-        PrinterBox box = boxRef.get();
-        if (box == null) {
-            return false;
-        }
-        int targetY = ctx.blockPos.getY();
-        for (BlockPos pos : box) {
-            if (pos.getY() != targetY) {
-                continue;
-            }
-            if (pos.equals(ctx.blockPos)) {
-                continue;
-            }
-            if (!PlayerUtils.canInteracted(pos)) {
-                continue;
-            }
-            if (!LitematicaUtils.isSchematicBlock(pos)) {
-                continue;
-            }
-            BlockState required = LitematicaUtils.getSchematicBlockState(pos);
-            if (required == null || required.isAir()) {
-                continue;
-            }
-            // 液体/含水由破冰放水或流体流程处理，不算普通方块
-            if (required.getBlock() instanceof LiquidBlock || BlockStateUtils.isWaterBlock(required)) {
-                continue;
-            }
-            // 其他潜影盒不算（它们也属于后置放置）
-            if (required.getBlock() instanceof ShulkerBoxBlock) {
-                continue;
-            }
-            if (BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) {
-                continue;
-            }
-            return true;
-        }
-        return false;
     }
 
     /** 在背包中找一个空盒潜影盒槽位（跳过刚打开的槽位） */
