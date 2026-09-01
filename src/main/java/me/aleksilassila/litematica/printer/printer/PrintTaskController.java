@@ -1,7 +1,6 @@
 package me.aleksilassila.litematica.printer.printer;
 
 import fi.dy.masa.litematica.world.SchematicWorldHandler;
-import fi.dy.masa.litematica.world.WorldSchematic;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.printer.action.Action;
@@ -19,6 +18,7 @@ import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -29,8 +29,9 @@ import java.util.concurrent.atomic.AtomicReference;
  * ① 先放置冰（new Action().setItem(Items.ICE)）→ ② 通过破坏队列直接破冰（工具切换交给 tweakeroo）→
  * ③ 本地预测到位置出现水（fluidState 非空）→ ④ 状态完成，交还普通 Guide 立即放置含水方块/水源判定。
  *
- * 放置顺序后置：新发起破冰放水前，必须等玩家交换范围（canInteracted）内的所有"非水/非含水"
- * 普通方块都放置完毕，否则一直等待（不接管，让范围内的普通方块先被打印）。
+ * 放置顺序后置：新发起破冰放水前，必须等玩家交换范围（canInteracted）∩ 投影渲染层内的所有
+ * "非水/非含水"普通方块都放置完毕，否则一直等待（不接管，让范围内的普通方块先被打印）。
+ * 该检查与打印主循环共用迭代时长限制，超时分层截断、下 tick 续扫。
  * 流动水等液体方块不计入，避免误判。
  *
  * 破坏队列非空时打印循环会整体暂停（MixinLocalPlayer.tick），天然充当破冰期间的等待，
@@ -53,10 +54,16 @@ public class PrintTaskController {
     private final Map<Long, Stage> stages = new HashMap<>();
     private final Map<Long, Long> stageStartTicks = new HashMap<>();
 
-    /** 普通方块扫描缓存（每 tick + 排除模式各一份） */
-    private long ordinaryScanTick = -1L;
-    private boolean ordinaryScanExcludeShulkers;
-    private boolean hasPendingOrdinaryCache;
+    /** 未放完普通方块扫描：跨 tick 续扫状态（与打印主循环的分层续扫同机制，共用迭代时长限制） */
+    private Iterator<BlockPos> scanIterator;
+    private int lastSweptY = Integer.MIN_VALUE;
+    private long scanTick = -1L;
+    /** 本轮扫描已确认存在未放完的普通方块（含潜影盒口径，放水规则用） */
+    private boolean scanPendingIncludingShulkers;
+    /** 本轮扫描已确认存在未放完的普通方块（排除潜影盒口径，潜影盒规则用） */
+    private boolean scanPendingExcludingShulkers;
+    /** 本轮扫描是否已完整结束 */
+    private boolean scanComplete = true;
 
     private PrintTaskController() {
     }
@@ -143,50 +150,81 @@ public class PrintTaskController {
      * 且 LitematicaUtils.isPositionWithinRange(pos)（当前投影渲染层）。
      * 排除所有液体方块与含水方块（由破冰放水/流体流程处理）；
      * excludeShulkers=true 时再排除其他潜影盒（它们同为后置放置，避免互相等待死锁）。
-     * 带每 tick + 排除模式缓存，避免对同一批候选方块重复扫描。
+     *
+     * 扫描与打印主循环一样受迭代时长限制（{@link Configs.Core#ITERATION_TIME_LIMIT}）：
+     * 超时后仅在 Y 层边界截断并缓存迭代器，下 tick 从截断点续扫，盒内每个位置每轮都会被
+     * 检查到；截断期间返回的是已扫过部分的结论（结论最多滞后一轮完整扫描）。
      */
     public boolean hasPendingOrdinaryInRange(boolean excludeShulkers) {
-        Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level == null) {
-            return false;
-        }
-        long tick = minecraft.level.getGameTime();
-        if (tick != ordinaryScanTick || excludeShulkers != ordinaryScanExcludeShulkers) {
-            ordinaryScanTick = tick;
-            ordinaryScanExcludeShulkers = excludeShulkers;
-            hasPendingOrdinaryCache = scanPendingOrdinaryInRange(excludeShulkers);
-        }
-        return hasPendingOrdinaryCache;
+        advanceScan();
+        return excludeShulkers ? scanPendingExcludingShulkers : scanPendingIncludingShulkers;
     }
 
-    private boolean scanPendingOrdinaryInRange(boolean excludeShulkers) {
+    /** 推进本轮扫描（每 tick 至多一次；两个口径共用一轮扫描，均已命中时提前结束） */
+    private void advanceScan() {
         Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null || SchematicWorldHandler.getSchematicWorld() == null) {
+            scanIterator = null;
+            scanComplete = true;
+            scanPendingIncludingShulkers = false;
+            scanPendingExcludingShulkers = false;
+            return;
+        }
+        long tick = minecraft.level.getGameTime();
+        if (tick == scanTick) {
+            return; // 本 tick 已推进过
+        }
+        scanTick = tick;
+
+        if (scanComplete) {
+            // 上一轮已完整结束：开启新一轮扫描
+            scanIterator = null;
+            scanPendingIncludingShulkers = false;
+            scanPendingExcludingShulkers = false;
+            scanComplete = false;
+        }
+
+        if (scanIterator == null) {
+            AtomicReference<PrinterBox> boxRef = ClientPlayerTickManager.PRINT.getBoxRef();
+            PrinterBox box = boxRef == null ? null : boxRef.get();
+            if (box == null) {
+                scanComplete = true;
+                return;
+            }
+            scanIterator = box.iterator();
+            lastSweptY = Integer.MIN_VALUE;
+        }
+
         ClientLevel level = minecraft.level;
-        if (level == null) {
-            return false;
-        }
-        WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
-        if (schematic == null) {
-            return false;
-        }
-        AtomicReference<PrinterBox> boxRef = ClientPlayerTickManager.PRINT.getBoxRef();
-        if (boxRef == null) {
-            return false;
-        }
-        PrinterBox box = boxRef.get();
-        if (box == null) {
-            return false;
-        }
-        for (BlockPos pos : box) {
+        int timeLimit = Configs.Core.ITERATION_TIME_LIMIT.getIntegerValue();
+        long startTime = timeLimit > 0 ? System.nanoTime() : 0;
+        long timeLimitNanos = timeLimit * 1_000_000L;
+        int checkInterval = 10;
+        int iterCount = 0;
+
+        while (scanIterator.hasNext()) {
+            BlockPos pos = scanIterator.next();
+            if (pos == null) {
+                continue;
+            }
+            // 分层截断：仅在进入新的 Y 层时检查预算，保证一整层 Y 被扫完才可能截断
+            if (timeLimit > 0 && pos.getY() != lastSweptY && lastSweptY != Integer.MIN_VALUE
+                    && System.nanoTime() - startTime >= timeLimitNanos) {
+                return; // 下 tick 从此处续扫
+            }
+            lastSweptY = pos.getY();
+            // 兜底：防止单层过大导致预算无限拖长（仅截断同一层，不影响 Y 层完整性）
+            if (timeLimit > 0 && ++iterCount % checkInterval == 0
+                    && System.nanoTime() - startTime >= timeLimitNanos) {
+                return;
+            }
+
             // 玩家交换范围之外的位置不参与"是否放完"判定
             if (!PlayerUtils.canInteracted(pos)) {
                 continue;
             }
             // 投影渲染层之外的位置不参与"是否放完"判定
             if (!LitematicaUtils.isPositionWithinRange(pos)) {
-                continue;
-            }
-            if (!LitematicaUtils.isSchematicBlock(pos)) {
                 continue;
             }
             BlockState required = LitematicaUtils.getSchematicBlockState(pos);
@@ -197,16 +235,25 @@ public class PrintTaskController {
             if (required.getBlock() instanceof LiquidBlock || BlockStateUtils.isWaterBlock(required)) {
                 continue;
             }
-            // 其他潜影盒同为后置放置，互相不算（避免潜影盒之间互相等待）
-            if (excludeShulkers && required.getBlock() instanceof ShulkerBoxBlock) {
-                continue;
-            }
+            // 已放完（含水性差异被 statesEqualIgnoreProperties 自动忽略）不算
             if (BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) {
                 continue;
             }
-            return true;
+            scanPendingIncludingShulkers = true;
+            if (!(required.getBlock() instanceof ShulkerBoxBlock)) {
+                scanPendingExcludingShulkers = true;
+            }
+            // 两个口径均已命中 → 结论已定，提前结束本轮（下 tick 开新一轮）
+            if (scanPendingExcludingShulkers && scanPendingIncludingShulkers) {
+                scanIterator = null;
+                scanComplete = true;
+                return;
+            }
         }
-        return false;
+
+        // 完整扫完一轮：两口径结论即为最终结论
+        scanIterator = null;
+        scanComplete = true;
     }
 
     /** 是否正处于破冰阶段（canProcessPos 应返回 true，executeIteration 里把冰入破坏队列） */
@@ -244,9 +291,12 @@ public class PrintTaskController {
     public void reset() {
         stages.clear();
         stageStartTicks.clear();
-        ordinaryScanTick = -1L;
-        ordinaryScanExcludeShulkers = false;
-        hasPendingOrdinaryCache = false;
+        scanIterator = null;
+        lastSweptY = Integer.MIN_VALUE;
+        scanTick = -1L;
+        scanPendingIncludingShulkers = false;
+        scanPendingExcludingShulkers = false;
+        scanComplete = true;
     }
 
     private static long getClientTick() {
