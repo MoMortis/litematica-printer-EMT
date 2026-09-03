@@ -49,24 +49,22 @@ public class FluidHandler extends ClientPlayerTickHandler {
         List<String> fileBlocks = Configs.Fluid.FLUID_REPLACE_BLOCK_LIST.getStrings();
         if (!fileBlocks.equals(fillBlocks)) {
             fillBlocks = new ArrayList<>(fileBlocks);
-            if (!fileBlocks.isEmpty()) {
-                fillItems = new ArrayList<>();
-                for (String itemName : fillBlocks) {
-                    List<Item> list = BuiltInRegistries.ITEM.stream().filter(item -> PinYinSearchUtils.matchName(itemName, new ItemStack(item))).toList();
-                    fillItems.addAll(list);
-                }
+            // 列表被清空时同步清空已解析缓存，避免旧配置残留继续参与排流体
+            fillItems = new ArrayList<>();
+            for (String itemName : fillBlocks) {
+                List<Item> list = BuiltInRegistries.ITEM.stream().filter(item -> PinYinSearchUtils.matchName(itemName, new ItemStack(item))).toList();
+                fillItems.addAll(list);
             }
         }
         // 流体方块
         List<String> fluidBlocks = Configs.Fluid.FLUID_LIST.getStrings();
         if (!fluidBlocks.equals(this.fluidBlocks)) {
             this.fluidBlocks = new ArrayList<>(fluidBlocks);
-            if (!fluidBlocks.isEmpty()) {
-                fluids = new ArrayList<>();
-                for (String itemName : this.fluidBlocks) {
-                    List<Fluid> list = BuiltInRegistries.FLUID.stream().filter(item -> PinYinSearchUtils.matchName(itemName, item.defaultFluidState().createLegacyBlock())).toList();
-                    fluids.addAll(list);
-                }
+            // 同上：清空流体列表时同步清空已解析缓存
+            fluids = new ArrayList<>();
+            for (String itemName : this.fluidBlocks) {
+                List<Fluid> list = BuiltInRegistries.FLUID.stream().filter(item -> PinYinSearchUtils.matchName(itemName, item.defaultFluidState().createLegacyBlock())).toList();
+                fluids.addAll(list);
             }
         }
     }
@@ -86,7 +84,9 @@ public class FluidHandler extends ClientPlayerTickHandler {
             if (!InventoryUtils.switchToItems(player, fillItems.toArray(new Item[0]))) {
                 return;
             }
-            Action action = new Action().queueAction(blockPos, Direction.UP, false, player);
+            Action action = new Action()
+                    .setActionSource(ActionManager.ActionSource.FLUID)
+                    .queueAction(blockPos, Direction.UP, false, player);
             ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
             if (ActionManager.INSTANCE.sendQueue(player).isWaiting()) {
                 skipIteration.set(true);

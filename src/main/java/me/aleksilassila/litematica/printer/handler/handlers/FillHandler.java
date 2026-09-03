@@ -52,6 +52,8 @@ public class FillHandler extends ClientPlayerTickHandler {
                 List<String> strings = Configs.Fill.FILL_BLOCK_LIST.getStrings();
                 if (!strings.equals(fillCacheBlocklist)) {
                     fillCacheBlocklist = new ArrayList<>(strings);
+                    // 列表被清空时同步清空已解析缓存，避免旧配置残留继续参与填充
+                    fillModeItemList = new Item[0];
                     if (strings.isEmpty()) {
                         return;
                     }
@@ -115,14 +117,19 @@ public class FillHandler extends ClientPlayerTickHandler {
             Action action;
             if (ConfigUtils.getFillModeFacing() != null) {
                 action = new Action()
+                        .setActionSource(ActionManager.ActionSource.FILL)
                         .setLookDirection(ConfigUtils.getFillModeFacing().getOpposite())
                         .queueAction(blockPos, ConfigUtils.getFillModeFacing(), false, player);
             } else {
                 action = new Action()
+                        .setActionSource(ActionManager.ActionSource.FILL)
                         .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
             }
             ActionManager.INSTANCE.setLook(action.getPlayerLook());
             ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
+            // 固定方向填充：目标视角已通过 look 包同步给服务端，无需等待客户端镜头实际转向，
+            // 否则每次发送都会因 WAITING_FOR_LOOK 停轮，每刻只能放置 1 个
+            ActionManager.INSTANCE.setWaitForHorizontalLook(false);
             if (ActionManager.INSTANCE.sendQueue(player).isWaiting()){
                 skipIteration.set(true);
             } else {
