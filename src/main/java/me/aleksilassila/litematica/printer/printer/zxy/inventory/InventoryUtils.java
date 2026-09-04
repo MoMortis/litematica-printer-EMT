@@ -162,6 +162,10 @@ public class InventoryUtils {
         protectedScreen = null;
     }
 
+    /** 补货尝试限频：无货可补时按该间隔重试，期间不阻塞打印扫描（缺料方块由放置冷却跳过） */
+    private static final long REFILL_RETRY_INTERVAL_MS = 1000;
+    private static long nextRefillAttemptMs;
+
     public static boolean switchItem() {
         if (!lastNeedItemList.isEmpty() && !isOpenHandler && !openIng && OpenInventoryPacket.key == null) {
             LocalPlayer player = client.player;
@@ -170,8 +174,14 @@ public class InventoryUtils {
             //排除合成栏 装备栏 副手
             if (Configs.Placement.STORE_ORDERLY.getBooleanValue() && sc.slots.stream().skip(9).limit(sc.slots.size() - 10).noneMatch(slot -> slot.getItem().isEmpty())
                     && (Configs.Core.QUICK_SHULKER.getBooleanValue() || Configs.Core.CLOUD_INVENTORY.getBooleanValue())) {
-                SwitchItem.checkItems();
-                return true;
+                // 缺料且背包满：限频尝试补货；没有可补的货时不返回 true，
+                // 打印机继续扫描其他方块（缺料方块已被放置冷却跳过），不再全场停工
+                long nowMs = System.currentTimeMillis();
+                if (nowMs < nextRefillAttemptMs) {
+                    return false;
+                }
+                nextRefillAttemptMs = nowMs + REFILL_RETRY_INTERVAL_MS;
+                return SwitchItem.checkItems();
             }
 
             if (Configs.Core.QUICK_SHULKER.getBooleanValue() && openShulker(lastNeedItemList)) {

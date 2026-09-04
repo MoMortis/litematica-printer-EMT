@@ -70,9 +70,10 @@ public class SwitchItem {
     /**
      * 检查所有已记录的物品，找到最近一次使用的物品（useTime最小），
      * 并尝试自动打开该物品的背包界面进行操作。
-     * 如果没有可用物品，则在游戏界面显示“背包已满，请先清理”的提示。
+     *
+     * @return true=已发起补货尝试（打开容器）；false=没有可补的货（仅提示背包已满）
      */
-    public static void checkItems() {
+    public static boolean checkItems() {
         final long[] min = {System.currentTimeMillis()};
         AtomicReference<ItemStack> key = new AtomicReference<>();
         itemStacks.keySet().forEach(k -> {
@@ -86,7 +87,10 @@ public class SwitchItem {
         if (itemStack != null) {
             reSwitchItem = itemStack;
             openInv(itemStack);
-        } else MessageUtils.setOverlayMessage(I18n.INVENTORY_BACKPACK_FULL.getName());
+            return true;
+        }
+        MessageUtils.setOverlayMessage(I18n.INVENTORY_BACKPACK_FULL.getName());
+        return false;
     }
 
     public static void reSwitchItem() {
