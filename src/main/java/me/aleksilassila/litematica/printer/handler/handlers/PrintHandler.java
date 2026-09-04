@@ -149,13 +149,15 @@ public class PrintHandler extends ClientPlayerTickHandler {
         ObjectIterator<Long2LongMap.Entry> confirmIt = pendingConfirm.long2LongEntrySet().iterator();
         while (confirmIt.hasNext()) {
             Long2LongMap.Entry entry = confirmIt.next();
-            BlockPos pos = BlockPos.of(entry.getLongKey());
+            // fastutil entry 在 iterator.remove() 后 index 置 -1 不可再读，key 必须先取出
+            long key = entry.getLongKey();
+            BlockPos pos = BlockPos.of(key);
             if (isVerifiedNoWork(pos)) {
                 confirmIt.remove();
             } else if (now >= entry.getLongValue()) {
                 long sentAt = entry.getLongValue() - CONFIRM_WINDOW_TICKS;
                 confirmIt.remove();
-                retryTable.put(entry.getLongKey(),
+                retryTable.put(key,
                         Math.max(now, sentAt + Math.max(CONFIRM_WINDOW_TICKS, getPlaceCooldown())));
             }
         }
