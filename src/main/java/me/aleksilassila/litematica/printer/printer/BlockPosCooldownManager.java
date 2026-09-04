@@ -1,43 +1,60 @@
 package me.aleksilassila.litematica.printer.printer;
 
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.resources.Identifier;
 
 import java.util.HashMap;
-import java.util.Iterator;
 import java.util.Map;
-import java.util.Objects;
 
+/**
+ * 方块冷却管理器（方案三 long 键优化版）。
+ *
+ * <p>旧实现每次查询/设置都 {@code new Info(dimension, type, pos)} 并 {@code Objects.hash}，
+ * 在每格扫描的热路径上是纯 GC 压力。现改为三层结构 {@code type -> dimension -> (posKey -> expiryTick)}：
+ * 键为 {@code pos.asLong()}，值为到期游戏刻；懒过期 + 周期清扫，热路径零分配。
+ * 对外语义（isOnCooldown / setCooldown 等）与旧实现完全一致。
+ */
 public class BlockPosCooldownManager {
     public static final BlockPosCooldownManager INSTANCE = new BlockPosCooldownManager();
 
-    private final Map<Info, Integer> cooldownMap = new HashMap<>();
+    /** 清扫周期（tick）：过期条目懒移除，兜底防内存增长 */
+    private static final long SWEEP_INTERVAL_TICKS = 100;
+
+    /** type -> (dimension -> (posKey -> expiryTick)) */
+    private final Map<String, Map<Identifier, Long2LongOpenHashMap>> cooldowns = new HashMap<>();
+    private long lastSweepTick = Long.MIN_VALUE;
 
     /**
-     * 冷却刻数递减核心方法（可抽离到玩家交互最顶层统一调用，无任何业务依赖）
-     * 遍历所有冷却项，递减刻数，自动移除到期项（≤0）
-     * Iterator遍历避免ConcurrentModificationException，适配高频调用
+     * 冷却刻数维护：printer 关闭时整体清空（保持旧行为）；开启时周期清扫过期条目
      */
     public void tick() {
         if (!ConfigUtils.isPrinterEnable()) {
-            if (!cooldownMap.isEmpty()) {
-                cooldownMap.clear();
+            if (!cooldowns.isEmpty()) {
+                cooldowns.clear();
             }
             return;
         }
-        if (cooldownMap.isEmpty()) {
+        if (cooldowns.isEmpty()) {
             return;
         }
-        Iterator<Map.Entry<Info, Integer>> iterator = cooldownMap.entrySet().iterator();
-        while (iterator.hasNext()) {
-            Map.Entry<Info, Integer> entry = iterator.next();
-            int remaining = entry.getValue() - 1;
-            if (remaining <= 0) {
-                iterator.remove();
-            } else {
-                entry.setValue(remaining);
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return;
+        }
+        long now = level.getGameTime();
+        if (lastSweepTick != Long.MIN_VALUE && now - lastSweepTick < SWEEP_INTERVAL_TICKS) {
+            return;
+        }
+        lastSweepTick = now;
+        for (Map<Identifier, Long2LongOpenHashMap> byDim : cooldowns.values()) {
+            for (Long2LongOpenHashMap map : byDim.values()) {
+                if (!map.isEmpty()) {
+                    map.long2LongEntrySet().removeIf(e -> e.getLongValue() <= now);
+                }
             }
         }
     }
@@ -47,9 +64,7 @@ public class BlockPosCooldownManager {
      */
     public void setCooldown(ClientLevel level, String type, BlockPos pos, int cooldownTicks) {
         if (cooldownTicks <= 0) return;
-        Identifier dimension = level.dimension().identifier();
-        Info key = new Info(dimension, type, pos);
-        cooldownMap.put(key, cooldownTicks);
+        mapForWrite(level, type).put(pos.asLong(), level.getGameTime() + cooldownTicks);
     }
 
     /**
@@ -58,18 +73,30 @@ public class BlockPosCooldownManager {
      * @return true=冷却中，false=未冷却/无冷却
      */
     public boolean isOnCooldown(ClientLevel level, String type, BlockPos pos) {
-        Identifier dimension = level.dimension().identifier();
-        Info key = new Info(dimension, type, pos);
-        return cooldownMap.containsKey(key);
+        Map<Identifier, Long2LongOpenHashMap> byDim = cooldowns.get(type);
+        if (byDim == null) return false;
+        Long2LongOpenHashMap map = byDim.get(level.dimension().identifier());
+        if (map == null) return false;
+        long key = pos.asLong();
+        long expiry = map.get(key);
+        if (expiry == 0L) return false;
+        if (expiry <= level.getGameTime()) {
+            map.remove(key);
+            return false;
+        }
+        return true;
     }
 
     /**
      * 手动移除指定方块的冷却（强制取消冷却）
      */
     public void removeCooldown(ClientLevel level, String type, BlockPos pos) {
-        Identifier dimension = level.dimension().identifier();
-        Info key = new Info(dimension, type, pos);
-        cooldownMap.remove(key);
+        Map<Identifier, Long2LongOpenHashMap> byDim = cooldowns.get(type);
+        if (byDim == null) return;
+        Long2LongOpenHashMap map = byDim.get(level.dimension().identifier());
+        if (map != null) {
+            map.remove(pos.asLong());
+        }
     }
 
     /**
@@ -78,9 +105,13 @@ public class BlockPosCooldownManager {
      * @return 剩余冷却刻数，未冷却则返回0
      */
     public int getRemainingCooldown(ClientLevel level, String type, BlockPos pos) {
-        Identifier dimension = level.dimension().identifier();
-        Info key = new Info(dimension, type, pos);
-        return cooldownMap.getOrDefault(key, 0);
+        Map<Identifier, Long2LongOpenHashMap> byDim = cooldowns.get(type);
+        if (byDim == null) return 0;
+        Long2LongOpenHashMap map = byDim.get(level.dimension().identifier());
+        if (map == null) return 0;
+        long expiry = map.get(pos.asLong());
+        long remaining = expiry - level.getGameTime();
+        return remaining > 0 ? (int) Math.min(remaining, Integer.MAX_VALUE) : 0;
     }
 
     /**
@@ -88,49 +119,40 @@ public class BlockPosCooldownManager {
      */
     public void clearDimensionCooldowns(ClientLevel level) {
         Identifier dimension = level.dimension().identifier();
-        cooldownMap.keySet().removeIf(info -> info.dimension.equals(dimension));
+        for (Map<Identifier, Long2LongOpenHashMap> byDim : cooldowns.values()) {
+            byDim.remove(dimension);
+        }
     }
 
     /**
      * 清空指定维度+指定类型的所有冷却数据（如清空某维度所有打印冷却）
      */
     public void clearTypeCooldowns(ClientLevel level, String type) {
-        Identifier dimension = level.dimension().identifier();
-        cooldownMap.keySet().removeIf(info -> info.dimension.equals(dimension) && info.type.equals(type));
+        Map<Identifier, Long2LongOpenHashMap> byDim = cooldowns.get(type);
+        if (byDim != null) {
+            byDim.remove(level.dimension().identifier());
+        }
     }
 
     /**
      * 清空所有冷却数据（模组重载/退出游戏/全局重置时调用）
      */
     public void clearAllCooldowns() {
-        cooldownMap.clear();
+        cooldowns.clear();
     }
 
-    @SuppressWarnings("ClassCanBeRecord")
-    private static final class Info {
-        private final Identifier dimension;
-        private final String type;
-        private final BlockPos pos;
-
-        private Info(Identifier dimension, String type, BlockPos pos) {
-            this.dimension = Objects.requireNonNull(dimension, "Dimension Identifier cannot be null!");
-            this.type = Objects.requireNonNull(type, "Cool down type cannot be null!");
-            this.pos = Objects.requireNonNull(pos, "BlockPos cannot be null!");
+    private Long2LongOpenHashMap mapForWrite(ClientLevel level, String type) {
+        Map<Identifier, Long2LongOpenHashMap> byDim = cooldowns.get(type);
+        if (byDim == null) {
+            byDim = new HashMap<>();
+            cooldowns.put(type, byDim);
         }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(dimension, type, pos);
+        Identifier dim = level.dimension().identifier();
+        Long2LongOpenHashMap map = byDim.get(dim);
+        if (map == null) {
+            map = new Long2LongOpenHashMap();
+            byDim.put(dim, map);
         }
-
-        @Override
-        public boolean equals(Object obj) {
-            if (this == obj) return true;
-            if (obj == null || getClass() != obj.getClass()) return false;
-            Info info = (Info) obj;
-            return Objects.equals(dimension, info.dimension)
-                    && Objects.equals(type, info.type)
-                    && Objects.equals(pos, info.pos);
-        }
+        return map;
     }
 }

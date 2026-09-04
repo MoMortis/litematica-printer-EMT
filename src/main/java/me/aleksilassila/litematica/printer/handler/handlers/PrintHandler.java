@@ -26,7 +26,10 @@ import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -74,6 +77,18 @@ public class PrintHandler extends ClientPlayerTickHandler {
         return true;
     }
 
+    /** 方案一：判定缓存确认 CORRECT 的格位无需任何打印处理 */
+    @Override
+    protected boolean isVerifiedNoWork(BlockPos pos) {
+        return level != null && SchematicStateCache.INSTANCE.isVerifiedNoWork(pos, level);
+    }
+
+    /** 方案六：打印模式启用空闲退避（空轮后 1→2→4→…→10 tick，失效信号立即恢复） */
+    @Override
+    protected boolean idleBackoffEnabled() {
+        return true;
+    }
+
     @Override
     public boolean canProcessPos(BlockPos blockPos) {
         if (!Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
@@ -85,11 +100,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (schematic == null) return false;
         if (LitematicaUtils.getSchematicBlockState(blockPos) == null) return false;
         this.ctx = new SchematicBlockContext(client, level, schematic, blockPos);
-        if (Configs.Print.PRINT_SKIP.getBooleanValue()) {
-            Set<String> skipSet = new HashSet<>(Configs.Print.PRINT_SKIP_LIST.getStrings()); // 转换为 HashSet
-            if (skipSet.stream().anyMatch(s -> PinYinSearchUtils.matchName(s, ctx.requiredState))) {
-                return false;
-            }
+        if (SkipListCache.isSkipped(ctx.requiredState)) {
+            return false;
         }
         // 跳过潜影盒打印：直接跳过所有潜影盒的放置
         if (Configs.Print.PRINT_SKIP_SHULKER.getBooleanValue()
@@ -278,6 +290,17 @@ public class PrintHandler extends ClientPlayerTickHandler {
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         PrinterBox box = boxRef == null ? null : boxRef.get();
         if (schematic == null || box == null) return false;
+
+        // 方案五：快速路径——判定缓存中已确认"需要工作且目标物品为 item"的格位直接复核，
+        // 免掉整盒遍历的 schematic 点查；未命中再走下方权威全盒扫描（语义不变）
+        for (BlockPos pos : SchematicStateCache.INSTANCE.getPendingPositions(item)) {
+            if (!box.contains(pos) || !PlayerUtils.canInteracted(pos)) continue;
+            BlockState required = LitematicaUtils.getSchematicBlockState(pos);
+            if (required == null || required.getBlock().asItem() != item) continue;
+            if (!BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) return true;
+        }
+
+        // 权威路径：全盒逐格扫描（结论与旧实现完全一致；schematic 点查已由缓存加速）
         for (BlockPos pos : box) {
             if (!PlayerUtils.canInteracted(pos) || !LitematicaUtils.isSchematicBlock(pos)) continue;
             BlockState required = LitematicaUtils.getSchematicBlockState(pos);
@@ -286,6 +309,42 @@ public class PrintHandler extends ClientPlayerTickHandler {
                     && !BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) return true;
         }
         return false;
+    }
+
+    /**
+     * 方案三：PRINT_SKIP 名单缓存。
+     * 旧实现每个候选格都重建 HashSet + 拼音流匹配（拼音转换非常昂贵）；
+     * 现在仅在名单内容/开关变化时重建，并按方块状态缓存匹配结论
+     * （同一状态在图中大量重复出现，实际拼音匹配次数趋近于零）。
+     * 主线程专用（仅 canProcessPos / getRequiredItemsFor 调用）。
+     */
+    private static final class SkipListCache {
+        private static List<String> source = List.of();
+        private static boolean enabled;
+        private static List<String> patterns = List.of();
+        private static final Map<BlockState, Boolean> matchCache = new HashMap<>();
+
+        static boolean isSkipped(BlockState requiredState) {
+            boolean en = Configs.Print.PRINT_SKIP.getBooleanValue();
+            List<String> cur = Configs.Print.PRINT_SKIP_LIST.getStrings();
+            if (en != enabled || cur.size() != source.size() || !cur.equals(source)) {
+                enabled = en;
+                source = List.copyOf(cur);
+                patterns = List.copyOf(cur);
+                matchCache.clear();
+            }
+            if (!en) {
+                return false;
+            }
+            return matchCache.computeIfAbsent(requiredState, st -> {
+                for (String s : patterns) {
+                    if (PinYinSearchUtils.matchName(s, st)) {
+                        return true;
+                    }
+                }
+                return false;
+            });
+        }
     }
 
     /**
@@ -310,7 +369,6 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     /**
      * 统计工作范围内所有需要打印、但背包中数量为 0 的材料种类。
-     *
      * 注意：这里使用只读判定（isRequiredForPlacement），不调用 canProcessPos / Guides.buildAction。
      * 之前的实现会经 Guides.buildAction 触发 DefaultGuide.onBuildActionWrongBlock，把多余/错误方块
      * 全部入队破坏，造成"开启云仓库补货时挖到原理图之外"的副作用。
@@ -349,11 +407,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         if (schematic == null) return null;
         SchematicBlockContext context = new SchematicBlockContext(client, level, schematic, pos);
-        if (Configs.Print.PRINT_SKIP.getBooleanValue()) {
-            Set<String> skipSet = new HashSet<>(Configs.Print.PRINT_SKIP_LIST.getStrings());
-            if (skipSet.stream().anyMatch(s -> PinYinSearchUtils.matchName(s, context.requiredState))) {
-                return null;
-            }
+        if (SkipListCache.isSkipped(context.requiredState)) {
+            return null;
         }
         // 跳过潜影盒打印：直接跳过所有潜影盒的放置（也不为它们补货）
         if (Configs.Print.PRINT_SKIP_SHULKER.getBooleanValue()

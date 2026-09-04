@@ -2,8 +2,8 @@ package me.aleksilassila.litematica.printer.enums;
 
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
-import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.properties.Property;
+import net.minecraft.world.level.block.state.BlockState;
 
 public enum BlockMatchResult {
     /**
@@ -28,6 +28,30 @@ public enum BlockMatchResult {
 
 
     public static BlockMatchResult compare(SchematicBlockContext context, Property<?>... propertiesToIgnore) {
+        if (propertiesToIgnore.length == 0) {
+            return compare(context.requiredState, context.currentState);
+        }
+        return compareWithIgnoredProperties(context, propertiesToIgnore);
+    }
+
+    /** 无需上下文对象的状态比较（判定缓存使用） */
+    public static BlockMatchResult compare(BlockState requiredState, BlockState currentState) {
+        if (requiredState.equals(currentState)) {
+            return CORRECT;
+        }
+        if (requiredState.getBlock().equals(currentState.getBlock())) {
+            if (BlockStateUtils.statesEqualIgnoreProperties(requiredState, currentState)) {
+                return CORRECT;
+            }
+            return WRONG_STATE;
+        }
+        if (!requiredState.isAir() && BlockStateUtils.isReplaceable(currentState)) {
+            return MISSING;
+        }
+        return WRONG_BLOCK;
+    }
+
+    private static BlockMatchResult compareWithIgnoredProperties(SchematicBlockContext context, Property<?>[] propertiesToIgnore) {
         if (context.requiredState.equals(context.currentState)) {
             return CORRECT;
         }

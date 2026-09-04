@@ -7,15 +7,23 @@ import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.piston.PistonBaseBlock;
+import org.jetbrains.annotations.Nullable;
 
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.lang.reflect.Constructor;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 public class Guides {
     public static final Guides INSTANCE = new Guides();
     private final List<GuideRegistration> registrations = new ArrayList<>();
+    // 方案四：方块运行时类 -> 按序匹配的注册表（注册列表静态，缓存恒正确）
+    private final Map<Class<?>, List<GuideRegistration>> dispatchCache = new HashMap<>();
 
     private Guides() {
         // ============================================================
@@ -231,15 +239,23 @@ public class Guides {
 
     public final Optional<Action> buildAction(SchematicBlockContext context) {
         BlockMatchResult blockMatchResult = BlockMatchResult.compare(context);
-        for (GuideRegistration registration : this.registrations) {
-            if (!registration.matches(context.requiredState.getBlock())) {
-                continue;
+        // 方案四：按方块运行时类缓存匹配到的注册表（注册表静态，缓存恒正确），
+        // 消除每个候选格的 ~50 次线性 isInstance 扫描
+        Class<?> blockClass = context.requiredState.getBlock().getClass();
+        List<GuideRegistration> matches = this.dispatchCache.get(blockClass);
+        if (matches == null) {
+            matches = new ArrayList<>();
+            Block block = context.requiredState.getBlock();
+            for (GuideRegistration registration : this.registrations) {
+                if (registration.matches(block)) {
+                    matches.add(registration);
+                }
             }
-            Guide guide;
-            try {
-                guide = registration.create(context);
-            } catch (ReflectiveOperationException exception) {
-                Reference.LOGGER.error("Failed to create printer guide {}", registration.guideName(), exception);
+            this.dispatchCache.put(blockClass, matches);
+        }
+        for (GuideRegistration registration : matches) {
+            Guide guide = registration.create(context);
+            if (guide == null) {
                 continue;
             }
             if (!guide.canExecute()) {
@@ -258,21 +274,32 @@ public class Guides {
 
     @SuppressWarnings("ClassCanBeRecord")
     private static class GuideRegistration {
-        private final Constructor<? extends Guide> constructor;
+        private final Class<? extends Guide> guideClass;
+        private final MethodHandle constructor;
         public final Class<? extends Block>[] blockClass;
 
         public GuideRegistration(Class<? extends Guide> guideClass, Class<? extends Block>[] blockClass) {
             try {
-                this.constructor = guideClass.getConstructor(SchematicBlockContext.class);
-            } catch (NoSuchMethodException e) {
+                Constructor<? extends Guide> ctor = guideClass.getConstructor(SchematicBlockContext.class);
+                // 方案四：方法句柄替代反射 newInstance（JIT 可内联，热路径零反射开销）
+                this.constructor = MethodHandles.lookup().unreflectConstructor(ctor)
+                        .asType(MethodType.methodType(Guide.class, SchematicBlockContext.class));
+            } catch (NoSuchMethodException | IllegalAccessException e) {
                 throw new IllegalArgumentException("Guide must expose a SchematicBlockContext constructor: "
                         + guideClass.getName(), e);
             }
+            this.guideClass = guideClass;
             this.blockClass = blockClass;
         }
 
-        public Guide create(SchematicBlockContext context) throws ReflectiveOperationException {
-            return this.constructor.newInstance(context);
+        @Nullable
+        public Guide create(SchematicBlockContext context) {
+            try {
+                return (Guide) this.constructor.invokeExact(context);
+            } catch (Throwable exception) {
+                Reference.LOGGER.error("Failed to create printer guide {}", guideName(), exception);
+                return null;
+            }
         }
 
         public boolean matches(Block block) {
@@ -288,7 +315,7 @@ public class Guides {
         }
 
         public String guideName() {
-            return this.constructor.getDeclaringClass().getName();
+            return this.guideClass.getName();
         }
     }
 }

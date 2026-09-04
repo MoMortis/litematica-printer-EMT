@@ -24,7 +24,9 @@ import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.HashMap;
 import java.util.Iterator;
+import java.util.Map;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicReference;
@@ -64,6 +66,16 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
     // 方案二：记录当前正在扫描的Y层，时间预算仅在层边界截断（保证整层Y扫完）
     private int lastSweptY = Integer.MIN_VALUE;
     private int expandRange = -1;
+
+    // 方案六：空闲退避。完整扫完一轮且零待处理格位时按 1→2→4→…→MAX 递增扫描间隔；
+    // 任何失效信号（缓存修订号变化 / 盒子重建）立即恢复逐 tick 扫描
+    private static final int MAX_IDLE_BACKOFF_TICKS = 10;
+    private int idleBackoffTicks = 1;
+    private long nextScanAllowedAt = -1L;
+    private long lastSeenCacheRevision = -1L;
+
+    // 命名冷却的类型字符串缓存（避免每次 id + "_" + name 分配）
+    private final Map<String, String> cooldownTypeCache = new HashMap<>();
 
     protected Minecraft mc;
     protected ClientLevel level;
@@ -152,6 +164,12 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
         }
 
         updateBox();
+
+        // 方案六：空闲退避门槛（盒子重建已在 updateBox 内重置退避）
+        if (idleBackoffEnabled() && shouldSkipForIdleBackoff()) {
+            return;
+        }
+
         // 例如填充和拍流体等需要额外方块的模式，需要提前处理好转换
         preprocess();
 
@@ -277,6 +295,10 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
             }
 
             cachedIterator = null;
+
+            // 新盒子可能覆盖未扫过的区域，立即恢复逐 tick 扫描
+            idleBackoffTicks = 1;
+            nextScanAllowedAt = -1L;
         }
     }
 
@@ -322,6 +344,7 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
         int maxExecs = getMaxExecutions();
         int timeLimit = getIterationTimeLimit();
         int execCount = 0;
+        int workCandidates = 0;
     
         boolean debugMode = Configs.Core.DEBUG_OUTPUT.getBooleanValue();
         boolean needRangeCheck = needsRangeCheck();
@@ -383,19 +406,33 @@ while (cachedIterator.hasNext()) {
                 gui.execute = !isOnCooldown(pos) && canProcessPos(pos);
                 addGuiInfo(gui);
             }
-    
+
+            // 方案一：判定缓存命中 CORRECT 的格位直接跳过整条昂贵链路（冷却/上下文/指南构建）
+            if (isVerifiedNoWork(pos)) {
+                continue;
+            }
+            workCandidates++;
+
             if (!isOnCooldown(pos) && canProcessPos(pos)) {
                 executeIteration(pos, skipIteration);
-    
+
                 if (skipIteration.get() || (maxExecs > 0 && ++execCount >= maxExecs)) {
                     stopIteration(true);
                     return true;
                 }
             }
         }
-    
+
         cachedIterator = null;
         stopIteration(false);
+
+        // 方案六：完整一轮结束——零待处理则指数退避，有工作则恢复逐 tick
+        if (idleBackoffEnabled()) {
+            idleBackoffTicks = workCandidates == 0
+                    ? Math.min(idleBackoffTicks * 2, MAX_IDLE_BACKOFF_TICKS)
+                    : 1;
+            nextScanAllowedAt = ClientPlayerTickManager.getCurrentHandlerTime() + idleBackoffTicks;
+        }
         return false;
     }
 
@@ -406,6 +443,33 @@ while (cachedIterator.hasNext()) {
 
     protected boolean isSchematicHandler() {
         return false;
+    }
+
+    /**
+     * 方案一：判定缓存是否已确认该格位无需处理（CORRECT）。
+     * 默认不启用；打印处理器覆写后 consult {@code SchematicStateCache}。
+     */
+    protected boolean isVerifiedNoWork(BlockPos pos) {
+        return false;
+    }
+
+    /**
+     * 方案六：是否启用空闲退避（完整空轮后拉长扫描间隔，失效信号立即恢复）。
+     */
+    protected boolean idleBackoffEnabled() {
+        return false;
+    }
+
+    private boolean shouldSkipForIdleBackoff() {
+        long revision = SchematicStateCache.INSTANCE.getRevision();
+        if (revision != lastSeenCacheRevision) {
+            // 有任何失效信号（世界方块变化/原理图变化/换维度）→ 立即恢复逐 tick 扫描
+            lastSeenCacheRevision = revision;
+            idleBackoffTicks = 1;
+            nextScanAllowedAt = -1L;
+            return false;
+        }
+        return nextScanAllowedAt > ClientPlayerTickManager.getCurrentHandlerTime();
     }
 
     /**
@@ -514,7 +578,7 @@ while (cachedIterator.hasNext()) {
 
     public boolean isOnCooldown(String name, @Nullable BlockPos pos) {
         if (level == null || pos == null) return true;
-        return BlockPosCooldownManager.INSTANCE.isOnCooldown(level, id + "_" + name, pos);
+        return BlockPosCooldownManager.INSTANCE.isOnCooldown(level, cachedCooldownType(name), pos);
     }
 
     /**
@@ -527,7 +591,12 @@ while (cachedIterator.hasNext()) {
 
     public void setCooldown(String name, @Nullable BlockPos pos, int ticks) {
         if (level == null || pos == null || ticks < 1) return;
-        BlockPosCooldownManager.INSTANCE.setCooldown(level, id + "_" + name, pos, ticks);
+        BlockPosCooldownManager.INSTANCE.setCooldown(level, cachedCooldownType(name), pos, ticks);
+    }
+
+    /** 命名冷却类型字符串缓存：避免热路径上反复 id + "_" + name 拼接分配 */
+    private String cachedCooldownType(String name) {
+        return cooldownTypeCache.computeIfAbsent(name, n -> id + "_" + n);
     }
 
 
