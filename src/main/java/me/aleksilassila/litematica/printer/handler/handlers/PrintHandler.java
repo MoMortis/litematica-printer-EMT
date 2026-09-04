@@ -101,6 +101,34 @@ public class PrintHandler extends ClientPlayerTickHandler {
     }
 
     /**
+     * 优先同种方块定向扫描：活跃物品存在时直接取判定缓存的待办清单
+     * （已判定需要工作且目标物品匹配），免去整盒遍历"路过"寻找同种方块的成本。
+     * 额度用满外层会跳过本 tick 整盒遍历；额度有余时正常遍历仍兜底发现未判定格位（不漏扫）。
+     */
+    @Override
+    protected int processTargetedScan(int remainingExecs, AtomicReference<Boolean> skipIteration) {
+        if (!Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()
+                || activePlacementItem == null || level == null) {
+            return 0;
+        }
+        PrinterBox box = boxRef == null ? null : boxRef.get();
+        if (box == null) return 0;
+        Item item = activePlacementItem;
+        int executed = 0;
+        for (BlockPos pos : SchematicStateCache.INSTANCE.getPendingPositions(item)) {
+            if (skipIteration.get() || (remainingExecs > 0 && executed >= remainingExecs)) {
+                break;
+            }
+            if (!box.contains(pos) || !PlayerUtils.canInteracted(pos)) continue;
+            if (isOnCooldown(pos) || isVerifiedNoWork(pos)) continue;
+            if (!canProcessPos(pos)) continue;
+            executeIteration(pos, skipIteration);
+            executed++;
+        }
+        return executed;
+    }
+
+    /**
      * 失败重试快速路径：每 tick 在盒子遍历前执行。
      * 到期项直接做"世界状态 vs 原理图"比较并尝试放置，不等遍历扫到该位置。
      */

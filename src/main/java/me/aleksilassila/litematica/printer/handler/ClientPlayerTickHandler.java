@@ -365,8 +365,31 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
 
         // 快速重试路径：放置失败表中的到期方块优先比较放置（消耗本轮执行额度）
         int execCount = processFastRetry(maxExecs, skipIteration);
-        // 快速重试也算待办工作，避免随后误判"空轮"进入空闲退避
+        if (skipIteration.get()) {
+            stopIteration(true);
+            return true;
+        }
+        // 快速重试/定向扫描也算待办工作，避免随后误判"空轮"进入空闲退避
         int workCandidates = execCount;
+
+        // 优先同种定向扫描：按活跃物品的待办清单直取格位（消耗剩余执行额度）
+        if (maxExecs <= 0 || execCount < maxExecs) {
+            int targeted = processTargetedScan(maxExecs <= 0 ? -1 : maxExecs - execCount, skipIteration);
+            if (targeted > 0) {
+                execCount += targeted;
+                workCandidates += targeted;
+            }
+            if (skipIteration.get()) {
+                stopIteration(true);
+                return true;
+            }
+        }
+
+        // 额度已被快速路径用满：本 tick 跳过整盒遍历（迭代器保留，下 tick 续扫）
+        if (maxExecs > 0 && execCount >= maxExecs) {
+            stopIteration(true);
+            return true;
+        }
 
 while (cachedIterator.hasNext()) {
             if (skipIteration.get() || ActionManager.INSTANCE.needWaitModifyLook) {
@@ -489,6 +512,17 @@ while (cachedIterator.hasNext()) {
      */
     protected boolean hasUrgentRetries() {
         return false;
+    }
+
+    /**
+     * 定向扫描：按"活跃物品待办清单"直取格位（优先同种方块），
+     * 免去整盒遍历中"路过"寻找同种方块的成本。
+     *
+     * @param remainingExecs 本轮剩余执行额度（-1 表示不限）
+     * @return 实际执行次数（消耗额度）；额度耗尽时外层跳过本 tick 整盒遍历
+     */
+    protected int processTargetedScan(int remainingExecs, AtomicReference<Boolean> skipIteration) {
+        return 0;
     }
 
     private boolean shouldSkipForIdleBackoff() {
