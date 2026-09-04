@@ -115,15 +115,22 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (box == null) return 0;
         Item item = activePlacementItem;
         int executed = 0;
+        // 失败尝试不消耗放置额度，但有单 gt 尝试上限（失败位置会进入放置冷却，下轮自动跳过）
+        int attemptLimit = remainingExecs > 0 ? Math.max(remainingExecs * 2, 16) : 64;
+        int attempts = 0;
         for (BlockPos pos : SchematicStateCache.INSTANCE.getPendingPositions(item)) {
             if (skipIteration.get() || (remainingExecs > 0 && executed >= remainingExecs)) {
                 break;
             }
             if (!box.contains(pos) || !PlayerUtils.canInteracted(pos)) continue;
             if (isOnCooldown(pos) || isVerifiedNoWork(pos)) continue;
+            if (++attempts > attemptLimit) break;
             if (!canProcessPos(pos)) continue;
             executeIteration(pos, skipIteration);
-            executed++;
+            // 只有实际放置成功才消耗额度
+            if (lastOutcome == ExecuteOutcome.PLACED) {
+                executed++;
+            }
         }
         return executed;
     }
@@ -172,8 +179,12 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 dueKeys.add(entry.getLongKey());
             }
         }
+        // 尝试上限与额度分离：失败尝试不消耗放置额度（只统计成功放置），
+        // 但单 gt 尝试次数有上限，避免大量失败项拖垮本 tick
+        int attemptLimit = maxExecs > 0 ? Math.max(maxExecs * 2, 16) : 64;
+        int attempts = 0;
         for (long key : dueKeys.toLongArray()) {
-            if (maxExecs > 0 && executed >= maxExecs) {
+            if (skipIteration.get() || (maxExecs > 0 && executed >= maxExecs)) {
                 break;
             }
             retryTable.remove(key);
@@ -182,10 +193,14 @@ public class PrintHandler extends ClientPlayerTickHandler {
             if (isVerifiedNoWork(pos)) continue;
             // 不在交互范围内 → 出表，交还给正常盒子遍历覆盖
             if (!PlayerUtils.canInteracted(pos)) continue;
+            if (++attempts > attemptLimit) break;
             // 被跳过名单/潜影盒守卫/破冰任务等规则排除 → 出表
             if (!canProcessPos(pos)) continue;
             executeIteration(pos, skipIteration);
-            executed++;
+            // 只有实际放置成功才消耗额度；失败项已由 executeIteration 重新入表冷却
+            if (lastOutcome == ExecuteOutcome.PLACED) {
+                executed++;
+            }
             // 队列等待/预留上限：本轮停止
             if (skipIteration.get()) break;
         }
@@ -263,9 +278,15 @@ public class PrintHandler extends ClientPlayerTickHandler {
     /** 服务器确认窗口（tick）：超过仍未看到方块放置到位即判失败 */
     private static final int CONFIRM_WINDOW_TICKS = 5;
 
+    /** 最近一次 doExecute 的结果（供快速路径统计"实际放置"次数） */
+    private ExecuteOutcome lastOutcome = ExecuteOutcome.DEFERRED;
+
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         ExecuteOutcome outcome = doExecute(blockPos, skipIteration);
+        this.lastOutcome = outcome;
+        // 放置额度只统计成功放置；失败/暂缓尝试不消耗额度
+        setExecuteConsumedQuota(outcome == ExecuteOutcome.PLACED);
         // 失败重试表仅数据包打印模式启用（无本地预测，放置失败不会被本地状态掩盖）
         if (!Configs.Placement.PRINT_USE_PACKET.getBooleanValue()) {
             return;

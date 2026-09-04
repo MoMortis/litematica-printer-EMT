@@ -100,6 +100,9 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
     @Nullable
     private BlockPos prevPlayerBlockPos = null;
 
+    /** 最近一次 executeIteration 是否消耗放置额度：失败/暂缓尝试不消耗（打印处理器覆写标记） */
+    private boolean lastExecuteConsumedQuota = true;
+
     private long lastTickTime = -1L;
 
     @Getter
@@ -446,9 +449,12 @@ while (cachedIterator.hasNext()) {
             workCandidates++;
 
             if (!isOnCooldown(pos) && canProcessPos(pos)) {
+                // 默认本次尝试消耗额度；打印处理器按实际放置结果覆写
+                lastExecuteConsumedQuota = true;
                 executeIteration(pos, skipIteration);
 
-                if (skipIteration.get() || (maxExecs > 0 && ++execCount >= maxExecs)) {
+                // 失败/暂缓尝试不消耗放置额度，本 gt 可继续跳过并寻找可打印方块
+                if (skipIteration.get() || (maxExecs > 0 && lastExecuteConsumedQuota && ++execCount >= maxExecs)) {
                     stopIteration(true);
                     return true;
                 }
@@ -629,6 +635,15 @@ while (cachedIterator.hasNext()) {
 
     public boolean canProcessPos(BlockPos pos) {
         return true;
+    }
+
+    /**
+     * 子类在 executeIteration 内标记本次尝试是否实际产生了放置动作。
+     * 放置额度只统计成功放置，失败/暂缓尝试不消耗额度，
+     * 使同一 gt 内可连续跳过多个缺料/暂缓方块直到找到可打印的。
+     */
+    protected void setExecuteConsumedQuota(boolean consumed) {
+        this.lastExecuteConsumedQuota = consumed;
     }
 
     /**
