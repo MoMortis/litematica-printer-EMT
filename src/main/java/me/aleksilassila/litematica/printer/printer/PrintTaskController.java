@@ -151,7 +151,7 @@ public class PrintTaskController {
      * 排除所有液体方块与含水方块（由破冰放水/流体流程处理）；
      * excludeShulkers=true 时再排除其他潜影盒（它们同为后置放置，避免互相等待死锁）。
      *
-     * 扫描与打印主循环一样受迭代时长限制（{@link Configs.Core#ITERATION_TIME_LIMIT}）：
+     * 扫描与打印主循环一样受工作时长预算约束（{@link Configs.Core#ITERATION_TIME_LIMIT}）：
      * 超时后仅在 Y 层边界截断并缓存迭代器，下 tick 从截断点续扫，盒内每个位置每轮都会被
      * 检查到；截断期间返回的是已扫过部分的结论（结论最多滞后一轮完整扫描）。
      */

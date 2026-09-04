@@ -616,7 +616,7 @@ while (cachedIterator.hasNext()) {
     }
 
     /**
-     * 获取迭代时间限制（毫秒），0表示禁用
+     * 获取工作时长预算（毫秒），0表示禁用
      */
     protected int getIterationTimeLimit() {
         return Configs.Core.ITERATION_TIME_LIMIT.getIntegerValue();

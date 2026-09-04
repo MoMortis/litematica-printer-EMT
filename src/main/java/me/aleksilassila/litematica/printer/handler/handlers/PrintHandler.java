@@ -190,7 +190,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         // 但单 gt 尝试次数有上限，避免大量失败项拖垮本 tick
         int attemptLimit = maxExecs > 0 ? Math.max(maxExecs * 2, 16) : 64;
         int attempts = 0;
-        // 迭代时长限制：每 8 次尝试检查一次耗时，超时项留在表内下 gt 续作
+        // 工作时长预算：每 8 次尝试检查一次耗时，超时项留在表内下 gt 续作
         int timeLimit = getIterationTimeLimit();
         long budgetNanos = timeLimit > 0 ? timeLimit * 1_000_000L : 0L;
         long startNanos = System.nanoTime();
