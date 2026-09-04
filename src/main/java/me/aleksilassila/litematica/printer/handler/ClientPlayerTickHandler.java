@@ -70,6 +70,10 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
     // 方案六：空闲退避。完整扫完一轮且零待处理格位时按 1→2→4→…→MAX 递增扫描间隔；
     // 任何失效信号（缓存修订号变化 / 盒子重建）立即恢复逐 tick 扫描
     private static final int MAX_IDLE_BACKOFF_TICKS = 10;
+    // 盒子重建阈值：玩家偏离盒子中心 0.4 格即重建（固定值，不依赖工作范围）
+    private static final double REBUILD_MOVE_DISTANCE = 0.4D;
+    // 玩家本 tick 是否在移动（眼位与上一 tick 不同）：移动中禁止进入空闲退避
+    private boolean playerMovedThisTick;
     private int idleBackoffTicks = 1;
     private long nextScanAllowedAt = -1L;
     private long lastSeenCacheRevision = -1L;
@@ -242,6 +246,8 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                 dominantSign = dzMotion >= 0.0D ? 1 : -1;
             }
         }
+        // 玩家是否正在移动（本 tick 眼位与上一 tick 不同）
+        this.playerMovedThisTick = this.prevPlayerBlockPos != null && !this.prevPlayerBlockPos.equals(eyePos);
         this.prevPlayerBlockPos = eyePos;
 
         // 检查是否需要重建交互盒
@@ -249,7 +255,7 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                 || !box.equals(lastBox)
                 || lastPos == null
                 || expandRange != currentRange
-                || !lastPos.closerThan(eyePos, getWorkRange() * 0.4);
+                || !lastPos.closerThan(eyePos, REBUILD_MOVE_DISTANCE);
         if (adaptive && dominantAxis >= 0 && lastPos != null) {
             // 主导轴移动超过半个范围时也提前重建，让盒子跟上运动方向
             int moved = dominantAxis == 0 ? eyePos.getX() - lastPos.getX()
@@ -343,9 +349,7 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
     
         int maxExecs = getMaxExecutions();
         int timeLimit = getIterationTimeLimit();
-        int execCount = 0;
-        int workCandidates = 0;
-    
+
         boolean debugMode = Configs.Core.DEBUG_OUTPUT.getBooleanValue();
         boolean needRangeCheck = needsRangeCheck();
         boolean isSchematic = isSchematicHandler();
@@ -358,7 +362,12 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
         skipIteration.set(false);
         guiQueue.clear();
         renderIndex = 0;
-    
+
+        // 快速重试路径：放置失败表中的到期方块优先比较放置（消耗本轮执行额度）
+        int execCount = processFastRetry(maxExecs, skipIteration);
+        // 快速重试也算待办工作，避免随后误判"空轮"进入空闲退避
+        int workCandidates = execCount;
+
 while (cachedIterator.hasNext()) {
             if (skipIteration.get() || ActionManager.INSTANCE.needWaitModifyLook) {
                 stopIteration(true);
@@ -426,12 +435,18 @@ while (cachedIterator.hasNext()) {
         cachedIterator = null;
         stopIteration(false);
 
-        // 方案六：完整一轮结束——零待处理则指数退避，有工作则恢复逐 tick
+        // 方案六：完整一轮结束——零待处理则指数退避，有工作则恢复逐 tick；
+        // 玩家移动中禁止进入空闲，保持逐 tick 扫描
         if (idleBackoffEnabled()) {
-            idleBackoffTicks = workCandidates == 0
-                    ? Math.min(idleBackoffTicks * 2, MAX_IDLE_BACKOFF_TICKS)
-                    : 1;
-            nextScanAllowedAt = ClientPlayerTickManager.getCurrentHandlerTime() + idleBackoffTicks;
+            if (playerMovedThisTick) {
+                idleBackoffTicks = 1;
+                nextScanAllowedAt = -1L;
+            } else {
+                idleBackoffTicks = workCandidates == 0
+                        ? Math.min(idleBackoffTicks * 2, MAX_IDLE_BACKOFF_TICKS)
+                        : 1;
+                nextScanAllowedAt = ClientPlayerTickManager.getCurrentHandlerTime() + idleBackoffTicks;
+            }
         }
         return false;
     }
@@ -460,7 +475,27 @@ while (cachedIterator.hasNext()) {
         return false;
     }
 
+    /**
+     * 快速重试路径：在盒子遍历前处理"放置失败重试表"等优先位置。
+     *
+     * @return 本轮已消耗的执行额度（计入每 tick 执行上限）
+     */
+    protected int processFastRetry(int maxExecs, AtomicReference<Boolean> skipIteration) {
+        return 0;
+    }
+
+    /**
+     * 是否存在需要立即处理的重试项（存在时不应进入空闲退避跳过）。
+     */
+    protected boolean hasUrgentRetries() {
+        return false;
+    }
+
     private boolean shouldSkipForIdleBackoff() {
+        // 存在待快速重试的失败方块，或玩家正在移动：不进入空闲跳过
+        if (hasUrgentRetries() || playerMovedThisTick) {
+            return false;
+        }
         long revision = SchematicStateCache.INSTANCE.getRevision();
         if (revision != lastSeenCacheRevision) {
             // 有任何失效信号（世界方块变化/原理图变化/换维度）→ 立即恢复逐 tick 扫描

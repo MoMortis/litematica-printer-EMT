@@ -2,6 +2,10 @@ package me.aleksilassila.litematica.printer.handler.handlers;
 
 import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.litematica.world.WorldSchematic;
+import it.unimi.dsi.fastutil.longs.Long2LongMap;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongArrayList;
+import it.unimi.dsi.fastutil.objects.ObjectIterator;
 import lombok.Getter;
 import lombok.Setter;
 import me.aleksilassila.litematica.printer.I18n;
@@ -11,6 +15,7 @@ import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.guide.guides.ShulkerPlacementGuard;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
+import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.*;
 import me.aleksilassila.litematica.printer.printer.action.Action;
@@ -89,6 +94,74 @@ public class PrintHandler extends ClientPlayerTickHandler {
         return true;
     }
 
+    /** 存在待快速重试的失败方块：不应进入空闲退避跳过 */
+    @Override
+    protected boolean hasUrgentRetries() {
+        return Configs.Placement.PRINT_USE_PACKET.getBooleanValue() && !retryTable.isEmpty();
+    }
+
+    /**
+     * 失败重试快速路径：每 tick 在盒子遍历前执行。
+     * 到期项直接做"世界状态 vs 原理图"比较并尝试放置，不等遍历扫到该位置。
+     */
+    @Override
+    protected int processFastRetry(int maxExecs, AtomicReference<Boolean> skipIteration) {
+        if (level == null || (retryTable.isEmpty() && pendingConfirm.isEmpty())) {
+            return 0;
+        }
+        if (!Configs.Placement.PRINT_USE_PACKET.getBooleanValue()) {
+            retryTable.clear();
+            pendingConfirm.clear();
+            return 0;
+        }
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        int executed = 0;
+
+        // 1) 确认簿记：服务器已确认放置到位 → 出表；到期仍未确认 → 判失败转入重试表
+        ObjectIterator<Long2LongMap.Entry> confirmIt = pendingConfirm.long2LongEntrySet().iterator();
+        while (confirmIt.hasNext()) {
+            Long2LongMap.Entry entry = confirmIt.next();
+            BlockPos pos = BlockPos.of(entry.getLongKey());
+            if (isVerifiedNoWork(pos)) {
+                confirmIt.remove();
+            } else if (now >= entry.getLongValue()) {
+                long sentAt = entry.getLongValue() - CONFIRM_WINDOW_TICKS;
+                confirmIt.remove();
+                retryTable.put(entry.getLongKey(),
+                        Math.max(now, sentAt + Math.max(CONFIRM_WINDOW_TICKS, getPlaceCooldown())));
+            }
+        }
+
+        // 2) 失败重试：先收集到期项再逐个处理（避免迭代中修改表）
+        if (retryTable.isEmpty()) {
+            return executed;
+        }
+        LongArrayList dueKeys = new LongArrayList();
+        for (Long2LongMap.Entry entry : retryTable.long2LongEntrySet()) {
+            if (now >= entry.getLongValue()) {
+                dueKeys.add(entry.getLongKey());
+            }
+        }
+        for (long key : dueKeys.toLongArray()) {
+            if (maxExecs > 0 && executed >= maxExecs) {
+                break;
+            }
+            retryTable.remove(key);
+            BlockPos pos = BlockPos.of(key);
+            // 已放置到位 → 出表
+            if (isVerifiedNoWork(pos)) continue;
+            // 不在交互范围内 → 出表，交还给正常盒子遍历覆盖
+            if (!PlayerUtils.canInteracted(pos)) continue;
+            // 被跳过名单/潜影盒守卫/破冰任务等规则排除 → 出表
+            if (!canProcessPos(pos)) continue;
+            executeIteration(pos, skipIteration);
+            executed++;
+            // 队列等待/预留上限：本轮停止
+            if (skipIteration.get()) break;
+        }
+        return executed;
+    }
+
     @Override
     public boolean canProcessPos(BlockPos blockPos) {
         if (!Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
@@ -146,15 +219,53 @@ public class PrintHandler extends ClientPlayerTickHandler {
         return true;
     }
 
+    /** 单次放置尝试结果：PLACED=已发送；FAILED=本次尝试失败；DEFERRED=主动暂缓（守卫/破冰等待） */
+    private enum ExecuteOutcome { PLACED, FAILED, DEFERRED }
+
+    /**
+     * 数据包打印失败重试表（posKey -> 重试到期tick）：
+     * 放置失败的方块入表，每 tick 在盒子遍历前直接对表内方块比较放置，
+     * 不依赖遍历扫到该位置才重试（大原理图一轮可能扫不完）。
+     */
+    private final Long2LongOpenHashMap retryTable = new Long2LongOpenHashMap();
+    /** 已发送待服务器确认（posKey -> 确认截止tick）：到期仍未确认视为失败转入重试表 */
+    private final Long2LongOpenHashMap pendingConfirm = new Long2LongOpenHashMap();
+    /** 服务器确认窗口（tick）：超过仍未看到方块放置到位即判失败 */
+    private static final int CONFIRM_WINDOW_TICKS = 5;
+
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
+        ExecuteOutcome outcome = doExecute(blockPos, skipIteration);
+        // 失败重试表仅数据包打印模式启用（无本地预测，放置失败不会被本地状态掩盖）
+        if (!Configs.Placement.PRINT_USE_PACKET.getBooleanValue()) {
+            return;
+        }
+        long key = blockPos.asLong();
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        switch (outcome) {
+            case PLACED -> {
+                retryTable.remove(key);
+                pendingConfirm.put(key, now + CONFIRM_WINDOW_TICKS);
+            }
+            case FAILED -> {
+                pendingConfirm.remove(key);
+                retryTable.put(key, now + Math.max(1, getPlaceCooldown()));
+            }
+            case DEFERRED -> {
+                retryTable.remove(key);
+                pendingConfirm.remove(key);
+            }
+        }
+    }
+
+    private ExecuteOutcome doExecute(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
         // 任何针对该位置的处理结果都必须等待冷却后才能再次尝试。
         setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
         // 破冰放水：破冰阶段直接把冰入破坏队列，工具切换交给 tweakeroo
         if (PrintTaskController.INSTANCE.isBreaking(blockPos)) {
             BreakUtils.INSTANCE.add(blockPos);
             setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
-            return;
+            return ExecuteOutcome.DEFERRED;
         }
         // 潜影盒放置守卫：只打印空盒时，后置放置 + 关容器 + 5gt 确认空盒，避免误放打开中的盒子
         if (Configs.Print.PRINT_ONLY_EMPTY_SHULKER.getBooleanValue()
@@ -165,11 +276,11 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 case WAIT_CLOSE:
                 case WAIT_CONFIRM:
                     setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
-                    return;
+                    return ExecuteOutcome.DEFERRED;
                 case NO_EMPTY:
                     requestCloudStoreRefill(new Item[]{ctx.requiredState.getBlock().asItem()});
                     setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
-                    return;
+                    return ExecuteOutcome.DEFERRED;
                 case READY:
                     // 守卫已切换主手为空盒，直接走放置
                     break;
@@ -180,12 +291,12 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
             if (FallingBlock.isFree(level.getBlockState(downPos))) {
                 MessageUtils.setOverlayMessage(I18n.BLOCK_NO_SUPPORT.getName(ctx.getRequiredBlockName().getString()));
-                return;
+                return ExecuteOutcome.FAILED;
                     } else if (LitematicaUtils.getSchematicBlockState(downPos) == null
                             || !BlockStateUtils.statesEqualIgnoreProperties(
                             level.getBlockState(downPos), LitematicaUtils.getSchematicBlockState(downPos))) {
                     MessageUtils.setOverlayMessage(I18n.BLOCK_MISMATCH.getName(ctx.getRequiredBlockName().getString()));
-                    return;
+                    return ExecuteOutcome.FAILED;
                 }
 
         }
@@ -203,16 +314,16 @@ public class PrintHandler extends ClientPlayerTickHandler {
             // 不切换物品，保持当前手持任意物品非潜行右键目标方块
         } else if (!InventoryUtils.switchToItems(player, reqItems)) {
             requestCloudStoreRefill(reqItems);
-            return;
+            return ExecuteOutcome.FAILED;
         }
         Direction side = action.getValidSide(level, blockPos);
-        if (side == null) return;
+        if (side == null) return ExecuteOutcome.FAILED;
         // 凭空放置的目标必须仍为空/可替换；并发玩家已先占位时不要发送旧点击请求。
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue()
                 && !action.requiresSupport()
                 && !(action instanceof ClickAction)
                 && !BlockUtils.isReplaceable(level.getBlockState(blockPos))) {
-            return;
+            return ExecuteOutcome.FAILED;
         }
         boolean useShift;
         if (action.getShift() == null) {
@@ -256,6 +367,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         } else {
             setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
         }
+        return sendResult.isSent() ? ExecuteOutcome.PLACED : ExecuteOutcome.FAILED;
     }
 
     @Nullable
