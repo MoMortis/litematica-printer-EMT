@@ -118,8 +118,15 @@ public class PrintHandler extends ClientPlayerTickHandler {
         // 失败尝试不消耗放置额度，但有单 gt 尝试上限（失败位置会进入放置冷却，下轮自动跳过）
         int attemptLimit = remainingExecs > 0 ? Math.max(remainingExecs * 2, 16) : 64;
         int attempts = 0;
+        // 迭代时长限制：每 8 次尝试检查一次耗时，超时项留在待办清单下 gt 续作
+        int timeLimit = getIterationTimeLimit();
+        long budgetNanos = timeLimit > 0 ? timeLimit * 1_000_000L : 0L;
+        long startNanos = System.nanoTime();
         for (BlockPos pos : SchematicStateCache.INSTANCE.getPendingPositions(item)) {
             if (skipIteration.get() || (remainingExecs > 0 && executed >= remainingExecs)) {
+                break;
+            }
+            if (budgetNanos > 0 && attempts % 8 == 0 && System.nanoTime() - startNanos >= budgetNanos) {
                 break;
             }
             if (!box.contains(pos) || !PlayerUtils.canInteracted(pos)) continue;
@@ -183,8 +190,15 @@ public class PrintHandler extends ClientPlayerTickHandler {
         // 但单 gt 尝试次数有上限，避免大量失败项拖垮本 tick
         int attemptLimit = maxExecs > 0 ? Math.max(maxExecs * 2, 16) : 64;
         int attempts = 0;
+        // 迭代时长限制：每 8 次尝试检查一次耗时，超时项留在表内下 gt 续作
+        int timeLimit = getIterationTimeLimit();
+        long budgetNanos = timeLimit > 0 ? timeLimit * 1_000_000L : 0L;
+        long startNanos = System.nanoTime();
         for (long key : dueKeys.toLongArray()) {
             if (skipIteration.get() || (maxExecs > 0 && executed >= maxExecs)) {
+                break;
+            }
+            if (budgetNanos > 0 && attempts % 8 == 0 && System.nanoTime() - startNanos >= budgetNanos) {
                 break;
             }
             retryTable.remove(key);
@@ -449,29 +463,65 @@ public class PrintHandler extends ClientPlayerTickHandler {
         return interval == 0;
     }
 
+    /** 全盒兜底扫描记忆化 TTL（tick）：结论仅在方块变化（修订号）或盒子重建时才会翻转 */
+    private static final int PENDING_SCAN_TTL_TICKS = 10;
+
+    @Nullable
+    private Item memoScanItem;
+    private int memoScanBoxId;
+    private long memoScanRevision = Long.MIN_VALUE;
+    private long memoScanTick = Long.MIN_VALUE;
+    private boolean memoScanResult;
+
     private boolean hasPendingPlacement(Item item) {
         WorldSchematic schematic = SchematicWorldHandler.getSchematicWorld();
         PrinterBox box = boxRef == null ? null : boxRef.get();
         if (schematic == null || box == null) return false;
 
+        // 记忆化：同一物品 + 同一盒子 + 修订号未变 + TTL 内直接复用结论。
+        // 该结论只在方块放置到位（revision++）或盒子重建时才会翻转，短 TTL 仅作保底；
+        // 主循环内多个不同物品候选格的重复调用不再各自触发一次全盒扫描
+        int boxId = System.identityHashCode(box);
+        long now = level.getGameTime();
+        long revision = SchematicStateCache.INSTANCE.getRevision();
+        if (memoScanItem == item && memoScanBoxId == boxId
+                && memoScanRevision == revision && now - memoScanTick < PENDING_SCAN_TTL_TICKS) {
+            return memoScanResult;
+        }
+
+        boolean result = false;
         // 方案五：快速路径——判定缓存中已确认"需要工作且目标物品为 item"的格位直接复核，
         // 免掉整盒遍历的 schematic 点查；未命中再走下方权威全盒扫描（语义不变）
         for (BlockPos pos : SchematicStateCache.INSTANCE.getPendingPositions(item)) {
             if (!box.contains(pos) || !PlayerUtils.canInteracted(pos)) continue;
             BlockState required = LitematicaUtils.getSchematicBlockState(pos);
             if (required == null || required.getBlock().asItem() != item) continue;
-            if (!BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) return true;
+            if (!BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) {
+                result = true;
+                break;
+            }
         }
 
         // 权威路径：全盒逐格扫描（结论与旧实现完全一致；schematic 点查已由缓存加速）
-        for (BlockPos pos : box) {
-            if (!PlayerUtils.canInteracted(pos) || !LitematicaUtils.isSchematicBlock(pos)) continue;
-            BlockState required = LitematicaUtils.getSchematicBlockState(pos);
-            if (required == null) continue;
-            if (required.getBlock().asItem() == item
-                    && !BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) return true;
+        if (!result) {
+            for (BlockPos pos : box) {
+                if (!PlayerUtils.canInteracted(pos) || !LitematicaUtils.isSchematicBlock(pos)) continue;
+                BlockState required = LitematicaUtils.getSchematicBlockState(pos);
+                if (required == null) continue;
+                if (required.getBlock().asItem() == item
+                        && !BlockStateUtils.statesEqualIgnoreProperties(level.getBlockState(pos), required)) {
+                    result = true;
+                    break;
+                }
+            }
         }
-        return false;
+
+        memoScanItem = item;
+        memoScanBoxId = boxId;
+        memoScanRevision = revision;
+        memoScanTick = now;
+        memoScanResult = result;
+        return result;
     }
 
     /**
@@ -532,17 +582,29 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     /**
      * 统计工作范围内所有需要打印、但背包中数量为 0 的材料种类。
+     * 两步走：先逐格收集需要的物品种类（去重，带 8ms 时间预算截断），
+     * 再对去重后的种类逐个统计可用量——旧实现每格重复统计背包/潜影盒，同一物品被扫描上千次。
      * 注意：这里使用只读判定（isRequiredForPlacement），不调用 canProcessPos / Guides.buildAction。
      * 之前的实现会经 Guides.buildAction 触发 DefaultGuide.onBuildActionWrongBlock，把多余/错误方块
      * 全部入队破坏，造成"开启云仓库补货时挖到原理图之外"的副作用。
      */
     private Set<Item> collectMissingMaterials() {
-        Set<Item> missing = new HashSet<>();
         PrinterBox box = this.boxRef == null ? null : this.boxRef.get();
-        if (box == null) return missing;
+        if (box == null) return new HashSet<>();
+        // 潜影盒取货流程进行中时不视为缺货（与旧语义一致，缺货判断整体跳过）
+        if (InventoryUtils.hasRecentlyOpenedShulker(player)) {
+            return new HashSet<>();
+        }
+        int timeLimit = getIterationTimeLimit();
+        long budgetNanos = timeLimit > 0 ? timeLimit * 1_000_000L : 0L;
+        long startNanos = System.nanoTime();
+
+        // 第一步：逐格收集需要的物品种类（去重），周期性检查耗时，超预算截断
+        Set<Item> required = new HashSet<>();
         int scanned = 0;
         for (BlockPos pos : box) {
             if (++scanned > 20000) break;
+            if (budgetNanos > 0 && scanned % 256 == 0 && System.nanoTime() - startNanos >= budgetNanos) break;
             if (!PlayerUtils.canInteracted(pos)) continue;
             if (!LitematicaUtils.isSchematicBlock(pos)) continue;
             if (getSelectionType() != null
@@ -550,12 +612,17 @@ public class PrintHandler extends ClientPlayerTickHandler {
             Item[] reqItems = getRequiredItemsFor(pos);
             if (reqItems == null) continue;
             for (Item reqItem : reqItems) {
-                if (reqItem == null || reqItem == net.minecraft.world.item.Items.AIR) continue;
-                // 主背包 + 潜影盒内容都没有才视为缺货（且潜影盒取货流程未在进行）
-                if (InventoryUtils.countAvailableIncludingShulkers(player, reqItem) == 0
-                        && !InventoryUtils.hasRecentlyOpenedShulker(player)) {
-                    missing.add(reqItem);
+                if (reqItem != null && reqItem != net.minecraft.world.item.Items.AIR) {
+                    required.add(reqItem);
                 }
+            }
+        }
+
+        // 第二步：去重后的种类逐个统计可用量（主背包 + 潜影盒内容）
+        Set<Item> missing = new HashSet<>();
+        for (Item reqItem : required) {
+            if (InventoryUtils.countAvailableIncludingShulkers(player, reqItem) == 0) {
+                missing.add(reqItem);
             }
         }
         return missing;

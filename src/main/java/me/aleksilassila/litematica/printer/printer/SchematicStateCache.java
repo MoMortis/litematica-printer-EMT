@@ -22,6 +22,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -76,6 +77,30 @@ public final class SchematicStateCache {
     /** subregion 盒索引（预计算盒与放置变换），stamp 变化时重建 */
     private final ArrayList<RegionEntry> regionIndex = new ArrayList<>();
     private boolean regionIndexDirty = true;
+
+    /** 过期清扫间隔（tick）：周期性移除长期未访问的条目，限制稳态表规模 */
+    private static final int SWEEP_INTERVAL_TICKS = 100;
+    /** 条目保留窗口（tick）：状态与判定均超过该时长未被访问即移除 */
+    private static final long ENTRY_RETAIN_TICKS = 200;
+    private long lastSweepTick = Long.MIN_VALUE;
+
+    /** 待办清单记忆化 TTL（tick）：主循环内多个候选格的重复调用为 O(1) 命中 */
+    private static final int PENDING_LIST_TTL_TICKS = 10;
+
+    /** 物品 -> 待办清单记忆化（物品为注册表单例，identity 语义；revision 变化即失效） */
+    private final HashMap<Item, PendingList> pendingLists = new HashMap<>();
+
+    private static final class PendingList {
+        final ArrayList<BlockPos> list;
+        final long builtTick;
+        final long builtRevision;
+
+        PendingList(ArrayList<BlockPos> list, long builtTick, long builtRevision) {
+            this.list = list;
+            this.builtTick = builtTick;
+            this.builtRevision = builtRevision;
+        }
+    }
 
     private SchematicStateCache() {
     }
@@ -159,26 +184,31 @@ public final class SchematicStateCache {
 
     /**
      * 收集缓存中"需要工作且目标物品为 item"的格位（供"优先同种方块"快速路径）。
+     * 结果按物品记忆化（短 TTL + 修订号失效）：主循环内多个候选格的重复调用为 O(1) 命中；
+     * 记忆化过期或任何失效信号（revision 变化）后重建，重建成本受过期清扫限制的表规模约束。
      * 仅返回已判定过的格位；调用方必须保留原有的全盒权威扫描作为兜底，避免漏判。
+     * 返回的列表为缓存共享实例，调用方不得修改。
      */
     public List<BlockPos> getPendingPositions(Item item) {
-        ensureFresh();
-        ArrayList<BlockPos> out = null;
+        long now = ensureFresh();
+        PendingList pl = pendingLists.get(item);
+        if (pl != null && pl.builtRevision == revision && now - pl.builtTick < PENDING_LIST_TTL_TICKS) {
+            return pl.list;
+        }
+        ArrayList<BlockPos> out = new ArrayList<>();
         for (Long2ObjectMap.Entry<Entry> le : entries.long2ObjectEntrySet()) {
             Entry e = le.getValue();
             if (e.verdict == null || e.verdict == BlockMatchResult.CORRECT) continue;
             if (e.schematicState == null || e.schematicState.getBlock().asItem() != item) continue;
-            if (out == null) {
-                out = new ArrayList<>();
-            }
             out.add(BlockPos.of(le.getLongKey()));
         }
-        return out == null ? List.of() : out;
+        pendingLists.put(item, new PendingList(out, now, revision));
+        return out;
     }
 
     // ==================== 内部实现 ====================
 
-    /** per-tick 记忆化的指纹检查 + 维度绑定检查，返回当前游戏刻 */
+    /** per-tick 记忆化的指纹检查 + 维度绑定检查 + 周期清扫，返回当前游戏刻 */
     private long ensureFresh() {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel lvl = mc == null ? null : mc.level;
@@ -189,6 +219,7 @@ public final class SchematicStateCache {
                 revision++;
             }
             entries.clear();
+            pendingLists.clear();
         }
         if (now != stampTick) {
             int s = computeStamp();
@@ -198,11 +229,30 @@ public final class SchematicStateCache {
                     revision++;
                 }
                 entries.clear();
+                pendingLists.clear();
                 regionIndexDirty = true;
             }
             stampTick = now;
         }
+        sweepStale(now);
         return now;
+    }
+
+    /**
+     * 周期清扫：移除状态与判定均长期（{@link #ENTRY_RETAIN_TICKS}）未被访问的条目。
+     * 限制稳态表规模，避免大图纸长时间打印后内存与全表遍历成本无限增长；
+     * 被清扫的条目若再次被访问会按 TTL 语义正常重算，不影响任何判定结论。
+     */
+    private void sweepStale(long now) {
+        if (entries.isEmpty()) {
+            return;
+        }
+        if (lastSweepTick != Long.MIN_VALUE && now - lastSweepTick < SWEEP_INTERVAL_TICKS) {
+            return;
+        }
+        lastSweepTick = now;
+        long minTick = now - ENTRY_RETAIN_TICKS;
+        entries.values().removeIf(e -> e.stateTick < minTick && e.verdictTick < minTick);
     }
 
     /**
