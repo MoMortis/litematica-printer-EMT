@@ -38,9 +38,7 @@ import java.util.ArrayList;
  * 不占用目标格）；到达后释放控制权（玩家自由移动），无限等待打印机放置完成；
  * 完成后继续扫描（玩家若已换子区块，则以玩家新区块为起点重建 BFS 队列）。
  * 派发时序：上一条自动寻路任务走完（自然到达/结束，不中途打断）后，
- * 先复核新目标是否已被放置，再派发新任务；旧目标在行走途中被打印机
- * 提前放置时，立即从验证器缺失列表选最近新目标平滑改道（行走不中断），
- * 验证器暂无候选才退回"走完再派发"。
+ * 先复核新目标是否已被放置，再派发新任务。
  * 子区块按配置轴序向外扩展，加载范围内无待放方块时待命。
  * 扫描每 tick 受「工作时长预算」限制；只依赖判定缓存点查，不干预打印机的任何逻辑。
  */
@@ -205,19 +203,9 @@ public final class AutoWalkScanner {
             enterScanning();
             return;
         }
-        // 目标已被放置（玩家顺路时打印可能提前完成）→ 无缝衔接：
-        // 旧腿仍在走时立即平滑改道到验证器缺失列表中最近的新目标（行走不中断）；
-        // 验证器暂无候选才让旧腿自然走完，由 tickScan 顶部的等待逻辑兜住后正常派发
+        // 目标已被放置（玩家顺路经过时打印可能提前完成）→ 不打断行走中的旧任务腿，
+        // 让它走完（由 tickScan 顶部的等待逻辑兜住），之后继续扫描派发新目标
         if (targetCompleted(t)) {
-            ClientLevel level = mc.level;
-            if (level != null && GoManager.INSTANCE.isAutoActive()) {
-                BlockPos next = pollNearestVerifierTarget(level);
-                if (next != null) {
-                    target = next;
-                    GoManager.INSTANCE.autoDispatch(next);
-                    return;
-                }
-            }
             onTargetDone();
             return;
         }

@@ -114,28 +114,12 @@ public final class GoManager {
      * 自动派发（扫描自动寻路）：走到待放置方块紧邻位置（水平相邻、上下 ±1 层，
      * 不占用目标格）即到达并释放控制。无聊天提示，目标经渲染描边展示；
      * 重复派发会替换上一条自动行程。
-     *
-     * <p>平滑换目标：不改写在途路径与路点游标——旧目标完成后的改道派发期间
-     * （后台计算通常仅数毫秒）玩家继续沿旧路点行走，新路径算好后整体替换，
-     * 任务衔接处不原地停顿；初派发时在途路径本为空，行为与整段重算一致。
      */
     public void autoDispatch(BlockPos target) {
         if (mc.player == null || mc.level == null) {
             return;
         }
-        active = true;
-        calcSerial++;
-        calculating = false;
-        driveMode = DriveMode.AUTO;
-        activeGoal = GoPathfinder.adjacentGoal(target);
-        goal = target;
-        liveTargetId = null;
-        bestDistToGoal = Float.MAX_VALUE;
-        repaths = 0;
-        stuckRepaths = 0;
-        nextStuckCheckTick = -1L;
-        nextTargetCheckTick = -1L;
-        requestPath(mc.player.blockPosition());
+        begin(target, null, DriveMode.AUTO, GoPathfinder.adjacentGoal(target), null);
     }
 
     public boolean isManualActive() {
