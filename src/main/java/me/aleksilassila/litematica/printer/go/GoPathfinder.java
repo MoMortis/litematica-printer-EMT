@@ -63,6 +63,37 @@ public final class GoPathfinder {
         };
     }
 
+    /**
+     * 紧贴目标方块（"扫描自动寻路"派发的待放置方块）：
+     * 站到与目标水平相邻（上下 ±1 层内）的格子上即到达，绝不占用目标格本身
+     * （目标格是待放置方块的空位，站进去会挡住打印机放置）。
+     */
+    public static Goal adjacentGoal(BlockPos target) {
+        return new Goal() {
+            @Override
+            public boolean isInGoal(int x, int y, int z) {
+                return isAdjacentArrived(target, x, y, z);
+            }
+
+            @Override
+            public float heuristic(int x, int y, int z) {
+                // 到目标剩余水平路程的下界：与目标中心距离减 1（相邻格距目标 1 格）
+                float dx = x - target.getX();
+                float dz = z - target.getZ();
+                float flat = Math.max(0.0F, (float) Math.sqrt(dx * dx + dz * dz) - 1.0F);
+                float up = Math.max(0, y - target.getY() - 1);
+                return flat * SPRINT_COST + up * 7.0F;
+            }
+        };
+    }
+
+    /** 脚部方块坐标 (x,y,z) 是否处于目标方块的"紧邻可站立"位置（节点与玩家脚部共用同一判定） */
+    public static boolean isAdjacentArrived(BlockPos target, int x, int y, int z) {
+        int dx = Math.abs(x - target.getX());
+        int dz = Math.abs(z - target.getZ());
+        return dx + dz == 1 && Math.abs(y - target.getY()) <= 1;
+    }
+
     /** 结果：起点→终点的可站立足位序列 */
     public static final class Result {
         public final ArrayList<BlockPos> positions;

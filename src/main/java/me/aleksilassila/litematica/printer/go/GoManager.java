@@ -25,6 +25,9 @@ import java.util.concurrent.Executors;
 public final class GoManager {
     public static final GoManager INSTANCE = new GoManager();
 
+    /** 驾驶来源：手动 /go 指令（优先）或自动派发（扫描自动寻路） */
+    private enum DriveMode { NONE, MANUAL, AUTO }
+
     private static final ExecutorService CALC_EXECUTOR = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "litematica-printer-go-calc");
         t.setDaemon(true);
@@ -44,6 +47,9 @@ public final class GoManager {
     private volatile boolean calculating;
     /** 请求序号：新请求/停止都会递增，使在途计算结果作废 */
     private volatile long calcSerial;
+    private volatile DriveMode driveMode = DriveMode.NONE;
+    /** 当前寻路的到达判定目标（MANUAL=站在目标方块，AUTO=走到目标附近） */
+    private volatile GoPathfinder.Goal activeGoal;
     private volatile BlockPos goal;
     private volatile UUID liveTargetId;
     private volatile List<BlockPos> path = List.of();
@@ -90,7 +96,8 @@ public final class GoManager {
         if (mc.player == null || mc.level == null) {
             return;
         }
-        begin(target, null, "§a[寻路] 目标: " + target.getX() + " " + target.getY() + " " + target.getZ());
+        begin(target, null, DriveMode.MANUAL, GoPathfinder.blockGoal(target),
+                "§a[寻路] 目标: " + target.getX() + " " + target.getY() + " " + target.getZ());
     }
 
     /** /go <player>：跟随目标玩家（每秒刷新目标位置） */
@@ -98,7 +105,45 @@ public final class GoManager {
         if (mc.player == null || mc.level == null) {
             return;
         }
-        begin(target.blockPosition(), target.getUUID(), "§a[寻路] 跟随玩家: " + target.getName().getString());
+        BlockPos tpos = target.blockPosition();
+        begin(tpos, target.getUUID(), DriveMode.MANUAL, GoPathfinder.blockGoal(tpos),
+                "§a[寻路] 跟随玩家: " + target.getName().getString());
+    }
+
+    /**
+     * 自动派发（扫描自动寻路）：走到待放置方块紧邻位置（水平相邻、上下 ±1 层，
+     * 不占用目标格）即到达并释放控制。无聊天提示，目标经渲染描边展示；
+     * 重复派发会替换上一条自动行程。
+     *
+     * <p>平滑换目标：不改写在途路径与路点游标——旧目标完成后的改道派发期间
+     * （后台计算通常仅数毫秒）玩家继续沿旧路点行走，新路径算好后整体替换，
+     * 任务衔接处不原地停顿；初派发时在途路径本为空，行为与整段重算一致。
+     */
+    public void autoDispatch(BlockPos target) {
+        if (mc.player == null || mc.level == null) {
+            return;
+        }
+        active = true;
+        calcSerial++;
+        calculating = false;
+        driveMode = DriveMode.AUTO;
+        activeGoal = GoPathfinder.adjacentGoal(target);
+        goal = target;
+        liveTargetId = null;
+        bestDistToGoal = Float.MAX_VALUE;
+        repaths = 0;
+        stuckRepaths = 0;
+        nextStuckCheckTick = -1L;
+        nextTargetCheckTick = -1L;
+        requestPath(mc.player.blockPosition());
+    }
+
+    public boolean isManualActive() {
+        return active && driveMode == DriveMode.MANUAL;
+    }
+
+    public boolean isAutoActive() {
+        return active && driveMode == DriveMode.AUTO;
     }
 
     public void stop(@Nullable String reason) {
@@ -106,6 +151,8 @@ public final class GoManager {
         active = false;
         calcSerial++;
         calculating = false;
+        driveMode = DriveMode.NONE;
+        activeGoal = null;
         path = List.of();
         waypointIndex = 0;
         liveTargetId = null;
@@ -125,12 +172,14 @@ public final class GoManager {
             active = false;
             calcSerial++;
             calculating = false;
+            driveMode = DriveMode.NONE;
+            activeGoal = null;
             path = List.of();
             return;
         }
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
 
-        // 跟随玩家目标：定期刷新目标位置，偏移过大时重算
+        // 跟随玩家目标：定期刷新目标位置（仅手动跟随模式）
         if (liveTargetId != null && now >= nextTargetCheckTick) {
             nextTargetCheckTick = now + TARGET_CHECK_INTERVAL_TICKS;
             AbstractClientPlayer target = findPlayer(liveTargetId);
@@ -142,6 +191,7 @@ public final class GoManager {
             BlockPos g = goal;
             if (!tpos.equals(g)) {
                 goal = tpos;
+                activeGoal = GoPathfinder.blockGoal(tpos);
                 double dx = tpos.getX() + 0.5 - player.getX();
                 double dz = tpos.getZ() + 0.5 - player.getZ();
                 if (!calculating && dx * dx + dz * dz > TARGET_REROUTE_DISTANCE_SQ) {
@@ -150,10 +200,14 @@ public final class GoManager {
             }
         }
 
-        // 已在目标附近（同 XZ ±1 格）即成功
-        BlockPos g = goal;
-        if (g != null && GoPathfinder.blockGoal(g).isInGoal(player.getBlockX(), player.getBlockY(), player.getBlockZ())) {
-            stop("已到达目标附近");
+        // 到达判定（MANUAL=站在目标方块，AUTO=走到目标附近）
+        GoPathfinder.Goal ag = activeGoal;
+        if (ag != null && ag.isInGoal(player.getBlockX(), player.getBlockY(), player.getBlockZ())) {
+            if (driveMode == DriveMode.AUTO) {
+                stopInternal(); // 自动模式：到达即释放控制，等待逻辑由扫描器负责
+            } else {
+                stop("已到达目标附近");
+            }
             return;
         }
 
@@ -164,7 +218,7 @@ public final class GoManager {
         if (waypointIndex >= path.size()) {
             if (!calculating) {
                 if (repaths >= MAX_REPATHS) {
-                    stop("多次重算仍未到达，已停止");
+                    stop(driveMode == DriveMode.AUTO ? null : "多次重算仍未到达，已停止");
                     return;
                 }
                 requestPath(player.blockPosition());
@@ -173,9 +227,10 @@ public final class GoManager {
         }
 
         // 卡住检测：每 20 tick 检查水平位移，几乎未动则重算。
-        // 打印开容器换料/补货（screen 或 isOpenHandler 流程）期间寻路主动停手属正常静止，
-        // 冻结检测（只刷新基准点，不累计、不重算），避免把打印的正常流程误判为卡住
-        boolean detectionPaused = mc.screen != null
+        // 打印开容器换料/补货（容器屏幕或 isOpenHandler 流程）期间寻路主动停手属正常静止，
+        // 冻结检测（只刷新基准点，不累计、不重算），避免把打印的正常流程误判为卡住；
+        // 聊天等普通界面下寻路照常驱动，不冻结
+        boolean detectionPaused = GoExecutor.isContainerUiOpen(player)
                 || me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler;
         if (detectionPaused) {
             stuckRefX = player.getX();
@@ -193,7 +248,7 @@ public final class GoManager {
             if (movedSq < STUCK_MIN_MOVE_SQ && player.onGround() && !calculating) {
                 stuckRepaths++;
                 if (stuckRepaths >= MAX_STUCK_REPATHS) {
-                    stop("反复卡住，已停止寻路");
+                    stop(driveMode == DriveMode.AUTO ? null : "反复卡住，已停止寻路");
                     return;
                 }
                 requestPath(player.blockPosition());
@@ -220,10 +275,12 @@ public final class GoManager {
         }
     }
 
-    private void begin(BlockPos target, @Nullable UUID liveId, String startMessage) {
+    private void begin(BlockPos target, @Nullable UUID liveId, DriveMode mode, GoPathfinder.Goal goalEvaluator, @Nullable String startMessage) {
         active = true;
         calcSerial++;
         calculating = false;
+        driveMode = mode;
+        activeGoal = goalEvaluator;
         goal = target;
         liveTargetId = liveId;
         path = List.of();
@@ -233,10 +290,17 @@ public final class GoManager {
         stuckRepaths = 0;
         nextStuckCheckTick = -1L;
         nextTargetCheckTick = -1L;
-        msg(startMessage);
+        if (startMessage != null) {
+            msg(startMessage);
+        }
         if (mc.player != null) {
             requestPath(mc.player.blockPosition());
         }
+    }
+
+    /** 静默停止（无聊天提示）：自动模式到达时使用 */
+    private void stopInternal() {
+        stop(null);
     }
 
     private void requestPath(BlockPos from) {
@@ -247,7 +311,8 @@ public final class GoManager {
         long serial = ++calcSerial;
         ClientLevel level = mc.level;
         BlockPos goalPos = goal;
-        if (goalPos == null) {
+        GoPathfinder.Goal goalEvaluator = activeGoal;
+        if (goalPos == null || goalEvaluator == null) {
             calculating = false;
             return;
         }
@@ -256,7 +321,7 @@ public final class GoManager {
         CALC_EXECUTOR.execute(() -> {
             GoPathfinder.Result calcResult = null;
             try {
-                calcResult = GoPathfinder.findPath(level, from, GoPathfinder.blockGoal(goalPos), budgetMs, maxFall,
+                calcResult = GoPathfinder.findPath(level, from, goalEvaluator, budgetMs, maxFall,
                         () -> serial != calcSerial);
             } catch (Throwable ignored) {
             }
@@ -271,7 +336,7 @@ public final class GoManager {
             return; // 已停止或被更新的请求取代
         }
         if (result == null) {
-            stop("未找到可行路径");
+            stop(driveMode == DriveMode.AUTO ? null : "未找到可行路径");
             return;
         }
         if (result.reachedGoal) {
@@ -283,7 +348,8 @@ public final class GoManager {
         }
         // 部分路径：必须比上一次更接近目标，否则判定已到最近可达位置
         if (result.distanceToGoal >= bestDistToGoal - 0.5F) {
-            stop(String.format("已走到离目标最近的位置（约 %.1f 格）", result.distanceToGoal));
+            stop(driveMode == DriveMode.AUTO ? null
+                    : String.format("已走到离目标最近的位置（约 %.1f 格）", result.distanceToGoal));
             return;
         }
         bestDistToGoal = result.distanceToGoal;

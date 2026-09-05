@@ -272,6 +272,23 @@ public final class SchematicStateCache {
         return s;
     }
 
+    /**
+     * 该世界坐标区域是否与任何已启用 subregion 盒相交
+     *（用于"扫描自动寻路"快速跳过远离原理图的子区块）。
+     */
+    public boolean intersectsSchematic(BlockPos min, BlockPos max) {
+        ensureRegionIndex();
+        for (int i = 0; i < regionIndex.size(); i++) {
+            PrinterBox box = regionIndex.get(i).box;
+            if (box.minX <= max.getX() && box.maxX >= min.getX()
+                    && box.minY <= max.getY() && box.maxY >= min.getY()
+                    && box.minZ <= max.getZ() && box.maxZ >= min.getZ()) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     @Nullable
     private BlockState querySchematicState(BlockPos pos) {
         ensureRegionIndex();

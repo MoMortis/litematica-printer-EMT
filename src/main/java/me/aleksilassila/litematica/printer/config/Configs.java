@@ -609,6 +609,36 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ConfigStringList PRINT_SCAN_WHITELIST_LIST = stringList("printScanWhitelistList")
                 .build();
 
+        // 扫描自动寻路：需同时开启"扫描白名单"且列表非空；自动寻找待放白名单方块并用寻路载玩家过去
+        public static final ConfigBoolean PRINT_SCAN_AUTOWALK = bool("printScanAutoWalk")
+                .defaultValue(false)
+                .build();
+
+        // 子区块扫描顺序（BFS 相邻扩展的轴优先级，每轴先 + 后 -）
+        public static final ConfigOptionList PRINT_SCAN_SECTION_ORDER = optionList("printScanSectionOrder")
+                .defaultValue(SectionScanOrderType.XZY)
+                .build();
+
+        // 子区块扫描 X 轴反向：该轴扩展顺序改为先 - 后 +
+        public static final ConfigBoolean PRINT_SCAN_X_REVERSE = bool("printScanXReverse")
+                .defaultValue(false)
+                .build();
+
+        // 子区块扫描 Y 轴反向：该轴扩展顺序改为先 - 后 +
+        public static final ConfigBoolean PRINT_SCAN_Y_REVERSE = bool("printScanYReverse")
+                .defaultValue(false)
+                .build();
+
+        // 子区块扫描 Z 轴反向：该轴扩展顺序改为先 - 后 +
+        public static final ConfigBoolean PRINT_SCAN_Z_REVERSE = bool("printScanZReverse")
+                .defaultValue(false)
+                .build();
+
+        // 子区块扩展扫描算法：广度优先（逐层外扩）或深度优先（一路到底）
+        public static final ConfigOptionList PRINT_SCAN_EXPAND_ALGO = optionList("printScanExpandAlgorithm")
+                .defaultValue(SectionExpandAlgorithmType.BFS)
+                .build();
+
         // 始终潜行
         public static final ConfigBoolean PRINT_FORCED_SNEAK = bool("printForcedSneak")
                 .defaultValue(false)
@@ -714,6 +744,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_SKIP_LIST,
                 PRINT_SCAN_WHITELIST,
                 PRINT_SCAN_WHITELIST_LIST,
+                PRINT_SCAN_AUTOWALK,
+                PRINT_SCAN_SECTION_ORDER,
+                PRINT_SCAN_X_REVERSE,
+                PRINT_SCAN_Y_REVERSE,
+                PRINT_SCAN_Z_REVERSE,
+                PRINT_SCAN_EXPAND_ALGO,
                 PRINT_REPLACE,
                 REPLACEABLE_LIST,
                 PRINT_ICE_FOR_WATER,
@@ -763,9 +799,15 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(1, 10)
                 .build();
 
-        // 自动寻路：平坦路段自动冲刺（等效按住 Ctrl）
-        public static final ConfigBoolean GO_SPRINT = bool("goSprint")
-                .defaultValue(true)
+        // 自动寻路 - 最大速度：寻路移动的速度上限（格/秒），超过疾跑全速的值等效不限速
+        public static final ConfigDouble GO_MAX_SPEED = doubleValue("goMaxSpeed")
+                .defaultValue(5.7D)
+                .range(0.5D, 10.0D)
+                .build();
+
+        // 自动寻路 - 强制疾跑：始终请求疾跑（等效一直按住 Ctrl），能否真正冲刺由原版条件决定
+        public static final ConfigBoolean GO_FORCE_SPRINT = bool("goForceSprint")
+                .defaultValue(false)
                 .build();
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
@@ -773,7 +815,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 TWEAKEROO_ANGEL_BLOCK_MAY_BUILD,
                 GO_TIME_LIMIT,
                 GO_MAX_FALL,
-                GO_SPRINT
+                GO_MAX_SPEED,
+                GO_FORCE_SPRINT
         );
     }
 

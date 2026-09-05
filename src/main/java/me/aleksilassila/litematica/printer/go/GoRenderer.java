@@ -35,6 +35,12 @@ public final class GoRenderer {
         BlockPos goal = GoManager.INSTANCE.getGoal();
         if (goal != null) {
             Gizmos.cuboid(new AABB(goal), GizmoStyle.stroke(GOAL_COLOR, 2.0F));
+        } else {
+            // 到达后等待放置：继续描边提示当前在等哪个方块
+            BlockPos waiting = AutoWalkScanner.INSTANCE.getWaitingTarget();
+            if (waiting != null) {
+                Gizmos.cuboid(new AABB(waiting), GizmoStyle.stroke(GOAL_COLOR, 2.0F));
+            }
         }
 
         List<BlockPos> path = GoManager.INSTANCE.getPath();
