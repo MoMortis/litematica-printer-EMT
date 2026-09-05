@@ -232,6 +232,10 @@
   "litematica_printer.config.printSkip.desc": "啟用後，列印時會列表內的方塊。",
   "litematica_printer.config.printSkipList": "跳過放置 - 列表",
   "litematica_printer.config.printSkipList.desc": "列印時跳過的方塊列表。可輸入物品ID或當前語言的翻譯名稱，範例：§bminecraft:stone§r §b砂岩§r。\n前綴新增§b#§r表示標籤匹配，範例：§l#minecraft:logs§r。\n文字後加「,c」表示包含匹配，範例：§l帶釉陶瓦,c§r。",
+  "litematica_printer.config.printScanWhitelist": "掃描白名單 - 開關",
+  "litematica_printer.config.printScanWhitelist.desc": "啟用且列表非空時，列印只掃描並放置列表內的方塊，其餘方塊一律跳過。掃描時長仍受「迭代佔用時長」限制。",
+  "litematica_printer.config.printScanWhitelistList": "掃描白名單 - 列表",
+  "litematica_printer.config.printScanWhitelistList.desc": "白名單啟用時掃描只針對的方塊列表。格式同「跳過放置 - 列表」：可輸入物品ID或當前語言的翻譯名稱，範例：§bminecraft:stone§r §b砂岩§r。\n前綴新增§b#§r表示標籤匹配，範例：§l#minecraft:logs§r。\n文字後加「,c」表示包含匹配，範例：§l帶釉陶瓦,c§r。",
   "litematica_printer.config.printerAutoDisable": "自動關閉印表機",
   "litematica_printer.config.printerAutoDisable.desc": "當玩家死亡時自動關閉印表機，避免重生後印表機誤操作。",
   "litematica_printer.config.printerAutoEnable": "進入伺服器自啟動",
@@ -363,6 +367,12 @@
   "litematica_printer.config.unlockBeaconEffects": "解除信標效果限制",
   "litematica_printer.config.tweakerooAngelBlockMayBuild": "放寬 Tweakeroo 憑空放置限制",
   "litematica_printer.config.tweakerooAngelBlockMayBuild.desc": "啟用後，可以通過 Tweakeroo 的憑空放置創造模式判斷，在生存模式下可以使用。\n關閉後保持 Tweakeroo 原本僅創造模式通過的行為。",
+  "litematica_printer.config.goTimeLimit": "自動尋路 - 計算時長",
+  "litematica_printer.config.goTimeLimit.desc": "單次尋路計算的時長預算（毫秒）。尋路在背景執行緒執行，不影響幀率。\n指令：/go x y z、/go <玩家名>、/go stop。",
+  "litematica_printer.config.goMaxFall": "自動尋路 - 最大下落",
+  "litematica_printer.config.goMaxFall.desc": "尋路允許走下的最大下落高度（格）。尋路只移動，絕不破壞或放置方塊。",
+  "litematica_printer.config.goSprint": "自動尋路 - 允許衝刺",
+  "litematica_printer.config.goSprint.desc": "開啟後平坦路段自動衝刺（等效按住 Ctrl）。",
   "litematica_printer.config.category.special": "特殊功能",
   "litematica_printer.config.category.special.desc": "放寬限制、非常規相容和依賴特定環境行為的開關"
 }

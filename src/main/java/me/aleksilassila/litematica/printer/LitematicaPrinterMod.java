@@ -19,6 +19,7 @@ public class LitematicaPrinterMod implements ModInitializer, ClientModInitialize
     @Override
     public void onInitializeClient() {
         OpenInventoryPacket.registerClientReceivePacket();
+        me.aleksilassila.litematica.printer.go.GoCommand.register();
         InitializationHandler.getInstance().registerInitializationHandler(new InitHandler());
     }
 }

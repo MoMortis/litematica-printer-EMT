@@ -32,6 +32,9 @@ public class ClientPlayerTickManager {
     );
 
     public static void tick() {
+        // 自动寻路独立于打印处理器：即使打印繁忙/界面打开也照常驱动（输入覆写内部有屏幕判断）
+        me.aleksilassila.litematica.printer.go.GoManager.INSTANCE.tick();
+
         if (InventoryUtils.isOpenHandler || InventoryUtils.switchItem() || BreakUtils.INSTANCE.isNeedHandle()) {
             return;
         }

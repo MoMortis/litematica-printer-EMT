@@ -426,10 +426,15 @@ while (cachedIterator.hasNext()) {
                         : !LitematicaUtils.isWithinSelection1ModeRange(pos)) {
                     continue;
                 }
-    
+
                 if (selectionType != null && !PlayerUtils.isPositionInSelectionRange(player, pos, selectionType)) {
                     continue;
                 }
+            }
+
+            // 模式级扫描过滤（如打印的扫描白名单）：命中即跳过，不进入判定缓存/冷却/上下文构建
+            if (shouldSkipFromScan(pos)) {
+                continue;
             }
     
             if (debugMode) {
@@ -494,6 +499,14 @@ while (cachedIterator.hasNext()) {
      * 默认不启用；打印处理器覆写后 consult {@code SchematicStateCache}。
      */
     protected boolean isVerifiedNoWork(BlockPos pos) {
+        return false;
+    }
+
+    /**
+     * 模式级扫描过滤钩子（如打印的扫描白名单）：命中返回 true 时该格位在扫描早期被直接跳过，
+     * 不进入判定缓存/冷却/上下文构建，扫描时长预算留给目标方块。默认不过滤。
+     */
+    protected boolean shouldSkipFromScan(BlockPos pos) {
         return false;
     }
 

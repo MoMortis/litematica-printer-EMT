@@ -232,6 +232,10 @@
   "litematica_printer.config.printSkip.desc": "When enabled, will skip blocks in the list during printing.",
   "litematica_printer.config.printSkipList": "Skip Placement - List",
   "litematica_printer.config.printSkipList.desc": "Block list skipped during printing. Can input item ID or translated name in current language, example: §bminecraft:stone§r §bsandstone§r.\nPrefix §b#§r for tag matching, example: §l#minecraft:logs§r.\nAdd \",c\" after text for contains matching, example: §lglazed_terracotta,c§r.",
+  "litematica_printer.config.printScanWhitelist": "Scan Whitelist - Toggle",
+  "litematica_printer.config.printScanWhitelist.desc": "When enabled and the list is non-empty, printing only scans and places blocks in the list. Scan time is still limited by Iteration Time Limit.",
+  "litematica_printer.config.printScanWhitelistList": "Scan Whitelist - List",
+  "litematica_printer.config.printScanWhitelistList.desc": "Blocks targeted by scanning when the whitelist is enabled. Same format as Skip Placement - List: item ID or translated name, example: §bminecraft:stone§r §bsandstone§r.\nPrefix §b#§r for tag matching, example: §l#minecraft:logs§r.\nAdd “,c” for contains matching, example: §lglazed_terracotta,c§r.",
   "litematica_printer.config.printerAutoDisable": "Auto Disable Printer",
   "litematica_printer.config.printerAutoDisable.desc": "Automatically disable printer when player dies to avoid misoperations after respawning.",
   "litematica_printer.config.printerAutoEnable": "Auto Enable on Server Join",
@@ -363,6 +367,12 @@
   "litematica_printer.config.unlockBeaconEffects": "Unlock Beacon Effect Limits",
   "litematica_printer.config.tweakerooAngelBlockMayBuild": "Relax Tweakeroo Angel Block Check",
   "litematica_printer.config.tweakerooAngelBlockMayBuild.desc": "When enabled, players with build permission can also pass Tweakeroo's angel block placement check. This usually affects survival mode.\\nWhen disabled, Tweakeroo's original creative-only behavior is preserved.",
+  "litematica_printer.config.goTimeLimit": "Auto Pathfinding - Calc Budget",
+  "litematica_printer.config.goTimeLimit.desc": "Time budget (ms) for a single pathfinding calculation. Runs on a background thread and does not affect FPS.\nCommands: /go x y z, /go <player>, /go stop.",
+  "litematica_printer.config.goMaxFall": "Auto Pathfinding - Max Fall",
+  "litematica_printer.config.goMaxFall.desc": "Maximum fall height (blocks) the path may walk down. Never breaks or places blocks.",
+  "litematica_printer.config.goSprint": "Auto Pathfinding - Sprint",
+  "litematica_printer.config.goSprint.desc": "When enabled, sprints automatically on flat segments (equivalent to holding Ctrl).",
   "litematica_printer.config.category.special": "Special",
   "litematica_printer.config.category.special.desc": "Toggles for relaxed restrictions, unusual compatibility, and environment-dependent behavior"
 }

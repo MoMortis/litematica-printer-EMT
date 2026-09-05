@@ -9,7 +9,7 @@ net.minecraft.client.gui.components.AbstractWidget render() extractRenderState()
 
 net.minecraft.world.inventory.ClickType net.minecraft.world.inventory.ContainerInput
 
-net.fabricmc.fabric.api.client.command.v2.ClientCommands net.fabricmc.fabric.api.client.command.v2.ClientCommandManager
+net.fabricmc.fabric.api.client.command.v2.ClientCommandManager net.fabricmc.fabric.api.client.command.v2.ClientCommands
 net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry playC2S() serverboundPlay()
 net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry playS2C() clientboundPlay()
 net.fabricmc.fabric.mixin.content.registry.AxeItemAccessor getStrippedBlocks() getStrippables()

@@ -600,6 +600,15 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ConfigStringList PRINT_SKIP_LIST = stringList("printSkipList")
                 .build();
 
+        // 扫描白名单：开启且列表非空时，打印只扫描/放置列表内方块
+        public static final ConfigBoolean PRINT_SCAN_WHITELIST = bool("printScanWhitelist")
+                .defaultValue(false)
+                .build();
+
+        // 扫描白名单列表（匹配格式同跳过放置名单）
+        public static final ConfigStringList PRINT_SCAN_WHITELIST_LIST = stringList("printScanWhitelistList")
+                .build();
+
         // 始终潜行
         public static final ConfigBoolean PRINT_FORCED_SNEAK = bool("printForcedSneak")
                 .defaultValue(false)
@@ -703,6 +712,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 BREAK_WRONG_STATE_BLOCK,
                 PRINT_SKIP,
                 PRINT_SKIP_LIST,
+                PRINT_SCAN_WHITELIST,
+                PRINT_SCAN_WHITELIST_LIST,
                 PRINT_REPLACE,
                 REPLACEABLE_LIST,
                 PRINT_ICE_FOR_WATER,
@@ -740,9 +751,29 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(ModUtils::isTweakerooLoaded)
                 .build();
 
+        // 自动寻路：单次寻路计算时长预算（毫秒），后台线程执行
+        public static final ConfigInteger GO_TIME_LIMIT = integer("goTimeLimit")
+                .defaultValue(500)
+                .range(100, 2000)
+                .build();
+
+        // 自动寻路：允许走下的最大下落高度（格）
+        public static final ConfigInteger GO_MAX_FALL = integer("goMaxFall")
+                .defaultValue(3)
+                .range(1, 10)
+                .build();
+
+        // 自动寻路：平坦路段自动冲刺（等效按住 Ctrl）
+        public static final ConfigBoolean GO_SPRINT = bool("goSprint")
+                .defaultValue(true)
+                .build();
+
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 UNLOCK_BEACON_EFFECTS,
-                TWEAKEROO_ANGEL_BLOCK_MAY_BUILD
+                TWEAKEROO_ANGEL_BLOCK_MAY_BUILD,
+                GO_TIME_LIMIT,
+                GO_MAX_FALL,
+                GO_SPRINT
         );
     }
 

@@ -232,6 +232,10 @@
   "litematica_printer.config.printSkip.desc": "啟則摹形時將越冊中所列之石。",
   "litematica_printer.config.printSkipList": "越置 - 名冊",
   "litematica_printer.config.printSkipList.desc": "摹形時越過之石冊。格式同前。",
+  "litematica_printer.config.printScanWhitelist": "巡白 - 開闔",
+  "litematica_printer.config.printScanWhitelist.desc": "啟則摹形惟巡名冊之石，餘石皆越。巡時之限仍如舊制。",
+  "litematica_printer.config.printScanWhitelistList": "巡白 - 名冊",
+  "litematica_printer.config.printScanWhitelistList.desc": "白冊啟時所巡之石冊。格式同前。",
   "litematica_printer.config.printerAutoDisable": "自偃機巧",
   "litematica_printer.config.printerAutoDisable.desc": "玩家身殞時自關機巧，防重生後誤作。",
   "litematica_printer.config.printerAutoEnable": "入服自啟",
@@ -363,6 +367,12 @@
   "litematica_printer.config.unlockBeaconEffects": "解信標效限",
   "litematica_printer.config.tweakerooAngelBlockMayBuild": "寬 Tweakeroo 憑空放置之限",
   "litematica_printer.config.tweakerooAngelBlockMayBuild.desc": "啟之，則生存之境亦可通 Tweakeroo 憑空放置之審。\n閉之，則仍守其惟創造之境方得通過之舊制。",
+  "litematica_printer.config.goTimeLimit": "自走 - 籌時",
+  "litematica_printer.config.goTimeLimit.desc": "一巡覓路之籌時（毫秒）。覓於幕後之緒，不礙幀率。\n令：/go x y z、/go <人名>、/go stop。",
+  "litematica_printer.config.goMaxFall": "自走 - 限墜",
+  "litematica_printer.config.goMaxFall.desc": "覓路可下墜之格數。惟行而已，不毀不築。",
+  "litematica_printer.config.goSprint": "自走 - 馳",
+  "litematica_printer.config.goSprint.desc": "啟則坦途自馳（若按 Ctrl）。",
   "litematica_printer.config.category.special": "殊技",
   "litematica_printer.config.category.special.desc": "寬限、非常規之相容與繫特定環境行為之開關"
 }
