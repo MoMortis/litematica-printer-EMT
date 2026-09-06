@@ -815,10 +815,24 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 自动寻路 - 角度偏转：接管视角时在路线方向上附加的偏航角偏移（度，0 = 正对路线方向）
-        public static final ConfigDouble GO_VIEW_OFFSET = doubleValue("goViewOffset")
-                .defaultValue(0.0D)
-                .range(-180.0D, 180.0D)
+        // 自动寻路 - 角度偏转：接管视角时在路线方向上附加的偏航角偏移（度，整数，0 = 正对路线方向；
+        // 跑酷起跳的瞬间会临时归零以保证起跳朝向与疾跑）
+        public static final ConfigInteger GO_VIEW_OFFSET = integer("goViewOffset")
+                .defaultValue(0)
+                .range(-180, 180)
+                .build();
+
+        // 自动寻路 - 偏离判停：寻路期间持续检查玩家到剩余路径的距离，超过阈值立即停止任务
+        public static final ConfigBoolean GO_DEVIATION_STOP = bool("goDeviationStop")
+                .defaultValue(true)
+                .build();
+
+        // 自动寻路 - 偏离阈值：触发判停的距离（格，整数）。着地/入水比三维距离；
+        // 外力腾空（被击退/冲走/失足）只比水平距离；自主跳跃（跑酷/跳上/出水跳）
+        // 的空中阶段放行
+        public static final ConfigInteger GO_DEVIATION_DISTANCE = integer("goDeviationDistance")
+                .defaultValue(1)
+                .range(1, 16)
                 .build();
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
@@ -829,7 +843,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 GO_MAX_SPEED,
                 GO_FORCE_SPRINT,
                 GO_TAKEOVER_VIEW,
-                GO_VIEW_OFFSET
+                GO_VIEW_OFFSET,
+                GO_DEVIATION_STOP,
+                GO_DEVIATION_DISTANCE
         );
     }
 

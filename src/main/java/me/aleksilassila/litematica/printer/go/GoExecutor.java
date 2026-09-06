@@ -7,6 +7,7 @@ import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.util.Mth;
 import net.minecraft.world.phys.Vec2;
 import org.jetbrains.annotations.Nullable;
 
@@ -15,9 +16,13 @@ import java.util.List;
 /**
  * 寻路执行器：把当前路点方向换算成与相机朝向无关的移动输入，
  * 通过覆写 {@code ClientInput.keyPresses} 与 {@code moveVector} 驱动玩家
- * 前进/左右/后退/跳跃/冲刺——不改变客户端视角，不挖掘不放置。
- * 另驱动两类寻路动作的原地执行：同层疾跑跳（边缘探测起跳，见 {@code parkour} 分支）
- * 与梯子/藤蔓攀爬（悬挂时朝附着墙推进，上爬附加跳跃键，见 {@code hanging} 分支）。
+ * 前进/左右/后退/跳跃/冲刺；除可选的视角接管（GO_TAKEOVER_VIEW，只改偏航角，
+ * 见 {@code onApplyInput} 接管段注释）外不改客户端视角；不挖掘不放置。
+ * 另驱动两类寻路动作的原地执行：同层跑酷跳（边缘探测起跳，按缺口分级：
+ * 1 格缺口停 1gt 普通跳、2 格缺口停 1gt 疾跑跳、3 格缺口直接疾跑跳，
+ * 见 {@code parkour} 分支注释；腾空阶段用速率伺服微调 WASD 修正落点，
+ * 见 {@code parkourAirControl}）与梯子/藤蔓攀爬（悬挂时朝附着墙推进，
+ * 上爬附加跳跃键，见 {@code hanging} 分支）。
  * 在 {@code LocalPlayer.applyInput()} HEAD 调用（{@link me.aleksilassila.litematica.printer.mixin.printer.mc.MixinLocalPlayerGo}）。
  */
 public final class GoExecutor {
@@ -34,11 +39,82 @@ public final class GoExecutor {
     @Nullable
     private static net.minecraft.world.entity.player.Input lastWritten;
 
+    /**
+     * 本会话写入过的 input 对象（至多两个：真身 KeyboardInput + 灵魂出窍的常驻
+     * DummyMovementInput）。灵魂出窍是按 tick 换入/换出 input 的，若会话中途切换
+     * 灵魂出窍，最后一次清理时"当前 input"不再是写入时的那个对象，等值匹配永远
+     * 轮不到被换出的那个——其残留会在下次开灵魂出窍时被原样消费。清理时对
+     * 非当前的按引用直接清零（换出状态的 input 不承载物理键盘输入，安全），
+     * 当前的仍走等值匹配，避免误清玩家正在使用的真实键盘输入。
+     */
+    private static final java.util.ArrayList<net.minecraft.client.player.ClientInput> writtenInputs =
+            new java.util.ArrayList<>(2);
+
+    /**
+     * 接管视角关闭时的跳跃临时转向：起跳 tick 暂存起跳前视角并转向跳跃方向，
+     * 下一 tick 立即恢复原视角（NaN = 无暂存）。会话边界（新寻路开始/玩家失效）由
+     * {@link #resetViewRestore} 清除，防止旧会话残留值在新会话里造成莫名回摆。
+     */
+    private static float preJumpYaw = Float.NaN;
+
+    /**
+     * 跑酷分级停顿（0 = 无停顿）：1~2 格缺口在起跳边缘先停 1gt 再跳。停顿 tick
+     * 写零输入，原版疾跑维持检查（shouldStopRunSprinting：无前进输入即取消）在
+     * 本 mod 的写入点之后执行，进行中的疾跑当 tick 被掐掉——1 格缺口得以普通跳
+     * （不疾跑）获得落点精度，2 格缺口从近静止再疾跑跳依然够距离；3 格缺口不停
+     * 顿，靠疾跑动量直接起跳。若停顿后下一 tick 边缘条件不再成立则放弃本次停顿，
+     * 下次触发重新判定。
+     */
+    private static int parkourPauseTicks;
+
+    /**
+     * 跑酷分级停顿的每 tick 防重入：onApplyInput 每 tick 可能被两个注入点各调用
+     * 一次（LocalPlayer.aiStep 的 input.tick() 之后 + applyInput HEAD），状态推进
+     * （停顿计数/缺口判定）只允许发生一次，第二次调用沿用本 tick 已定的结论。
+     * 顺带缓存本 tick 已判定的缺口格数（-1 = 本 tick 不起跳）。
+     */
+    private static long parkourStateTick = -1L;
+    private static int parkourDecidedGap = -1;
+
+    /**
+     * 跑酷跳空中微调的锁定落点（缺口对岸路点，起跳 tick 锁定；null = 无窗口）。
+     * 腾空阶段（起跳后视角恢复的 tick 起，到落地）用它做速率伺服微调：目标锁定
+     * 而不是取当前路点，因为腾空中水平距离小于 0.45 会提前推进到下一路点；
+     * 着地/入水/悬挂即清除窗口，会话边界由 {@link #resetViewRestore} 清除。
+     */
+    @Nullable
+    private static BlockPos parkourAirTarget;
+
+    /** 清除跳跃临时转向的暂存：寻路会话开始/玩家失效时调用 */
+    public static void resetViewRestore() {
+        preJumpYaw = Float.NaN;
+        selfJumpAirborne = false;
+        parkourPauseTicks = 0;
+        parkourStateTick = -1L;
+        parkourDecidedGap = -1;
+        parkourAirTarget = null;
+    }
+
+    /**
+     * 自主起跳暂挂：在着地/水中写入跳跃键时置位，落地后第一次写入（着地且非跳跃）
+     * 时清零。跑酷跳/跳上一格/出水跳的整个空中阶段据此被偏离检测放行——缺口跳跃
+     * 中点距两端路点必然超过 1 格，属合法离路瞬间；外力击退/冲走/失足的腾空没有
+     * 该暂挂，不被放行（否则寻路自己的空中操控会把玩家拉回路径内，带离永远判不到）。
+     */
+    private static boolean selfJumpAirborne;
+
+    /** 是否处于自主跳跃的空中阶段（供 GoManager 偏离检测区分合法离路腾空） */
+    public static boolean isSelfJumpAirborne() {
+        return selfJumpAirborne;
+    }
+
     private GoExecutor() {
     }
 
     public static void onApplyInput(LocalPlayer player) {
         if (!GoManager.INSTANCE.isActive()) {
+            // 寻路已停止：跳跃临时转向还没恢复的话把视角还回去
+            restorePreJumpYaw(player, false);
             clearStaleInput(player);
             return;
         }
@@ -58,8 +134,20 @@ public final class GoExecutor {
         // 不越权透传：shift 保留键盘/打印已写入的现状（原版 KeyboardInput 本就每 tick 从物理键盘重写），
         // 寻路自身绝不主动潜行，对打印的潜行流程零干预
         boolean shift = player.input.keyPresses.shift();
+        boolean takeover = Configs.Special.GO_TAKEOVER_VIEW.getBooleanValue();
+
+        // 跑酷跳空中微调窗口：起跳后（视角恢复的 tick 起）到落地，用速率伺服微调
+        // WASD 把落点修正到锁定目标（见 parkourAirControl）；着地/入水/悬挂即退出
+        if (parkourAirTarget != null && !player.onGround() && !player.isInWater()
+                && !hangingOnClimbable(player)) {
+            parkourAirControl(player, takeover, shift);
+            return;
+        }
+        parkourAirTarget = null;
+
         BlockPos wp = GoManager.INSTANCE.getWaypoint();
         if (wp == null) {
+            restorePreJumpYaw(player, takeover);
             writeInput(player, 0.0F, 0.0F, false, false, shift);
             return;
         }
@@ -72,6 +160,7 @@ public final class GoExecutor {
         double hDist = Math.sqrt(dx * dx + dz * dz);
         if (hDist < 1.0E-3) {
             if (hanging) {
+                restorePreJumpYaw(player, takeover); // 起跳抓梯后已挂上：恢复原视角
                 // 梯子/藤蔓列内的竖直段（路点正上/正下方）：朝附着墙方向推进——
                 // 藤蔓爬升需要实际碰撞到攀爬面，梯子下滑也需要前推。仅 ladder 时
                 // 找不到墙也能靠跳跃键上升
@@ -88,6 +177,7 @@ public final class GoExecutor {
                     return;
                 }
             } else {
+                restorePreJumpYaw(player, takeover);
                 writeInput(player, 0.0F, 0.0F, false, false, shift);
                 return;
             }
@@ -95,13 +185,83 @@ public final class GoExecutor {
         dx /= hDist;
         dz /= hDist;
 
-        // 接管视角：把客户端偏航角转到路线方向（+ 角度偏转），只改 yaw 不动俯仰。
-        // 在相机系换算之前设置，本 tick 的移动向量自然收敛为正前方向；
-        // 渲染插值（yRotO → yRot）会让转向平滑。未开启时保持玩家自己的视角
-        if (Configs.Special.GO_TAKEOVER_VIEW.getBooleanValue()) {
-            float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz))
-                    + (float) Configs.Special.GO_VIEW_OFFSET.getDoubleValue();
-            player.setYRot(targetYaw);
+        // 跳跃/跑酷判定先于视角接管：跑酷起跳 tick 需要在设 yaw 前就知道是否归零偏转
+        boolean jump = false;
+        boolean parkour = false;
+        // 跑酷起跳 tick 的缺口格数（<0 = 非起跳 tick，即停顿 tick 或非跑酷）
+        int parkourGap = -1;
+        if (hanging) {
+            if (wp.getY() > feetY) {
+                jump = true; // 攀爬上升：跳跃键在梯子上直接上升；藤蔓靠前推进入攀爬面
+            }
+            // 悬挂中下降（路点在下方）：前推方向（墙向/侧向）即沿梯下滑或走出，不加跳跃
+        } else {
+            if (player.onGround() && wp.getY() > feetY && hDist * hDist < 1.8 * 1.8) {
+                jump = true; // 跳上型路点
+            }
+            if (player.isInWater() && wp.getY() >= feetY) {
+                jump = true; // 水中保持上浮游动
+            }
+            if (player.onGround() && wp.getY() == feetY && hDist > 1.5 && hDist < 5.0
+                    && floorAheadMissing(player, dx, dz)) {
+                // 跑酷跳腿：同层 2~4 格外的落点、中间无地板（寻路 parkour 边保证），
+                // 前方 0.4 格探测点越过缺口边缘即处于边缘 → 起跳（见 floorAheadMissing）。
+                // 缺口按到落点路点的水平距离分级
+                // （跑酷只生成正交方向、落点在缺口后一格，触发时 hDist ≈ 缺口+1）：
+                // 1~2 格缺口先停 1gt 再跳——停顿 tick 零输入会当 tick 掐掉进行中的
+                // 疾跑，1 格缺口得以普通跳精确落点，2 格缺口从近静止再疾跑跳依然够远；
+                // 3 格缺口不停顿，直接疾跑跳保住动量
+                parkour = true;
+                long now = player.tickCount;
+                if (parkourStateTick != now) {
+                    parkourStateTick = now; // 状态推进每 tick 仅一次（见字段注释）
+                    int gap = (int) Math.round(hDist) - 1;
+                    if (parkourPauseTicks > 0) {
+                        parkourPauseTicks--; // 停顿后的下一 tick：起跳
+                    } else if (gap <= 2) {
+                        parkourPauseTicks = 1; // 本 tick 先停 1gt
+                    }
+                    parkourDecidedGap = parkourPauseTicks == 0 ? gap : -1;
+                }
+                if (parkourPauseTicks == 0) {
+                    jump = true;
+                    parkourGap = parkourDecidedGap;
+                    parkourAirTarget = wp; // 锁定落点：腾空期空中微调的目标（见字段注释）
+                }
+            } else if (parkourPauseTicks != 0) {
+                parkourPauseTicks = 0; // 边缘条件中断：放弃本次停顿，下次触发重新判定
+            }
+        }
+
+        // 视角处理（在相机系换算之前设置 yaw，本 tick 的移动向量自然收敛为正前方向，
+        // 所以无论哪种模式，转向都不影响移动方向）。
+        // 起跳动作 = 跑酷跳、跳上一格（含起跳抓梯：路点格为攀爬方块的跳上型路点）。
+        // ① 接管视角开启：每 tick 把偏航角转到路线方向（+ 角度偏转，只改 yaw 不动俯仰），
+        //    渲染插值（yRotO → yRot）让转向平滑；偏转在悬挂攀爬（上爬/下滑/爬出）与
+        //    起跳动作瞬间临时归零——正对动作方向且保证前进分量为正（原版疾跑的启动与
+        //    维持都要求 hasForwardImpulse），动作结束后恢复偏转。
+        // ② 接管视角关闭：平时完全不碰视角，仅起跳动作的起跳 tick 临时把视角转向跳跃
+        //    方向（不带偏转），下一 tick 立即恢复起跳前的原视角（不等到落地；
+        //    连续跳跃时每跳各自保存/恢复一对）。
+        // 接管模式下与目标偏航相差 1° 以内不重写：路线方向随位置逐 tick 微变，
+        // 逐次覆写会变成持续的视角抖动
+        boolean jumpUp = jump && !hanging && player.onGround() && !player.isInWater()
+                && wp.getY() > feetY; // 跳上一格（含起跳抓梯）
+        if (takeover) {
+            float offset = (hanging || parkour || jumpUp)
+                    ? 0.0F
+                    : (float) Configs.Special.GO_VIEW_OFFSET.getIntegerValue();
+            float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz)) + offset;
+            if (Math.abs(Mth.wrapDegrees(targetYaw - player.getYRot())) >= 1.0F) {
+                player.setYRot(targetYaw);
+            }
+        } else if (parkour || jumpUp) {
+            if (Float.isNaN(preJumpYaw)) {
+                preJumpYaw = player.getYRot();
+            }
+            player.setYRot((float) Math.toDegrees(Math.atan2(-dx, dz)));
+        } else if (!Float.isNaN(preJumpYaw)) {
+            restorePreJumpYaw(player, takeover);
         }
 
         // 期望世界方向 → 相机系移动向量（yaw=0 面向 +Z：strafe+=左，forward+=前）
@@ -122,37 +282,73 @@ public final class GoExecutor {
             strafe *= 0.4F;
             forward *= 0.4F;
         }
-
-        boolean jump = false;
-        boolean parkour = false;
-        if (hanging) {
-            if (wp.getY() > feetY) {
-                jump = true; // 攀爬上升：跳跃键在梯子上直接上升；藤蔓靠前推进入攀爬面
-            }
-            // 悬挂中下降（路点在下方）：前推方向（墙向/侧向）即沿梯下滑或走出，不加跳跃
-        } else {
-            if (player.onGround() && wp.getY() > feetY && hDist * hDist < 1.8 * 1.8) {
-                jump = true; // 跳上型路点
-            }
-            if (player.isInWater() && wp.getY() >= feetY) {
-                jump = true; // 水中保持上浮游动
-            }
-            if (player.onGround() && wp.getY() == feetY && hDist > 1.5 && hDist < 5.0
-                    && floorAheadMissing(player, dx, dz)) {
-                // 疾跑跳腿：同层 2~4 格外的落点、中间无地板（寻路 parkour 边保证），
-                // 探测步内前方无地板即处于边缘 → 起跳。跳跃距离依赖疾跑，强制 sprint
-                jump = true;
-                parkour = true;
-            }
+        if (parkour && parkourGap < 0) {
+            // 跑酷停顿 tick：零输入原地下站 1gt（见 parkour 分支注释）
+            strafe = 0.0F;
+            forward = 0.0F;
         }
+
         boolean sprint;
-        if (parkour || Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
-            // 疾跑跳必须疾跑助力；强制疾跑：始终请求（等效一直按住 Ctrl），能否真正冲刺由原版条件决定
+        if (parkour && parkourGap >= 1) {
+            // 跑酷起跳：1 格缺口普通跳（停顿已掐掉进行中的疾跑），2~3 格缺口疾跑跳助力；
+            // 强制疾跑只作用于非跑酷路段，不破坏小缺口的落点精度
+            sprint = parkourGap >= 2;
+        } else if (parkour) {
+            sprint = false; // 跑酷停顿 tick：零输入已让原版取消疾跑，位上也不再请求
+        } else if (Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
+            // 强制疾跑：始终请求（等效一直按住 Ctrl），能否真正冲刺由原版条件决定
             sprint = true;
         } else {
             sprint = shouldSprint(player, hDist);
         }
         writeInput(player, strafe, forward, jump, sprint, shift);
+    }
+
+    /**
+     * 跑酷跳空中微调（速率伺服）：把"落点要落在目标"转成每 tick 的 WASD 输入。
+     * 期望水平速度 = 水平残差 / 纵向模拟得到的剩余空中 tick 数；输入 = （期望速度
+     * − 当前速度 × 空气阻尼 0.91）/ 空气加速度（0.02，疾跑 0.026），限幅 1。误差为零
+     * 时自动输出恰好维持当前速度的输入（抵消阻尼）；快了自动松 W 甚至按 S 减速，
+     * 偏了按 A/D 侧移——即"结合目标落点位置和玩家视角"的空中微调，方向经相机系
+     * 换算后与视角无关地指向需要的修正方向。
+     */
+    private static void parkourAirControl(LocalPlayer player, boolean takeover, boolean shift) {
+        // 起跳后第一 tick 恢复起跳前视角（接管视角开启时视角由接管逻辑管理，不在此处理）
+        restorePreJumpYaw(player, takeover);
+        double tx = parkourAirTarget.getX() + 0.5 - player.getX();
+        double tz = parkourAirTarget.getZ() + 0.5 - player.getZ();
+        if (takeover) {
+            float offset = (float) Configs.Special.GO_VIEW_OFFSET.getIntegerValue();
+            float targetYaw = (float) Math.toDegrees(Math.atan2(-tx, tz)) + offset;
+            if (Math.abs(Mth.wrapDegrees(targetYaw - player.getYRot())) >= 1.0F) {
+                player.setYRot(targetYaw);
+            }
+        }
+        // 剩余空中 tick：按原版纵向物理（vy = (vy − 0.08) × 0.98）模拟到脚部落回目标层
+        double y = player.getY();
+        double vy = player.getDeltaMovement().y;
+        int ticksLeft = 1;
+        int targetY = parkourAirTarget.getY();
+        while (y > targetY && ticksLeft < 40) {
+            vy = (vy - 0.08) * 0.98;
+            y += vy;
+            ticksLeft++;
+        }
+        double accel = player.isSprinting() ? 0.026 : 0.02;
+        double inX = (tx / ticksLeft - player.getDeltaMovement().x * 0.91) / accel;
+        double inZ = (tz / ticksLeft - player.getDeltaMovement().z * 0.91) / accel;
+        double mag = Math.sqrt(inX * inX + inZ * inZ);
+        if (mag > 1.0) {
+            inX /= mag;
+            inZ /= mag;
+        }
+        // 世界系修正向量 → 相机系移动向量（yaw=0 面 +Z：strafe+=左，forward+=前）
+        float yawRad = player.getYRot() * (float) (Math.PI / 180.0);
+        float sin = (float) Math.sin(yawRad);
+        float cos = (float) Math.cos(yawRad);
+        float strafe = (float) (inX * cos + inZ * sin);
+        float forward = (float) (inZ * cos - inX * sin);
+        writeInput(player, strafe, forward, false, false, shift);
     }
 
     /** 脚部所在格是否为可攀爬方块（梯子/藤蔓等）：悬挂攀爬状态 */
@@ -181,15 +377,28 @@ public final class GoExecutor {
         return null;
     }
 
-    /** 探测步（0.6 格）内前方脚下一格是否无地板：判定疾跑跳的起跳边缘 */
+    /**
+     * 探测步（0.4 格）内前方脚下一格是否无地板：判定跑酷跳的起跳边缘。
+     * 探测点越过缺口边缘即触发（起跳点距边缘约 0.1 格以内；触发窗口 0.68 格
+     * 宽于单 tick 步进 ≤0.28，不会漏检走到悬空）。
+     */
     private static boolean floorAheadMissing(LocalPlayer player, double dx, double dz) {
         ClientLevel level = Minecraft.getInstance().level;
         if (level == null) {
             return false;
         }
         BlockPos probe = BlockPos.containing(
-                player.getX() + dx * 0.6, player.getBlockY() - 1, player.getZ() + dz * 0.6);
+                player.getX() + dx * 0.4, player.getBlockY() - 1, player.getZ() + dz * 0.4);
         return level.getBlockState(probe).getCollisionShape(level, probe).isEmpty();
+    }
+
+    /** 恢复跳跃临时转向暂存的起跳前视角；接管视角开启时不动作（视角由接管逻辑管理） */
+    private static void restorePreJumpYaw(LocalPlayer player, boolean takeover) {
+        if (takeover || Float.isNaN(preJumpYaw)) {
+            return;
+        }
+        player.setYRot(preJumpYaw);
+        preJumpYaw = Float.NaN;
     }
 
     /** 平坦路段冲刺：当前与随后路点同层且距离足够远（强制疾跑开启时无条件请求） */
@@ -236,6 +445,12 @@ public final class GoExecutor {
                 forward > 0.05F, forward < -0.05F, strafe > 0.05F, strafe < -0.05F, jump, shift, sprint);
         ((ClientInputAccessor) player.input).printer$setMoveVector(new Vec2(strafe, forward));
         lastWritten = player.input.keyPresses;
+        if (!writtenInputs.contains(player.input)) {
+            writtenInputs.add(player.input);
+        }
+        if (player.onGround() || player.isInWater()) {
+            selfJumpAirborne = jump;
+        } // 腾空期间保持原值：空中是否属于自主跳跃由起跳时刻决定
     }
 
     /**
@@ -245,6 +460,19 @@ public final class GoExecutor {
      * 非灵魂出窍时真身 KeyboardInput 每 tick 已被物理键盘重写，等值不成立则不动。
      */
     private static void clearStaleInput(LocalPlayer player) {
+        // 被灵魂出窍换出的 input 按引用清零：它们不在消费链路上（原版 applyInput 只吃
+        // 当前的 player.input），残留不清会在下次开灵魂出窍时驱动玩家
+        for (net.minecraft.client.player.ClientInput written : writtenInputs) {
+            if (written == player.input) {
+                continue;
+            }
+            written.keyPresses = new net.minecraft.world.entity.player.Input(
+                    false, false, false, false, false, false, false);
+            ((ClientInputAccessor) written).printer$setMoveVector(Vec2.ZERO);
+        }
+        writtenInputs.clear();
+        // 当前在用的 input 走等值匹配：灵魂出窍未开时它每 tick 被物理键盘重写
+        // （等值不成立则不碰玩家真实输入）；开着时它只可能装着我们写过的组合
         if (lastWritten == null || !lastWritten.equals(player.input.keyPresses)) {
             return;
         }

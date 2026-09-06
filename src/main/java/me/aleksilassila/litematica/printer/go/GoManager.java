@@ -40,6 +40,16 @@ public final class GoManager {
     private static final int MAX_REPATHS = 60;
     private static final long TARGET_CHECK_INTERVAL_TICKS = 20;
     private static final double TARGET_REROUTE_DISTANCE_SQ = 4.0 * 4.0;
+    // 偏离检测：每 tick 采样，玩家到剩余路径的最小距离超过阈值（GO_DEVIATION_DISTANCE，
+    // 默认 1 格）立即停止；总开关 GO_DEVIATION_STOP 可整体关闭。着地/入水比三维距离
+    // （正常行走距最近路点约 ≤0.9 格、跑酷/跳上接近段有上一路点兜底 ≤0.8 格，均不会
+    // 误触）；腾空分两类：自主跳跃（跑酷/跳上/出水跳，GoExecutor 起跳暂挂
+    // selfJumpAirborne）整个空中阶段放行——缺口跳跃中点距两端路点必然超过阈值，属
+    // 合法离路瞬间；外力腾空（被击退/冲走/失足）不放行且只比水平距离——若放行，寻路
+    // 自己的空中操控会把玩家拉回路径内，落地采样永远不超阈值，击退带离永远判不到；
+    // 只比水平是因为纵向起伏是下落/下台阶的正常现象，而正常腾空动作的水平偏移
+    // 到不了 1 格
+    private static final long DEVIATION_CHECK_INTERVAL_TICKS = 1;
 
     private final Minecraft mc = Minecraft.getInstance();
 
@@ -63,6 +73,7 @@ public final class GoManager {
     private double stuckRefX;
     private double stuckRefZ;
     private long nextTargetCheckTick = -1L;
+    private long nextDeviationCheckTick = -1L;
 
     private GoManager() {
     }
@@ -153,6 +164,7 @@ public final class GoManager {
         LocalPlayer player = mc.player;
         ClientLevel level = mc.level;
         if (player == null || level == null || player.isDeadOrDying()) {
+            GoExecutor.resetViewRestore(); // 玩家失效（切维度/死亡）不会再走恢复分支，清掉暂存
             active = false;
             calcSerial++;
             calculating = false;
@@ -197,6 +209,48 @@ public final class GoManager {
 
         // 路点推进
         advanceWaypoints(player);
+
+        // 偏离检测：每 tick 采样，到剩余路径（含上一路点，见下）的最小距离超过阈值
+        // 立即停止任务（即使玩家还在试图跳/被拉回路径）。采样分态：着地/入水比三维
+        // 距离；外力腾空只比水平距离；自主跳跃空中放行（见常量注释）。重算路径期间
+        // 跳过（旧路径已过期，新路径将从当前位置出发）。
+        // 扫描从 waypointIndex-1 开始：同层缺口起跳前当前路点已在缺口对岸（3~4 格外），
+        // 起跳脚下的格子（上一路点）才是玩家真正的参照
+        if (nextDeviationCheckTick < 0L) {
+            nextDeviationCheckTick = now + DEVIATION_CHECK_INTERVAL_TICKS;
+        } else if (now >= nextDeviationCheckTick && !calculating) {
+            nextDeviationCheckTick = now + DEVIATION_CHECK_INTERVAL_TICKS;
+            if (Configs.Special.GO_DEVIATION_STOP.getBooleanValue()) {
+                int maxDist = Configs.Special.GO_DEVIATION_DISTANCE.getIntegerValue();
+                double maxDistSq = sq(maxDist);
+                boolean grounded = player.onGround() || player.isInWater();
+                boolean externalAir = !grounded && !GoExecutor.isSelfJumpAirborne();
+                if (grounded || externalAir) {
+                    double minSq = Double.MAX_VALUE;
+                    List<BlockPos> p = path;
+                    for (int i = Math.max(waypointIndex - 1, 0); i < p.size(); i++) {
+                        BlockPos wp = p.get(i);
+                        double dx = wp.getX() + 0.5 - player.getX();
+                        double dz = wp.getZ() + 0.5 - player.getZ();
+                        double dsq = dx * dx + dz * dz;
+                        if (!externalAir) {
+                            double dy = wp.getY() + 0.5 - player.getY();
+                            dsq += dy * dy;
+                        }
+                        if (dsq < minSq) {
+                            minSq = dsq;
+                            if (minSq <= maxDistSq) {
+                                break; // 已找到近路点，无需继续扫
+                            }
+                        }
+                    }
+                    if (minSq > maxDistSq) {
+                        stop("已远离路径超过 " + maxDist + " 格，已停止寻路");
+                        return;
+                    }
+                }
+            }
+        }
 
         // 路径耗尽仍未到目标：从当前位置重算（onPathResult 的"距离不改进即终止"防死循环）
         if (waypointIndex >= path.size()) {
@@ -277,6 +331,8 @@ public final class GoManager {
         stuckRepaths = 0;
         nextStuckCheckTick = -1L;
         nextTargetCheckTick = -1L;
+        nextDeviationCheckTick = -1L;
+        GoExecutor.resetViewRestore(); // 新会话不清掉上次跳跃残留的视角暂存会莫名回摆
         if (startMessage != null) {
             msg(startMessage);
         }
