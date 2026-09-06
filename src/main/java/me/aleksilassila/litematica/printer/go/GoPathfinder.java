@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.go;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.state.BlockState;
 import org.jetbrains.annotations.Nullable;
@@ -14,9 +15,10 @@ import java.util.function.BooleanSupplier;
 /**
  * 纯行走 A* 寻路（/go 自动寻路核心）。
  *
- * <p>只使用"移动 + 跳跃"可完成的动作（平移 / 对角 / 跳上一格 / 走下悬崖），
- * 绝不挖掘或放置方块。成本单位为 tick；单次计算受时间预算约束，
- * 超时返回 best-so-far（已探索节点中离目标最近的），实现"走到离目标最近的位置"语义。
+ * <p>只使用"移动 + 跳跃 + 攀爬"可完成的动作（平移 / 对角 / 跳上一格 / 走下悬崖 /
+ * 疾跑跳过同层缺口 / 爬梯子藤蔓），绝不挖掘或放置方块。成本单位为 tick；
+ * 单次计算受时间预算约束，超时返回 best-so-far（已探索节点中离目标最近的），
+ * 实现"走到离目标最近的位置"语义。
  * 每次寻路新建实例，线程封闭（在后台计算线程上运行）。
  */
 public final class GoPathfinder {
@@ -27,6 +29,9 @@ public final class GoPathfinder {
     static final float JUMP_UP_COST = WALK_COST + 5.0F;       // 跳上一格
     static final float SPRINT_COST = 20.0F / 5.612F;          // 疾跑一格（启发下界）
     static final float WATER_COST = 20.0F / 2.2F;             // 涉水一格
+    static final float LADDER_COST = 20.0F / 2.35F;           // 爬梯子/藤蔓一格（原版攀爬速度）
+    static final float LADDER_EXIT_UP_COST = LADDER_COST + 4.0F; // 从梯顶翻出（跳+侧移）
+    static final float PARKOUR_COST = 12.0F;                  // 疾跑跳腾空约 12 tick，可覆盖 2~4 格
     private static final float MIN_IMPROVEMENT = 0.01F;
     private static final int MAX_EMPTY_CHUNKS = 50;
     private static final int MAX_NODES = 300_000;
@@ -278,6 +283,10 @@ public final class GoPathfinder {
         for (int[] d : DIRS) {
             descend(cur, d[0], d[1]);
         }
+        for (int[] d : DIRS) {
+            parkour(cur, d[0], d[1]);
+        }
+        climb(cur);
     }
 
     /** 平移：同层走到相邻格 */
@@ -347,6 +356,10 @@ public final class GoPathfinder {
             if (feet < minY) {
                 return;
             }
+            // 下落路径穿过攀爬格不可行：原版坠落触碰梯子/藤蔓会被中途接住而非落底
+            if (climbableAt(nx, feet, nz)) {
+                return;
+            }
             if (!passable(nx, feet, nz)) {
                 return;
             }
@@ -360,6 +373,97 @@ public final class GoPathfinder {
             return;
         }
         offer(cur, nx, feet, nz, WALK_COST + fallTicks[fallDist]);
+    }
+
+    /**
+     * 疾跑跳过缺口：正交方向跳过 1~3 格无地板缺口，落在同层 2~4 格外。
+     * 需要疾跑助力，执行侧（GoExecutor）在边缘探测到前方无地板时起跳。
+     * 起跳点头顶须留空（腾空弧线上升超过一格），缺口格全弧线（脚/头/头顶）无碰撞，
+     * 中途遇到有地板的格子即放弃（那种地形由 平移+短跳 覆盖）。
+     */
+    private void parkour(Node cur, int dx, int dz) {
+        if (waterAt(cur.x, cur.y, cur.z) || !passable(cur.x, cur.y + 2, cur.z)) {
+            return; // 水中无法疾跑起跳；起跳点需头顶留空
+        }
+        int gx = cur.x;
+        int gz = cur.z;
+        for (int gap = 1; gap <= 3; gap++) {
+            gx += dx;
+            gz += dz;
+            if (!loaded(gx, gz)) {
+                return;
+            }
+            if (walkableFloor(gx, cur.y, gz) || climbableAt(gx, cur.y, gz) || !passable(gx, cur.y, gz)
+                    || !passable(gx, cur.y + 1, gz) || !passable(gx, cur.y + 2, gz)) {
+                return; // 缺口格含攀爬方块时放弃：腾空穿过会被原版中途接住，跳不完整
+            }
+            int lx = gx + dx;
+            int lz = gz + dz;
+            if (!loaded(lx, lz)) {
+                continue;
+            }
+            if (walkableFloor(lx, cur.y, lz) && passable(lx, cur.y, lz) && passable(lx, cur.y + 1, lz)) {
+                offer(cur, lx, cur.y, lz, PARKOUR_COST);
+            }
+        }
+    }
+
+    /**
+     * 可攀爬方块（梯子/藤蔓等，BlockTags.CLIMBABLE）：走进攀爬格、沿列上爬/下爬、
+     * 爬出到相邻站立格。攀爬格无碰撞体，节点不要求脚下有地板（悬挂状态）。
+     */
+    private void climb(Node cur) {
+        int x = cur.x;
+        int y = cur.y;
+        int z = cur.z;
+        if (climbableAt(x, y, z)) {
+            // 沿列上爬：头部格 (y+2) 须留空，否则身体在上一格放不下
+            if (climbableAt(x, y + 1, z) && passable(x, y + 2, z)) {
+                offer(cur, x, y + 1, z, LADDER_COST);
+            }
+            // 沿列下爬
+            if (climbableAt(x, y - 1, z)) {
+                offer(cur, x, y - 1, z, LADDER_COST);
+            }
+            for (int[] d : DIRS) {
+                int nx = x + d[0];
+                int nz = z + d[1];
+                if (!loaded(nx, nz)) {
+                    continue;
+                }
+                // 同层爬出：相邻站立格
+                if (walkableFloor(nx, y, nz) && passable(nx, y, nz) && passable(nx, y + 1, nz)) {
+                    offer(cur, nx, y, nz, WALK_COST);
+                }
+                // 翻上梯顶：相邻高一层的站立格（执行侧跳跃+侧移翻出）
+                if (walkableFloor(nx, y + 1, nz) && passable(nx, y + 1, nz) && passable(nx, y + 2, nz)) {
+                    offer(cur, nx, y + 1, nz, LADDER_EXIT_UP_COST);
+                }
+            }
+            return;
+        }
+        // 从站立格进入攀爬列：同层相邻攀爬格（走进去），
+        // 或低一层攀爬格（走出边缘坠落一格被接住，藤蔓顶端常低于平台面）
+        if (!passable(x, y, z)) {
+            return;
+        }
+        for (int[] d : DIRS) {
+            int nx = x + d[0];
+            int nz = z + d[1];
+            if (!loaded(nx, nz)) {
+                continue;
+            }
+            if (climbableAt(nx, y, nz) && passable(nx, y + 1, nz)) {
+                offer(cur, nx, y, nz, WALK_COST);
+            } else if (climbableAt(nx, y + 1, nz) && passable(nx, y + 2, nz)) {
+                // 跳入攀爬列：攀爬格底端高于站立面一格（墙基半埋、梯子/藤蔓底端悬空一格很常见），
+                // 走不进去也够不着低一层——跳跃扑向攀爬格抓住。执行侧由既有的
+                // "路点高一格且距离 1.8 格内即跳跃"分支完成起跳
+                offer(cur, nx, y + 1, nz, JUMP_UP_COST);
+            } else if (passable(nx, y, nz) && climbableAt(nx, y - 1, nz)) {
+                offer(cur, nx, y - 1, nz, WALK_COST + fallTicks[1]);
+            }
+        }
     }
 
     private void offer(Node parent, int x, int y, int z, float cost) {
@@ -385,9 +489,17 @@ public final class GoPathfinder {
         return false;
     }
 
-    /** 该格可通行：无碰撞且不是岩浆（水可通行，走水中动作有额外成本） */
+    /**
+     * 该格可通行：无碰撞且不是岩浆（水可通行，走水中动作有额外成本）。
+     * 梯子/藤蔓等可攀爬方块按可通行处理——它们的碰撞体是贴墙薄片（原版未设
+     * noCollission，getCollisionShape 返回薄片而非空），但对寻路而言攀爬格
+     * 就是要走进/穿过的格子，按碰撞为空判定会把所有攀爬路线判死。
+     */
     private boolean passable(int x, int y, int z) {
         BlockState state = level.getBlockState(cursorA.set(x, y, z));
+        if (state.is(BlockTags.CLIMBABLE)) {
+            return true;
+        }
         if (!state.getCollisionShape(level, cursorA).isEmpty()) {
             return false;
         }
@@ -402,6 +514,11 @@ public final class GoPathfinder {
 
     private boolean waterAt(int x, int y, int z) {
         return level.getBlockState(cursorB.set(x, y, z)).getFluidState().is(FluidTags.WATER);
+    }
+
+    /** (x,y,z) 是否为可攀爬方块（梯子/藤蔓等） */
+    private boolean climbableAt(int x, int y, int z) {
+        return level.getBlockState(cursorB.set(x, y, z)).is(BlockTags.CLIMBABLE);
     }
 
     private Result buildPath(Node end, boolean reachedGoal) {

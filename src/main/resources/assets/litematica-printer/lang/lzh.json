@@ -395,6 +395,10 @@
   "litematica_printer.config.goMaxSpeed.desc": "自走之速限（格/秒）。逾馳之全速（約 5.612 格/秒）者，等於不限。預設 5.7。",
   "litematica_printer.config.goForceSprint": "自走 - 強馳",
   "litematica_printer.config.goForceSprint.desc": "啟則常請馳（若恆按 Ctrl），能否真馳聽於原制（飢、潛、礙）。先於「自走 - 馳」。",
+  "litematica_printer.config.goTakeoverView": "自走 - 攝視",
+  "litematica_printer.config.goTakeoverView.desc": "啟則自行之際，偏航轉從路向（惟偏航，俯仰不動），所加之偏角見「自走 - 偏角」。慎之：鼠視被覆，印石轉向或被擾。",
+  "litematica_printer.config.goViewOffset": "自走 - 偏角",
+  "litematica_printer.config.goViewOffset.desc": "攝視之時，路向之外所加偏航之角（度，-180~180，預設 0）。零者正對路向；惟攝視啟乃驗。",
   "litematica_printer.config.category.special": "殊技",
   "litematica_printer.config.category.special.desc": "寬限、非常規之相容與繫特定環境行為之開關"
 }

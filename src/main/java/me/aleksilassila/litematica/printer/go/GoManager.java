@@ -243,7 +243,7 @@ public final class GoManager {
         }
     }
 
-    /** 水平距离小于阈值即推进到下一路点；跳上型路点须已站上才推进 */
+    /** 水平距离小于阈值即推进到下一路点；上行路点须已到达该层、下方路点须降到位才推进 */
     private void advanceWaypoints(LocalPlayer player) {
         List<BlockPos> p = this.path;
         while (waypointIndex < p.size()) {
@@ -253,7 +253,10 @@ public final class GoManager {
                 break;
             }
             if (player.getY() < wp.getY() - 0.2) {
-                break; // 还没爬上该路点（跳上型）
+                break; // 还没爬上该路点（跳上型/攀爬列上行）
+            }
+            if (player.getY() > wp.getY() + 1.2) {
+                break; // 路点在身体高度之下（下爬梯子/藤蔓段）：未降到位不得跳过整列
             }
             waypointIndex++;
         }

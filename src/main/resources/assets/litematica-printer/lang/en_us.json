@@ -395,6 +395,10 @@
   "litematica_printer.config.goMaxSpeed.desc": "Maximum auto-pathfinding movement speed in blocks per second. Values above full sprint speed (~5.612) are equivalent to no limit. Default 5.7.",
   "litematica_printer.config.goForceSprint": "Auto Pathfinding - Force Sprint",
   "litematica_printer.config.goForceSprint.desc": "When enabled, pathfinding always requests sprint (equivalent to holding Ctrl); whether sprinting actually engages is decided by vanilla conditions (hunger, sneaking, collision). Overrides “Auto Pathfinding - Sprint”.",
+  "litematica_printer.config.goTakeoverView": "Auto Pathfinding - Take Over View",
+  "litematica_printer.config.goTakeoverView.desc": "When enabled, the client view yaw is turned toward the path direction while pathfinding (yaw only, pitch untouched). The extra offset is configured under “Auto Pathfinding - View Offset”. Note: this overrides mouse look and may interfere with printer placement rotations.",
+  "litematica_printer.config.goViewOffset": "Auto Pathfinding - View Offset",
+  "litematica_printer.config.goViewOffset.desc": "Additional yaw offset (degrees, -180 to 180, default 0) applied on top of the path direction when taking over the view. 0 faces straight along the path. Only takes effect when “Auto Pathfinding - Take Over View” is enabled.",
   "litematica_printer.config.category.special": "Special",
   "litematica_printer.config.category.special.desc": "Toggles for relaxed restrictions, unusual compatibility, and environment-dependent behavior"
 }

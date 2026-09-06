@@ -3,8 +3,10 @@ package me.aleksilassila.litematica.printer.go;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.mixin.printer.mc.ClientInputAccessor;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.tags.BlockTags;
 import net.minecraft.world.phys.Vec2;
 import org.jetbrains.annotations.Nullable;
 
@@ -14,6 +16,8 @@ import java.util.List;
  * 寻路执行器：把当前路点方向换算成与相机朝向无关的移动输入，
  * 通过覆写 {@code ClientInput.keyPresses} 与 {@code moveVector} 驱动玩家
  * 前进/左右/后退/跳跃/冲刺——不改变客户端视角，不挖掘不放置。
+ * 另驱动两类寻路动作的原地执行：同层疾跑跳（边缘探测起跳，见 {@code parkour} 分支）
+ * 与梯子/藤蔓攀爬（悬挂时朝附着墙推进，上爬附加跳跃键，见 {@code hanging} 分支）。
  * 在 {@code LocalPlayer.applyInput()} HEAD 调用（{@link me.aleksilassila.litematica.printer.mixin.printer.mc.MixinLocalPlayerGo}）。
  */
 public final class GoExecutor {
@@ -60,15 +64,45 @@ public final class GoExecutor {
             return;
         }
 
+        boolean hanging = hangingOnClimbable(player);
+        int feetY = player.getBlockY();
+
         double dx = (wp.getX() + 0.5) - player.getX();
         double dz = (wp.getZ() + 0.5) - player.getZ();
         double hDist = Math.sqrt(dx * dx + dz * dz);
         if (hDist < 1.0E-3) {
-            writeInput(player, 0.0F, 0.0F, false, false, shift);
-            return;
+            if (hanging) {
+                // 梯子/藤蔓列内的竖直段（路点正上/正下方）：朝附着墙方向推进——
+                // 藤蔓爬升需要实际碰撞到攀爬面，梯子下滑也需要前推。仅 ladder 时
+                // 找不到墙也能靠跳跃键上升
+                double[] wall = attachmentWall(player);
+                if (wall != null) {
+                    dx = wall[0];
+                    dz = wall[1];
+                    hDist = 1.0;
+                } else if (wp.getY() > feetY) {
+                    writeInput(player, 0.0F, 0.0F, true, false, shift);
+                    return;
+                } else {
+                    writeInput(player, 0.0F, 0.0F, false, false, shift);
+                    return;
+                }
+            } else {
+                writeInput(player, 0.0F, 0.0F, false, false, shift);
+                return;
+            }
         }
         dx /= hDist;
         dz /= hDist;
+
+        // 接管视角：把客户端偏航角转到路线方向（+ 角度偏转），只改 yaw 不动俯仰。
+        // 在相机系换算之前设置，本 tick 的移动向量自然收敛为正前方向；
+        // 渲染插值（yRotO → yRot）会让转向平滑。未开启时保持玩家自己的视角
+        if (Configs.Special.GO_TAKEOVER_VIEW.getBooleanValue()) {
+            float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz))
+                    + (float) Configs.Special.GO_VIEW_OFFSET.getDoubleValue();
+            player.setYRot(targetYaw);
+        }
 
         // 期望世界方向 → 相机系移动向量（yaw=0 面向 +Z：strafe+=左，forward+=前）
         float yawRad = player.getYRot() * (float) (Math.PI / 180.0);
@@ -83,23 +117,79 @@ public final class GoExecutor {
         float speedFactor = Math.min(1.0F, maxSpeed * (GoPathfinder.SPRINT_COST / 20.0F));
         strafe *= speedFactor;
         forward *= speedFactor;
-
-        int feetY = player.getBlockY();
-        boolean jump = false;
-        if (player.onGround() && wp.getY() > feetY && hDist * hDist < 1.8 * 1.8) {
-            jump = true; // 跳上型路点
+        if (hanging && (wp.getX() != player.getBlockX() || wp.getZ() != player.getBlockZ())) {
+            // 悬挂中的侧向路点（同层爬出/翻上梯顶）：减速侧移，防止跳出/漂过一格宽的落点
+            strafe *= 0.4F;
+            forward *= 0.4F;
         }
-        if (player.isInWater() && wp.getY() >= feetY) {
-            jump = true; // 水中保持上浮游动
+
+        boolean jump = false;
+        boolean parkour = false;
+        if (hanging) {
+            if (wp.getY() > feetY) {
+                jump = true; // 攀爬上升：跳跃键在梯子上直接上升；藤蔓靠前推进入攀爬面
+            }
+            // 悬挂中下降（路点在下方）：前推方向（墙向/侧向）即沿梯下滑或走出，不加跳跃
+        } else {
+            if (player.onGround() && wp.getY() > feetY && hDist * hDist < 1.8 * 1.8) {
+                jump = true; // 跳上型路点
+            }
+            if (player.isInWater() && wp.getY() >= feetY) {
+                jump = true; // 水中保持上浮游动
+            }
+            if (player.onGround() && wp.getY() == feetY && hDist > 1.5 && hDist < 5.0
+                    && floorAheadMissing(player, dx, dz)) {
+                // 疾跑跳腿：同层 2~4 格外的落点、中间无地板（寻路 parkour 边保证），
+                // 探测步内前方无地板即处于边缘 → 起跳。跳跃距离依赖疾跑，强制 sprint
+                jump = true;
+                parkour = true;
+            }
         }
         boolean sprint;
-        if (Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
-            // 强制疾跑：始终请求（等效一直按住 Ctrl），能否真正冲刺由原版条件决定
+        if (parkour || Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
+            // 疾跑跳必须疾跑助力；强制疾跑：始终请求（等效一直按住 Ctrl），能否真正冲刺由原版条件决定
             sprint = true;
         } else {
             sprint = shouldSprint(player, hDist);
         }
         writeInput(player, strafe, forward, jump, sprint, shift);
+    }
+
+    /** 脚部所在格是否为可攀爬方块（梯子/藤蔓等）：悬挂攀爬状态 */
+    private static boolean hangingOnClimbable(LocalPlayer player) {
+        ClientLevel level = Minecraft.getInstance().level;
+        return level != null && level.getBlockState(player.blockPosition()).is(BlockTags.CLIMBABLE);
+    }
+
+    /** 脚下攀爬方块附着的固体墙方向（列内推进需要有实际可碰撞的面）；找不到返回 null */
+    @Nullable
+    private static double[] attachmentWall(LocalPlayer player) {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return null;
+        }
+        int x = player.getBlockX();
+        int y = player.getBlockY();
+        int z = player.getBlockZ();
+        int[][] dirs = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
+        for (int[] d : dirs) {
+            BlockPos p = new BlockPos(x + d[0], y, z + d[1]);
+            if (!level.getBlockState(p).getCollisionShape(level, p).isEmpty()) {
+                return new double[]{d[0], d[1]};
+            }
+        }
+        return null;
+    }
+
+    /** 探测步（0.6 格）内前方脚下一格是否无地板：判定疾跑跳的起跳边缘 */
+    private static boolean floorAheadMissing(LocalPlayer player, double dx, double dz) {
+        ClientLevel level = Minecraft.getInstance().level;
+        if (level == null) {
+            return false;
+        }
+        BlockPos probe = BlockPos.containing(
+                player.getX() + dx * 0.6, player.getBlockY() - 1, player.getZ() + dz * 0.6);
+        return level.getBlockState(probe).getCollisionShape(level, probe).isEmpty();
     }
 
     /** 平坦路段冲刺：当前与随后路点同层且距离足够远（强制疾跑开启时无条件请求） */
@@ -110,8 +200,8 @@ public final class GoExecutor {
         if (player.getFoodData().getFoodLevel() <= 6) {
             return false;
         }
-        if (hDist * hDist < 1.5 * 1.5) {
-            return false; // 临近路点收步
+        if (hDist * hDist < 1.0 * 1.0) {
+            return false; // 临近路点收步（疾跑跳腿需要保持冲刺动量，收步窗口收紧到 1 格）
         }
         List<BlockPos> path = GoManager.INSTANCE.getPath();
         int i = GoManager.INSTANCE.getWaypointIndex();

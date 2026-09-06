@@ -395,6 +395,10 @@
   "litematica_printer.config.goMaxSpeed.desc": "自動尋路移動的速度上限（格/秒）。超過疾跑全速（約 5.612 格/秒）的值等效不限速。預設 5.7。",
   "litematica_printer.config.goForceSprint": "自動尋路 - 強制疾跑",
   "litematica_printer.config.goForceSprint.desc": "開啟後尋路始終請求疾跑（等效一直按住 Ctrl），能否真正衝刺由原版條件（飽食度、潛行、碰撞等）決定；優先於「自動尋路 - 允許衝刺」的平坦路段判斷。",
+  "litematica_printer.config.goTakeoverView": "自動尋路 - 接管視角",
+  "litematica_printer.config.goTakeoverView.desc": "開啟後，尋路期間把用戶端視角的偏航角轉向路線方向（只改偏航角，不改俯仰角），轉向時的附加偏移見「自動尋路 - 角度偏轉」。注意：會覆蓋滑鼠視角控制，打印機放置方塊的轉向也可能受影響。",
+  "litematica_printer.config.goViewOffset": "自動尋路 - 角度偏轉",
+  "litematica_printer.config.goViewOffset.desc": "接管視角時在路線方向基礎上附加的偏航角偏移（度，-180~180，預設 0）。0 為正對路線方向，僅「自動尋路 - 接管視角」開啟時生效。",
   "litematica_printer.config.category.special": "特殊功能",
   "litematica_printer.config.category.special.desc": "放寬限制、非常規相容和依賴特定環境行為的開關"
 }

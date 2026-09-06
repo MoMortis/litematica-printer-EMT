@@ -810,13 +810,26 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 自动寻路 - 接管视角：寻路期间把客户端偏航角转向路线方向（只改 yaw，不动俯仰）
+        public static final ConfigBoolean GO_TAKEOVER_VIEW = bool("goTakeoverView")
+                .defaultValue(false)
+                .build();
+
+        // 自动寻路 - 角度偏转：接管视角时在路线方向上附加的偏航角偏移（度，0 = 正对路线方向）
+        public static final ConfigDouble GO_VIEW_OFFSET = doubleValue("goViewOffset")
+                .defaultValue(0.0D)
+                .range(-180.0D, 180.0D)
+                .build();
+
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 UNLOCK_BEACON_EFFECTS,
                 TWEAKEROO_ANGEL_BLOCK_MAY_BUILD,
                 GO_TIME_LIMIT,
                 GO_MAX_FALL,
                 GO_MAX_SPEED,
-                GO_FORCE_SPRINT
+                GO_FORCE_SPRINT,
+                GO_TAKEOVER_VIEW,
+                GO_VIEW_OFFSET
         );
     }
 
