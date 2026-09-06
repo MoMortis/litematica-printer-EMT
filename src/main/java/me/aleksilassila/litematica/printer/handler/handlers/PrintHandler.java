@@ -245,7 +245,8 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (SkipListCache.isSkipped(ctx.requiredState)) {
             return false;
         }
-        // 扫描白名单：生效时只处理列表内方块（未命中一律不放置、不重试、不参与定向扫描）
+        // 扫描白名单：生效时只处理列表内方块与验证器高亮的"缺失方块"（并集，见 ScanWhitelistCache），
+        // 其余不放置、不重试、不参与定向扫描
         if (!ScanWhitelistCache.isWhitelisted(ctx.requiredState)) {
             return false;
         }

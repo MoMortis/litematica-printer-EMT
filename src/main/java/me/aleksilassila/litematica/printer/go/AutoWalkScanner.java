@@ -31,12 +31,12 @@ import java.util.ArrayList;
  * 扫描自动寻路（"打印 → 扫描自动寻路"开关，须同时开启"扫描白名单"且列表非空）。
  *
  * <p>目标来源两级：<b>优先使用原理图验证器（Schematic Verifier）的缺失方块列表</b>
- * ——验证器已验证完成时，从缺失方块（经扫描白名单过滤）中选离玩家最近的派发寻路，
- * 列表由 litematica 随世界方块变化自动维护；验证器未验证完成或无候选时，
- * <b>退回子区块逐格扫描</b>：在玩家当前子区块（16³）内逐格扫描原理图中未放置的
- * 白名单方块，扫到即派发 /go 寻路把玩家载到该方块的紧邻位置（水平相邻、上下 ±1 层，
- * 不占用目标格）；到达后释放控制权（玩家自由移动），无限等待打印机放置完成；
- * 完成后继续扫描（玩家若已换子区块，则以玩家新区块为起点重建 BFS 队列）。
+ * ——验证器已验证完成时，从缺失方块（经扫描白名单过滤，或验证器高亮的"缺失方块"）中
+ * 选离玩家最近的派发寻路，列表由 litematica 随世界方块变化自动维护；
+ * 验证器未验证完成或无候选时，<b>退回子区块逐格扫描</b>：在玩家当前子区块（16³）内逐格扫描
+ * 原理图中未放置的白名单方块或高亮缺失方块的期望状态，扫到即派发 /go 寻路把玩家载到该方块的
+ * 紧邻位置（水平相邻、上下 ±1 层，不占用目标格）；到达后释放控制权（玩家自由移动），
+ * 无限等待打印机放置完成；完成后继续扫描（玩家若已换子区块，则以玩家新区块为起点重建 BFS 队列）。
  * 派发时序：上一条自动寻路任务走完（自然到达/结束，不中途打断）后，
  * 先复核新目标是否已被放置，再派发新任务。
  * 子区块按配置轴序向外扩展，加载范围内无待放方块时待命。
@@ -174,6 +174,7 @@ public final class AutoWalkScanner {
             if (schematic == null) {
                 continue; // 非原理图方块
             }
+            // 候选 = 白名单列表 ∪ 验证器高亮的"缺失方块"（统一判定在 ScanWhitelistCache 内）
             if (!ScanWhitelistCache.isWhitelisted(schematic)) {
                 continue;
             }
@@ -367,10 +368,12 @@ public final class AutoWalkScanner {
 
     /**
      * 从所有"已验证完成"的原理图验证器的缺失方块列表中选离玩家最近的合法目标。
-     * 过滤：扫描白名单（按期望状态）、区块已加载、不可达冷却、已完成。
+     * 过滤：{@link me.aleksilassila.litematica.printer.printer.ScanWhitelistCache} 统一判定
+     * （白名单列表 ∪ 验证器高亮的"缺失方块"，仅 MISSING 类，按期望状态）、
+     * 区块已加载、不可达冷却、已完成。
      * 列表由 litematica 自动维护（世界方块变化进入复查队列实时修正），
      * 个别条目滞后由 targetCompleted 复核兜底。
-     * 验证器未验证完成或无白名单缺失时返回 null（退回扫描器）。
+     * 验证器未验证完成或无候选时返回 null（退回扫描器）。
      */
     @Nullable
     private BlockPos pollNearestVerifierTarget(ClientLevel level) {
@@ -393,7 +396,7 @@ public final class AutoWalkScanner {
             }
             for (Pair<BlockState, BlockState> key : missing.keySet()) {
                 if (!ScanWhitelistCache.isWhitelisted(key.getLeft())) {
-                    continue; // 仅取扫描白名单内的方块（与扫描器同口径）
+                    continue; // 白名单外且未被高亮的缺失方块（统一判定）
                 }
                 for (BlockPos pos : missing.get(key)) {
                     if (!level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) {
