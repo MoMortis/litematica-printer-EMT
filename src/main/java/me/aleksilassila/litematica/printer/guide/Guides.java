@@ -223,8 +223,8 @@ public class Guides {
                 WeepingVinesBlock.class, WeepingVinesPlantBlock.class,
                 TwistingVinesBlock.class, TwistingVinesPlantBlock.class);
 
-        // 死珊瑚（需过滤非珊瑚方块）
-        register(CoralGuide.class);
+        // 代替放置（按"代替列表"目标方块接管，默认含死珊瑚→活珊瑚映射）
+        register(SubstituteGuide.class);
 
         // ============================================================
         // 默认指南（最低优先级，兜底所有未被上面接管的方块）

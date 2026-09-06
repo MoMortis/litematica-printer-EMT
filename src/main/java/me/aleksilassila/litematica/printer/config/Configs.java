@@ -665,9 +665,37 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(Blocks.SNOW, Blocks.LAVA, Blocks.WATER, Blocks.BUBBLE_COLUMN, Blocks.SHORT_GRASS)
                 .build();
 
-        // 替换珊瑚
-        public static final ConfigBoolean REPLACE_CORAL = bool("printReplaceCoral")
+        // 代替放置：目标方块缺失时允许用"代替列表"中登记的方块顶替放置（优先使用目标本体）
+        public static final ConfigBoolean SUBSTITUTE_PLACEMENT = bool("printSubstitutePlacement")
                 .defaultValue(false)
+                .build();
+
+        // 代替列表：每行一条"代替1,代替2,...:目标"，行内可用 ; 分隔多条规则；
+        // 名称严格匹配注册路径/完整ID/精确译名（不做模糊/拼音搜索），
+        // "," ";" 与全角 "，" "；" "：" 均可作为分隔符
+        public static final ConfigStringList SUBSTITUTE_LIST = stringList("printSubstituteList")
+                .defaultValue(
+                        "tube_coral:dead_tube_coral",
+                        "tube_coral_block:dead_tube_coral_block",
+                        "tube_coral_fan:dead_tube_coral_fan",
+                        "tube_coral_wall_fan:dead_tube_coral_wall_fan",
+                        "brain_coral:dead_brain_coral",
+                        "brain_coral_block:dead_brain_coral_block",
+                        "brain_coral_fan:dead_brain_coral_fan",
+                        "brain_coral_wall_fan:dead_brain_coral_wall_fan",
+                        "bubble_coral:dead_bubble_coral",
+                        "bubble_coral_block:dead_bubble_coral_block",
+                        "bubble_coral_fan:dead_bubble_coral_fan",
+                        "bubble_coral_wall_fan:dead_bubble_coral_wall_fan",
+                        "fire_coral:dead_fire_coral",
+                        "fire_coral_block:dead_fire_coral_block",
+                        "fire_coral_fan:dead_fire_coral_fan",
+                        "fire_coral_wall_fan:dead_fire_coral_wall_fan",
+                        "horn_coral:dead_horn_coral",
+                        "horn_coral_block:dead_horn_coral_block",
+                        "horn_coral_fan:dead_horn_coral_fan",
+                        "horn_coral_wall_fan:dead_horn_coral_wall_fan"
+                )
                 .build();
 
         // 破冰放水
@@ -757,7 +785,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 SAFELY_OBSERVER,
                 STRIP_LOGS,
                 NOTE_BLOCK_TUNING,
-                REPLACE_CORAL,
+                SUBSTITUTE_PLACEMENT,
+                SUBSTITUTE_LIST,
                 FILL_COMPOSTER,
                 FILL_COMPOSTER_WHITELIST,
                 BONEMEAL_CROPS,
