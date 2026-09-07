@@ -297,13 +297,15 @@ public final class GoManager {
         }
     }
 
-    /** 水平距离小于阈值即推进到下一路点；上行路点须已到达该层、下方路点须降到位才推进 */
+    /** 水平距离小于阈值即推进到下一路点；上行路点须已到达该层、下方路点须降到位才推进。
+     * 半径未命中但已沿路径方向越过的路点同样推进（见 {@link #passedWaypoint}） */
     private void advanceWaypoints(LocalPlayer player) {
         List<BlockPos> p = this.path;
         while (waypointIndex < p.size()) {
             BlockPos wp = p.get(waypointIndex);
             double distSq = sq(wp.getX() + 0.5 - player.getX()) + sq(wp.getZ() + 0.5 - player.getZ());
-            if (distSq > 0.45 * 0.45) {
+            if (distSq > 0.45 * 0.45 && !passedWaypoint(player, wp,
+                    waypointIndex + 1 < p.size() ? p.get(waypointIndex + 1) : null)) {
                 break;
             }
             if (player.getY() < wp.getY() - 0.2) {
@@ -314,6 +316,30 @@ public final class GoManager {
             }
             waypointIndex++;
         }
+    }
+
+    /**
+     * 路点是否已被沿路径方向越过（半径未命中但已过去）：平地连跳/疾跑跳会飞越
+     * 路点，横向偏移可能让最近点超出 0.45 半径导致漏推进，当前路点滞留身后会让
+     * 起跳/行走方向指向身后。仅当下一路点同层且为正交方向、玩家已越过该路点
+     * （沿路径方向投影 > 0）且横向偏移仍在路径走廊内（≤0.9 格）时才认定越过；
+     * 其余情况维持原判定，交给偏离检测兜底。
+     */
+    private boolean passedWaypoint(LocalPlayer player, BlockPos wp, @Nullable BlockPos next) {
+        if (next == null || next.getY() != wp.getY()) {
+            return false;
+        }
+        int dirX = Integer.compare(next.getX(), wp.getX());
+        int dirZ = Integer.compare(next.getZ(), wp.getZ());
+        if ((dirX == 0) == (dirZ == 0)) {
+            return false; // 重合或非正交（本寻路只生成正交边）：无法定义“越过”
+        }
+        double relX = player.getX() - (wp.getX() + 0.5);
+        double relZ = player.getZ() - (wp.getZ() + 0.5);
+        if (relX * dirX + relZ * dirZ <= 0.0) {
+            return false; // 还没到该路点
+        }
+        return Math.abs(relX * dirZ - relZ * dirX) <= 0.9; // 横向偏移在走廊内
     }
 
     private void begin(BlockPos target, @Nullable UUID liveId, DriveMode mode, GoPathfinder.Goal goalEvaluator, @Nullable String startMessage) {

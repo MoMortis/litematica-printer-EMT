@@ -19,8 +19,10 @@ import java.util.List;
  * 前进/左右/后退/跳跃/冲刺；除可选的视角接管（GO_TAKEOVER_VIEW，只改偏航角，
  * 见 {@code onApplyInput} 接管段注释）外不改客户端视角；不挖掘不放置。
  * 另驱动两类寻路动作的原地执行：同层跑酷跳（边缘探测起跳，按缺口分级：
- * 1 格缺口停 1gt 普通跳、2 格缺口停 1gt 疾跑跳、3 格缺口直接疾跑跳，
- * 见 {@code parkour} 分支注释；腾空阶段用速率伺服微调 WASD 修正落点，
+ * 1 格缺口停 1gt 普通跳、2 格缺口停 1gt 疾跑跳、3 格缺口直接疾跑跳，疾跑跳
+ * 落地后再停 1gt 掐掉维持中的疾跑，见 {@code parkour} 分支注释；另在强制疾跑
+ * 开启时的平地长直线路段（沿直线方向剩余路程 > 5 格、中间无拐弯节点）边跑边跳
+ * 提速，方向锁定直线段远端路点，见 {@code sprintHopTarget}；腾空阶段用速率伺服微调 WASD 修正落点，
  * 见 {@code parkourAirControl}）与梯子/藤蔓攀爬（悬挂时朝附着墙推进，
  * 上爬附加跳跃键，见 {@code hanging} 分支）。
  * 在 {@code LocalPlayer.applyInput()} HEAD 调用（{@link me.aleksilassila.litematica.printer.mixin.printer.mc.MixinLocalPlayerGo}）。
@@ -85,6 +87,22 @@ public final class GoExecutor {
     @Nullable
     private static BlockPos parkourAirTarget;
 
+    /**
+     * 本次跑酷跳是否为疾跑跳（起跳 tick 随 {@link #parkourAirTarget} 一起锁定）：
+     * 疾跑跳落地时原版疾跑仍在维持，落地 tick 零输入停 1gt 掐掉疾跑动量（普通跳
+     * 落地时不在疾跑，无需停顿）。会话边界由 {@link #resetViewRestore} 清除。
+     */
+    private static boolean parkourAirSprinted;
+
+    /**
+     * 平地连跳空中锁定的直线段远端路点（起跳 tick 锁定；null = 无窗口）。滞空期
+     * 朝它全速推进——不追当前路点：连跳会飞越路点，当前路点可能因漏推进落在玩家
+     * 身后/侧面，追它会往反方向跳。着地/入水/悬挂即清除（落地不停顿，下一 tick
+     * 重新判定是否续跳），会话边界由 {@link #resetViewRestore} 清除。
+     */
+    @Nullable
+    private static BlockPos sprintHopAirTarget;
+
     /** 清除跳跃临时转向的暂存：寻路会话开始/玩家失效时调用 */
     public static void resetViewRestore() {
         preJumpYaw = Float.NaN;
@@ -93,6 +111,8 @@ public final class GoExecutor {
         parkourStateTick = -1L;
         parkourDecidedGap = -1;
         parkourAirTarget = null;
+        parkourAirSprinted = false;
+        sprintHopAirTarget = null;
     }
 
     /**
@@ -138,12 +158,31 @@ public final class GoExecutor {
 
         // 跑酷跳空中微调窗口：起跳后（视角恢复的 tick 起）到落地，用速率伺服微调
         // WASD 把落点修正到锁定目标（见 parkourAirControl）；着地/入水/悬挂即退出
-        if (parkourAirTarget != null && !player.onGround() && !player.isInWater()
-                && !hangingOnClimbable(player)) {
-            parkourAirControl(player, takeover, shift);
-            return;
+        if (parkourAirTarget != null) {
+            if (!player.onGround() && !player.isInWater() && !hangingOnClimbable(player)) {
+                parkourAirControl(player, takeover, shift);
+                return;
+            }
+            // 跑酷跳结束（着地/入水/悬挂）：疾跑跳落地时原版疾跑仍在维持，落地 tick
+            // 零输入停 1gt 掐掉疾跑动量（普通跳落地不在疾跑，无需停顿）
+            parkourAirTarget = null;
+            if (parkourAirSprinted) {
+                parkourAirSprinted = false;
+                restorePreJumpYaw(player, takeover);
+                writeInput(player, 0.0F, 0.0F, false, false, shift);
+                return;
+            }
         }
-        parkourAirTarget = null;
+
+        // 平地连跳空中窗口：朝锁定的直线段远端路点全速推进（见 sprintHopAirControl）；
+        // 着地/入水/悬挂即退出，落地 tick 起重新判定是否续跳（连跳落地不停顿）
+        if (sprintHopAirTarget != null) {
+            if (!player.onGround() && !player.isInWater() && !hangingOnClimbable(player)) {
+                sprintHopAirControl(player, takeover, shift);
+                return;
+            }
+            sprintHopAirTarget = null;
+        }
 
         BlockPos wp = GoManager.INSTANCE.getWaypoint();
         if (wp == null) {
@@ -210,7 +249,8 @@ public final class GoExecutor {
                 // （跑酷只生成正交方向、落点在缺口后一格，触发时 hDist ≈ 缺口+1）：
                 // 1~2 格缺口先停 1gt 再跳——停顿 tick 零输入会当 tick 掐掉进行中的
                 // 疾跑，1 格缺口得以普通跳精确落点，2 格缺口从近静止再疾跑跳依然够远；
-                // 3 格缺口不停顿，直接疾跑跳保住动量
+                // 3 格缺口不停顿，直接疾跑跳保住动量（跑酷疾跑跳与强制疾跑开关无关，
+                // 是跳过缺口必需的；疾跑跳落地后另停 1gt 掐掉疾跑，见落地分支）
                 parkour = true;
                 long now = player.tickCount;
                 if (parkourStateTick != now) {
@@ -227,6 +267,7 @@ public final class GoExecutor {
                     jump = true;
                     parkourGap = parkourDecidedGap;
                     parkourAirTarget = wp; // 锁定落点：腾空期空中微调的目标（见字段注释）
+                    parkourAirSprinted = parkourGap >= 2; // 疾跑跳落地后停 1gt 掐疾跑（见落地分支）
                 }
             } else if (parkourPauseTicks != 0) {
                 parkourPauseTicks = 0; // 边缘条件中断：放弃本次停顿，下次触发重新判定
@@ -235,7 +276,8 @@ public final class GoExecutor {
 
         // 视角处理（在相机系换算之前设置 yaw，本 tick 的移动向量自然收敛为正前方向，
         // 所以无论哪种模式，转向都不影响移动方向）。
-        // 起跳动作 = 跑酷跳、跳上一格（含起跳抓梯：路点格为攀爬方块的跳上型路点）。
+        // 起跳动作 = 跑酷跳、跳上一格（含起跳抓梯：路点格为攀爬方块的跳上型路点）、
+        // 平地直线冲刺跳。
         // ① 接管视角开启：每 tick 把偏航角转到路线方向（+ 角度偏转，只改 yaw 不动俯仰），
         //    渲染插值（yRotO → yRot）让转向平滑；偏转在悬挂攀爬（上爬/下滑/爬出）与
         //    起跳动作瞬间临时归零——正对动作方向且保证前进分量为正（原版疾跑的启动与
@@ -247,15 +289,37 @@ public final class GoExecutor {
         // 逐次覆写会变成持续的视角抖动
         boolean jumpUp = jump && !hanging && player.onGround() && !player.isInWater()
                 && wp.getY() > feetY; // 跳上一格（含起跳抓梯）
+        // 平地直线冲刺跳（边跑边跳提速）：强制疾跑开启、在地面平坦路段（当前路点
+        // 与脚同层）、非跑酷/跳上/悬挂/水中，且沿直线方向的剩余路程超过 5 格时起跳。
+        // 方向锁定直线段远端路点而不是当前路点——当前路点可能因连跳飞越漏推进而
+        // 落在玩家身后/侧面，追它会往反方向跳；远端带轻微向内收敛，滞空自然回到
+        // 直线上。起跳 tick 与跑酷跳同一套视角逻辑（转向移动方向，下一 tick 恢复）
+        boolean sprintHop = false;
+        if (!hanging && !parkour && !jumpUp && player.onGround() && !player.isInWater()
+                && wp.getY() == feetY) {
+            BlockPos hopEnd = sprintHopTarget(player);
+            if (hopEnd != null) {
+                double ex = hopEnd.getX() + 0.5 - player.getX();
+                double ez = hopEnd.getZ() + 0.5 - player.getZ();
+                double el = Math.sqrt(ex * ex + ez * ez);
+                if (el > 1.0E-3) {
+                    sprintHop = true;
+                    jump = true;
+                    dx = ex / el;
+                    dz = ez / el;
+                    sprintHopAirTarget = hopEnd; // 滞空期继续朝远端方向推进（见空中窗口）
+                }
+            }
+        }
         if (takeover) {
-            float offset = (hanging || parkour || jumpUp)
+            float offset = (hanging || parkour || jumpUp || sprintHop)
                     ? 0.0F
                     : (float) Configs.Special.GO_VIEW_OFFSET.getIntegerValue();
             float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz)) + offset;
             if (Math.abs(Mth.wrapDegrees(targetYaw - player.getYRot())) >= 1.0F) {
                 player.setYRot(targetYaw);
             }
-        } else if (parkour || jumpUp) {
+        } else if (parkour || jumpUp || sprintHop) {
             if (Float.isNaN(preJumpYaw)) {
                 preJumpYaw = player.getYRot();
             }
@@ -290,16 +354,15 @@ public final class GoExecutor {
 
         boolean sprint;
         if (parkour && parkourGap >= 1) {
-            // 跑酷起跳：1 格缺口普通跳（停顿已掐掉进行中的疾跑），2~3 格缺口疾跑跳助力；
-            // 强制疾跑只作用于非跑酷路段，不破坏小缺口的落点精度
+            // 跑酷起跳：2~3 格缺口疾跑跳助力（普通跳够不到），1 格缺口普通跳保落点
+            // 精度；疾跑跳落地后由停顿 tick 掐掉疾跑（见落地分支）
             sprint = parkourGap >= 2;
         } else if (parkour) {
             sprint = false; // 跑酷停顿 tick：零输入已让原版取消疾跑，位上也不再请求
-        } else if (Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
-            // 强制疾跑：始终请求（等效一直按住 Ctrl），能否真正冲刺由原版条件决定
-            sprint = true;
         } else {
-            sprint = shouldSprint(player, hDist);
+            // 仅「自动寻路 - 强制疾跑」开启时请求疾跑（等效一直按住 Ctrl），能否
+            // 真正冲刺由原版条件决定；关闭时绝不请求疾跑
+            sprint = Configs.Special.GO_FORCE_SPRINT.getBooleanValue();
         }
         writeInput(player, strafe, forward, jump, sprint, shift);
     }
@@ -401,28 +464,90 @@ public final class GoExecutor {
         preJumpYaw = Float.NaN;
     }
 
-    /** 平坦路段冲刺：当前与随后路点同层且距离足够远（强制疾跑开启时无条件请求） */
-    private static boolean shouldSprint(LocalPlayer player, double hDist) {
-        if (!player.onGround() || player.isInWater()) {
-            return false;
-        }
-        if (player.getFoodData().getFoodLevel() <= 6) {
-            return false;
-        }
-        if (hDist * hDist < 1.0 * 1.0) {
-            return false; // 临近路点收步（疾跑跳腿需要保持冲刺动量，收步窗口收紧到 1 格）
+    /**
+     * 平地直线冲刺跳判定：「自动寻路 - 强制疾跑」开启，且从当前路点起的后续路点
+     * 保持同一方向不变层（中间无拐弯节点）。返回直线段远端路点（起跳方向与滞空
+     * 目标都锁定它，不追当前路点——当前路点可能因连跳飞越漏推进而落在身后/侧面）；
+     * 剩余直线路程按玩家到远端路点在直线方向上的投影计（当前路点在身后也以实际
+     * 剩余路程为准），不超过 5 格返回 null（保证起跳后仍有足够直线路程，不会冲进
+     * 弯道）。
+     */
+    @Nullable
+    private static BlockPos sprintHopTarget(LocalPlayer player) {
+        if (!Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
+            return null;
         }
         List<BlockPos> path = GoManager.INSTANCE.getPath();
         int i = GoManager.INSTANCE.getWaypointIndex();
         int n = path.size();
-        if (i >= n) {
-            return false;
+        if (i + 1 >= n) {
+            return null;
         }
-        int y = path.get(i).getY();
-        if (i + 1 < n && path.get(i + 1).getY() != y) {
-            return false;
+        BlockPos a = path.get(i);
+        BlockPos b = path.get(i + 1);
+        if (b.getY() != a.getY()) {
+            return null; // 下一节点变层：不是平地直线
         }
-        return i + 2 >= n || path.get(i + 2).getY() == y;
+        int dx = Integer.compare(b.getX(), a.getX());
+        int dz = Integer.compare(b.getZ(), a.getZ());
+        if (dx == 0 && dz == 0) {
+            return null; // 重合节点
+        }
+        BlockPos far = b;
+        for (int k = i + 2; k < n; k++) {
+            BlockPos c = path.get(k);
+            if (c.getY() != a.getY() || Integer.compare(c.getX(), far.getX()) != dx
+                    || Integer.compare(c.getZ(), far.getZ()) != dz) {
+                break; // 拐弯/变层节点：直线段到此为止
+            }
+            far = c;
+        }
+        double dirLen = Math.sqrt((double) dx * dx + (double) dz * dz);
+        double proj = ((far.getX() + 0.5) - player.getX()) * dx
+                + ((far.getZ() + 0.5) - player.getZ()) * dz;
+        if (proj <= 5.0 * dirLen) {
+            return null; // 剩余直线路程不足
+        }
+        return far;
+    }
+
+    /**
+     * 平地连跳空中驱动：朝锁定的直线段远端路点全速推进——落点不求精确，"尽量向
+     * 路径方向移动"；远端带轻微向内收敛，滞空自然回到直线上。疾跑位保持请求
+     * （强制疾跑开启是连跳前提）。起跳后第一 tick 恢复起跳前视角；接管视角开启时
+     * 朝远端方向 + 偏转持续对齐。
+     */
+    private static void sprintHopAirControl(LocalPlayer player, boolean takeover, boolean shift) {
+        restorePreJumpYaw(player, takeover);
+        BlockPos target = sprintHopAirTarget;
+        double dx = target.getX() + 0.5 - player.getX();
+        double dz = target.getZ() + 0.5 - player.getZ();
+        double dist = Math.sqrt(dx * dx + dz * dz);
+        if (dist > 1.0E-3) {
+            dx /= dist;
+            dz /= dist;
+            if (takeover) {
+                float offset = (float) Configs.Special.GO_VIEW_OFFSET.getIntegerValue();
+                float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz)) + offset;
+                if (Math.abs(Mth.wrapDegrees(targetYaw - player.getYRot())) >= 1.0F) {
+                    player.setYRot(targetYaw);
+                }
+            }
+            // 世界系方向 → 相机系移动向量（yaw=0 面 +Z），与视角无关地指向远端；
+            // 与地面驱动同一套限速（「自动寻路 - 最大速度」）
+            float yawRad = player.getYRot() * (float) (Math.PI / 180.0);
+            float sin = (float) Math.sin(yawRad);
+            float cos = (float) Math.cos(yawRad);
+            float strafe = (float) (dx * cos + dz * sin);
+            float forward = (float) (dz * cos - dx * sin);
+            float maxSpeed = (float) Configs.Special.GO_MAX_SPEED.getDoubleValue();
+            float speedFactor = Math.min(1.0F, maxSpeed * (GoPathfinder.SPRINT_COST / 20.0F));
+            strafe *= speedFactor;
+            forward *= speedFactor;
+            writeInput(player, strafe, forward, false, true, shift);
+        } else {
+            writeInput(player, 0.0F, 0.0F, false, true, shift);
+        }
     }
 
     /**
