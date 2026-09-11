@@ -84,6 +84,8 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
     public void tick(CallbackInfo ci) {
         ClientPlayerTickManager.updateTickHandlerTime();
         me.aleksilassila.litematica.printer.utils.ConfigUtils.tickAutoEnable();
+        // 仅渲染方块：配置变化后全量重建原理图渲染网格（须在早退逻辑之前，保证必定执行）
+        me.aleksilassila.litematica.printer.printer.RenderOnlyBlockCache.tickPendingReload();
         BlockPosCooldownManager.INSTANCE.tick();
         InventoryUtils.tick();
         ZxyUtils.tick();

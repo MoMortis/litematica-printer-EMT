@@ -47,6 +47,8 @@
     "jackf.lgacy.WItemListPanelMixin",
     "openinv.MixinMinecraftClient",
     "printer.litematica.gui.MixinLitematicaGuiMainMenu",
+    "printer.litematica.MixinChunkRendererSchematicVbo",
+    "printer.litematica.MixinWorldRendererSchematic",
     "printer.malilib.MixinAbstractCraftingMenu",
     "printer.malilib.MixinGuiStringListEdit",
       "printer.malilib.MixinWidgetStringListEditEntry",

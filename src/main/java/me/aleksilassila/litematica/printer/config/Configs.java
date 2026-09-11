@@ -864,6 +864,16 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(1, 16)
                 .build();
 
+        // 仅渲染方块：开启后投影模组的原理图只渲染"仅渲染方块列表"内的方块，
+        // 不在列表内的方块连同其缺失/多余高亮线框完全不显示
+        public static final ConfigBoolean RENDER_ONLY_BLOCKS = bool("renderOnlyBlocks")
+                .defaultValue(false)
+                .build();
+
+        // 仅渲染方块列表：严格匹配注册路径 / 完整ID / 精确译名；开关开启且列表为空时不渲染任何方块
+        public static final ConfigStringList RENDER_ONLY_BLOCK_LIST = stringList("renderOnlyBlockList")
+                .build();
+
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 UNLOCK_BEACON_EFFECTS,
                 TWEAKEROO_ANGEL_BLOCK_MAY_BUILD,
@@ -874,7 +884,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 GO_TAKEOVER_VIEW,
                 GO_VIEW_OFFSET,
                 GO_DEVIATION_STOP,
-                GO_DEVIATION_DISTANCE
+                GO_DEVIATION_DISTANCE,
+                RENDER_ONLY_BLOCKS,
+                RENDER_ONLY_BLOCK_LIST
         );
     }
 

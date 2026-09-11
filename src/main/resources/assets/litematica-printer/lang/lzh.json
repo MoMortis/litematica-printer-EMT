@@ -405,6 +405,10 @@
   "litematica_printer.config.goDeviationStop.desc": "啟則每刻察身去路之遠，逾「偏航之限」即罷，無貸；自躍騰空不咎。閉則不察。",
   "litematica_printer.config.goDeviationDistance": "自走 - 偏航之限",
   "litematica_printer.config.goDeviationDistance.desc": "偏止之距限（格，整數，一至十六，常為一）。著地比三方之距；外力騰空唯較橫距（不然空中自馭引身回途，終不能察）；自躍騰空不咎。",
+  "litematica_printer.config.renderOnlyBlocks": "僅顯方塊",
+  "litematica_printer.config.renderOnlyBlocks.desc": "啟之則投影之圖唯顯\"僅顯方塊之列\"內方塊（兼流體與篋等塊實之貌），列外方塊之\"缺\"記並隱；多餘、誤塊之記不沒，仍顯之。",
+  "litematica_printer.config.renderOnlyBlockList": "僅顯方塊之列",
+  "litematica_printer.config.renderOnlyBlockList.desc": "僅顯方塊行時，唯顯列內方塊。每行一方，行內可以 , 或 ; 書多名。嚴合註冊途（stone）、全名（minecraft:stone）或確譯（石頭）；列空則一無所顯。",
   "litematica_printer.config.category.special": "殊技",
   "litematica_printer.config.category.special.desc": "寬限、非常規之相容與繫特定環境行為之開關"
 }

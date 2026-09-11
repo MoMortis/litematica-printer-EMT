@@ -405,6 +405,10 @@
   "litematica_printer.config.goDeviationStop.desc": "開啟後，尋路期間每刻檢查玩家到剩餘路徑的距離，超過「自動尋路 - 偏航閾值」立即停止任務（無寬限；自主跳躍的空中階段放行）。關閉後不做偏離檢測。",
   "litematica_printer.config.goDeviationDistance": "自動尋路 - 偏航閾值",
   "litematica_printer.config.goDeviationDistance.desc": "觸發偏航停止的距離閾值（格，整數，1~16，預設 1）。玩家到剩餘路徑的最小距離超過該值即停止：著地/入水時比三維距離；外力騰空（被擊退/沖走/失足）只比水平距離——否則尋路的空中操控會把玩家拉回路徑內導致判不到；自主跳躍（跑酷/跳上/出水跳）的空中階段放行。",
+  "litematica_printer.config.renderOnlyBlocks": "僅渲染方塊",
+  "litematica_printer.config.renderOnlyBlocks.desc": "開啟後，投影模組的原理圖只渲染\"僅渲染方塊列表\"內的方塊（含流體與箱子等方塊實例外觀），列表外方塊的\"缺失\"標記一併隱藏；多餘方塊和錯誤方塊/錯誤狀態的標記不受影響，仍正常顯示。",
+  "litematica_printer.config.renderOnlyBlockList": "僅渲染方塊列表",
+  "litematica_printer.config.renderOnlyBlockList.desc": "僅渲染方塊生效時只渲染列表內的方塊，每行一個方塊，條目內可用 , 或 ; 寫多個。嚴格匹配註冊路徑（stone）、完整ID（minecraft:stone）或精確譯名（石頭）；列表為空時不渲染任何方塊。",
   "litematica_printer.config.category.special": "特殊功能",
   "litematica_printer.config.category.special.desc": "放寬限制、非常規相容和依賴特定環境行為的開關"
 }

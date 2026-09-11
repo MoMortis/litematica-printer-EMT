@@ -405,6 +405,10 @@
   "litematica_printer.config.goDeviationStop.desc": "When enabled, the distance from the player to the remaining path is checked every tick; exceeding “Auto Pathfinding - Deviation Threshold” stops the task immediately (no grace period; self-jump airborne phases are exempt). Disable to turn deviation detection off.",
   "litematica_printer.config.goDeviationDistance": "Auto Pathfinding - Deviation Threshold",
   "litematica_printer.config.goDeviationDistance.desc": "Distance threshold (blocks, integer, 1-16, default 1) that triggers the deviation stop. The minimum distance to the remaining path exceeding this value stops the task: full 3D distance while on ground/in water; horizontal distance only while airborne from external forces (knockback/wash-away/falling) — otherwise the pathfinding air control would pull the player back onto the path and the deviation would never register; self-jump airborne phases (parkour/jump-up/water-jump) are exempt.",
+  "litematica_printer.config.renderOnlyBlocks": "Render Blocks Only",
+  "litematica_printer.config.renderOnlyBlocks.desc": "When enabled, the schematic in Litematica only renders blocks listed in \"Render Blocks Only List\" (including fluids and block entity visuals such as chests), and the \"missing\" markers of unlisted blocks are hidden as well; extra block and wrong block/state markers are unaffected and stay visible.",
+  "litematica_printer.config.renderOnlyBlockList": "Render Blocks Only List",
+  "litematica_printer.config.renderOnlyBlockList.desc": "When \"Render Blocks Only\" is active, only listed blocks are rendered, one block per line; use , or ; to write multiple entries in one line. Strictly matches registry path (stone), full ID (minecraft:stone), or exact translation name; an empty list renders nothing.",
   "litematica_printer.config.category.special": "Special",
   "litematica_printer.config.category.special.desc": "Toggles for relaxed restrictions, unusual compatibility, and environment-dependent behavior"
 }
