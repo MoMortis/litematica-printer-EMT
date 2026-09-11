@@ -9,6 +9,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientPacketListener;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
+import net.minecraft.network.protocol.game.ClientboundSectionBlocksUpdatePacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.world.inventory.MenuType;
@@ -46,6 +47,13 @@ public abstract class MixinClientPacketListener {
     @Inject(at = @At("TAIL"), method = "handleBlockUpdate")
     private void confirmPacketSound(ClientboundBlockUpdatePacket packet, CallbackInfo ci) {
         PacketSoundConfirmationTracker.confirmServerBlockUpdate(packet.getPos(), packet.getBlockState());
+    }
+
+    // 批量子区块更新包：同一游戏刻内同一子区块有多个方块变化时，服务端会合并成此包发送，
+    // 不确认的话数据包挖掘/打印的音效确认会大量超时丢失
+    @Inject(at = @At("TAIL"), method = "handleChunkBlocksUpdate")
+    private void confirmPacketSectionSound(ClientboundSectionBlocksUpdatePacket packet, CallbackInfo ci) {
+        packet.runUpdates(PacketSoundConfirmationTracker::confirmServerBlockUpdate);
     }
 
     @Inject(at = @At("TAIL"), method = "handleContainerContent")
