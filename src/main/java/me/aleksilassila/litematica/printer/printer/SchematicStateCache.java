@@ -10,6 +10,7 @@ import fi.dy.masa.litematica.util.SchematicUtils;
 import fi.dy.masa.litematica.selection.Box;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -39,8 +40,9 @@ import java.util.Map;
  *       <ul>
  *         <li>现实世界方块变化（{@code ClientLevel.setBlock} mixin 通知，覆盖服务端回包、
  *             本地放置预测、流体/活塞等一切客户端世界写入）；</li>
- *         <li>原理图变化（placement 增删/旋转/镜像/启停指纹变化）；</li>
- *         <li>保底 TTL（40 tick ≈ 2 秒，兜住子区域级编辑等无指纹的罕见变化）。</li>
+ *         <li>原理图变化（placement 增删/旋转/镜像/启停/移动原点/子区域原点等指纹变化）；
+ *             </li>
+ *         <li>保底 TTL（40 tick ≈ 2 秒，兜住指纹未覆盖的罕见变化）。</li>
  *       </ul>
  *   </li>
  * </ol>
@@ -256,8 +258,10 @@ public final class SchematicStateCache {
     }
 
     /**
-     * 原理图指纹：placement 增删 + 每个 placement 的旋转/镜像/启用状态。
-     * 子区域级编辑（移动子区域原点等）不改指纹，由保底 TTL 兜住（≤2 秒）。
+     * 原理图指纹：placement 增删 + 每个 placement 的旋转/镜像/启用状态 + <b>放置原点</b> +
+     * 各启用子区域的原点/旋转/镜像/启用状态。
+     * 任何影响"世界坐标位置或形状"的变化都必须触发失效：原点不进指纹的话，移动原理图后
+     * 世界坐标索引停留在旧位置，打印机会继续在原位置打印、新位置查不到方块。
      */
     private static int computeStamp() {
         SchematicPlacementManager manager = DataManager.getSchematicPlacementManager();
@@ -268,6 +272,13 @@ public final class SchematicStateCache {
             s = 31 * s + p.getRotation().ordinal();
             s = 31 * s + p.getMirror().ordinal();
             s = 31 * s + (p.isEnabled() ? 1 : 0);
+            s = 31 * s + Long.hashCode(p.getOrigin().asLong());
+            for (SubRegionPlacement sub : p.getEnabledRelativeSubRegionPlacements().values()) {
+                s = 31 * s + Long.hashCode(sub.getPos().asLong());
+                s = 31 * s + sub.getRotation().ordinal();
+                s = 31 * s + sub.getMirror().ordinal();
+                s = 31 * s + (sub.isEnabled() ? 1 : 0);
+            }
         }
         return s;
     }
@@ -287,6 +298,34 @@ public final class SchematicStateCache {
             }
         }
         return false;
+    }
+
+    /**
+     * 收集与原理图相交的所有子区块最小角坐标（世界坐标，去重）。
+     * 供"扫描自动寻路"DFS 找中心（离玩家最近的未放置方块所在子区块）用：
+     * 直接由 subregion 盒展开子区块范围，无需逐格扫描。
+     */
+    public void collectIntersectingSections(java.util.function.Consumer<BlockPos> out) {
+        ensureRegionIndex();
+        LongOpenHashSet seen = new LongOpenHashSet();
+        for (int i = 0; i < regionIndex.size(); i++) {
+            PrinterBox box = regionIndex.get(i).box;
+            int sx0 = box.minX >> 4;
+            int sx1 = box.maxX >> 4;
+            int sy0 = box.minY >> 4;
+            int sy1 = box.maxY >> 4;
+            int sz0 = box.minZ >> 4;
+            int sz1 = box.maxZ >> 4;
+            for (int sx = sx0; sx <= sx1; sx++) {
+                for (int sy = sy0; sy <= sy1; sy++) {
+                    for (int sz = sz0; sz <= sz1; sz++) {
+                        if (seen.add(BlockPos.asLong(sx, sy, sz))) {
+                            out.accept(new BlockPos(sx << 4, sy << 4, sz << 4));
+                        }
+                    }
+                }
+            }
+        }
     }
 
     @Nullable
