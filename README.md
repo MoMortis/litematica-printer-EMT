@@ -1,41 +1,26 @@
-# Litematica Printer
+# Litematica Printer - EMT
 
-![GitHub stars](https://img.shields.io/github/stars/BiliXWhite/litematica-printer)
-![GitHub release](https://img.shields.io/github/v/release/BiliXWhite/litematica-printer)
-![Minecraft](https://img.shields.io/badge/Minecraft-1.18.2%20~%201.21.10-blue)
+![GitHub stars](https://img.shields.io/github/stars/MoMortis/litematica-printer-EMT)
+![GitHub last commit](https://img.shields.io/github/last-commit/MoMortis/litematica-printer-EMT)
+![Minecraft](https://img.shields.io/badge/Minecraft-1.21.11%20%7C%2026.1.2-blue)
+![License](https://img.shields.io/badge/License-AGPL--3.0-green)
 
-> [!WARNING]
-> 该 README 正在重构，目前的内容可能不完整或有误。请耐心等待更新或者贡献这个项目。
+为 [Litematica](https://modrinth.com/mod/litematica) 投影添加自动建造功能的 Minecraft Fabric 模组。
 
-为 [Litematica](https://modrinth.com/mod/litematica) 投影添加自动建造功能的 Minecraft Fabric 模组。支持 1.18.2 ~ 1.21.10 版本。
-
-该分支基于[宅咸鱼二改版](https://github.com/zhaixianyu/litematica-printer)修改，添加了更多实用功能。
+本分支（1.4-EMT）基于 [BiliXWhite 二改版](https://github.com/BiliXWhite/litematica-printer)修改，面向大型原理图（如 1000×64×1000）做了大量性能与功能强化，支持 **1.21.11 与 26.1.2 双版本单 jar**。
 
 如果你觉得好用，欢迎给项目点个 Star ⭐️
-
-> [!TIP]
-> 该分支始终保持开源免费，不会存在任何收费内容。条件允许的话可以给作者[买瓶脉动](https://ifdian.net/a/BlinkWhite)支持一下！
-
----
-
-## 📥 下载
-
-| 渠道              | 链接                                                                |
-|-----------------|-------------------------------------------------------------------|
-| GitHub Releases | [点击下载](https://github.com/BiliXWhite/litematica-printer/releases) |
-| 蓝奏云分流（密码: cgxw） | [点击下载](https://xeno.lanzoue.com/b00l1v20vi)                       |
 
 ---
 
 ## 🎮 支持的游戏版本
 
-| 版本支持                                                |
-|-----------------------------------------------------|
-| 1.18.2 · 1.19.4 · 1.20.1 · 1.20.2 · 1.20.4 · 1.20.6 |
-| 1.21.1 ~ 1.21.11 · 26.1                             |
+| 版本            |
+|---------------|
+| 1.21.11 · 26.1.2 |
 
 > [!NOTE]
-> 1.18.2 以下版本暂不接受更新，小版本是否可用请自行尝试
+> 两个版本打包在一个 jar 内（versionpack），放入 mods 文件夹即可自动适配。
 
 ---
 
@@ -47,29 +32,50 @@
 - [Litematica](https://modrinth.com/mod/litematica)
 
 ### 可选
-- [Twrakeroo](https://modrinth.com/mod/twra-keroo) - 破基岩模式
-- [Chest Tracker](https://modrinth.com/mod/chest-tracker) (≤1.21.4) - 箱子追踪
+- [Tweakeroo](https://modrinth.com/mod/tweakeroo) - 破基岩模式
 
 ---
 
 ## ✨ 特性
 
 ### 🚀 性能优化
-- 更流畅的打印体验
+- 原理图状态判定缓存（SchematicStateCache）：subregion 盒索引与变换预计算，按位置缓存判定结论
+- 待办物品清单记忆化、有界空闲退避：空闲时自动降低扫描频率，有活立刻恢复
+- 「工作时长预算」：扫描、放置、挖掘、重试、缺料统计等全部主流程受迭代时长约束，不卡主线程
+- 「优先同种方块」定向扫描 + 缺料方块跳过：缺料的方块先跳过继续打印其他方块，不全场停工
+- 数据包模式失败重试表：放置失败的方块冷却后直接重试，不占用放置额度
+- 原理图指纹感知：移动/旋转/增删原理图立即感知，打印无缝切到新位置
+
+### 🔍 扫描自动寻路
+- BFS / DFS 双算法，均先全局选「离玩家最近的原理图子区块」为中心（玩家悬在原理图上方也能正确寻路）
+- DFS：指针按配置方向序深度探索到底，围死回溯；BFS：从中心环形扩散搜索下一个中心
+- 只在客户端渲染距离内（看得见地形）扫描与寻路
+- 目标完成后锚定工作区块继续（≤32 格），不丢扫描进度
+- 优先使用验证器缺失列表（离玩家最近），扫描器兜底
+- 扫描对象 = 「扫描白名单」∪ 验证器高亮的缺失方块
+
+### 🔊 音效与反馈
+- 数据包模式音效修复：确认回调同时挂单方块与批量子区块更新包，破坏/放置音效不再缺失
+
+### ⏩ 自动寻路移动
+- 「强制疾跑」为跑酷跳总开关：关闭时不允许任何跑酷跳（含 1 格缺口），路径自动绕开缺口
+- 平地长直线路段边跑边跳提速（方向锁定直线段远端路点）
+- 路点飞越（含 45° 对角路段）沿路径方向正常推进
+- 目标完成后玩家未远离则锚定继续，被带回工作区块
+
+### 🎨 投影渲染
+- 「仅渲染方块」+「仅渲染方块列表」：严格匹配列表内方块才渲染原理图（含流体与方块实体外观），列表外方块隐藏；多余/错误方块标记保留
+- 配置变化自动全量重建原理图渲染
+
+### ⏩ 功能改进（继承二改版）
 - 数据包打印模式（速度更快，避免幽灵方块）
 - 可视化放置进度条（HUD 显示）
+- 代替放置 + 代替列表：每行「代替1,代替2,...:目标」严格匹配注册路径/完整ID/精确译名，代替方块豁免「破坏错误方块」
+- 扫描白名单、破坏错误方块（破冰、放水）、填充功能
+- 快捷潜影盒模拟点击取货（需服务器支持背包内打开潜影盒）
 - 服务器卡顿检测，防止因延迟导致的大量方块放置错误
 
-### ⏩ 功能改进
-- 修复迭代水时因缺少水源卡死的 bug
-- 填充功能（使用投影选区范围）
-- 快捷潜影盒模拟点击取货（需服务器支持背包内打开潜影盒）
-- 珊瑚替换（用活珊瑚打印投影内的死珊瑚）
-- 破坏错误方块优化（破冰、放水）
-- 48 种范围迭代逻辑
-- 破坏错误额外方块和错误状态方块
-
-### 🛠️ 方块放置修复
+### 🛠️ 方块放置修复（继承二改版）
 - 合成器、拉杆、红石粉（非连接模式）
 - 枯叶、各种花簇的方向
 - 发光浆果、带花的花盆
@@ -86,7 +92,7 @@
 4. 等待自动建造完成 🎉
 
 > [!TIP]
-> 大部分功能都含有游戏内注释可供参考使用
+> 大部分功能都含有游戏内注释可供参考使用；「扫描自动寻路」需要在打印机配置中开启「扫描白名单」与「扫描自动寻路」。
 
 ---
 
@@ -99,20 +105,17 @@
 - 非原版游戏内容
 
 > [!TIP]
-> 如发现其他方块放置错误，请尝试降低建造速度。若问题依旧存在，请提交 [Issue](https://github.com/BiliXWhite/litematica-printer/issues)
+> 如发现其他方块放置错误，请尝试降低建造速度。若问题依旧存在，请提交 [Issue](https://github.com/MoMortis/litematica-printer-EMT/issues)
 
 ---
 
 ## 🔨 编译
 
-> [!WARNING]
-> 部分模组使用 Github Maven 源，从 pkg.github.com 下载需要认证。本地构建时需要在系统环境中设置 `GH_USERNAME` 和 `GH_TOKEN`，否则会构建失败。
-
 ### 命令行编译
 
 ```bash
-git clone https://github.com/BiliXWhite/litematica-printer.git
-cd litematica-printer
+git clone https://github.com/MoMortis/litematica-printer-EMT.git
+cd litematica-printer-EMT
 ./gradlew build
 ```
 
@@ -126,30 +129,22 @@ cd litematica-printer
 
 | 类型      | 位置                                                |
 |---------|---------------------------------------------------|
-| 多版本 jar | `./fabricWrapper/build/libs/`                     |
+| 多版本 jar（versionpack） | `./fabricWrapper/build/libs/`                     |
 | 单版本 jar | `./fabricWrapper/build/tmp/submods/META-INF/jars` |
 
 ---
 
 ## ❓ 常见问题
 
-### 📌 推荐加入 QQ 群
-
-[点击加入 QQ 群聊](http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&k=ttinzrJB3jYRLSTJM8R2YfwYdCm4Zo90&authKey=vfwF)
-
----
-
 ### Q: 开启打印后，打印机不工作？
 
 **可能原因：**
 1. 服务器反作弊检测 — 投影打印机基于静默看向方式放置方块，可能被检测
-2. 打印机工作间隔设置过小 — 有放置速率限制的服务器（如 Luminol）无法及时响应
+2. 打印机工作间隔设置过小 — 有放置速率限制的服务器无法及时响应
 
 **解决方案：**
 - 开启「使用数据包打印」模式
 - 调大「打印机工作间隔」
-
-如仍无法解决，请提交 [Issue](https://github.com/BiliXWhite/litematica-printer/issues/new?template=bug%E6%8A%A5%E5%91%8A.yml)
 
 ---
 
@@ -164,31 +159,20 @@ cd litematica-printer
 - 增大「打印机工作间隔」
 - 降低建造速度
 
-如问题持续，请提交 [Issue](https://github.com/BiliXWhite/litematica-printer/issues/new?template=%E6%89%93%E5%8D%A0%E6%96%B9%E5%9D%97%E8%AF%B7%E6%B1%82.yml)
-
----
-
-### Q: 快捷潜影盒功能无法使用？
-
-**可能原因：**
-1. 服务器未安装 AxShulkers 等支持在背包右键打开潜影盒的插件
-2. 投影打印机设置与实际支持模式不符
-3. 预选栏位被潜影盒填满
-
-**解决方案：**
-- 在 Litematica 设置中调整 `pickBlockableSlots`（快捷选择栏位）值
-- 确认服务器支持在背包中打开潜影盒
-
-> [!NOTE]
-> 快捷潜影盒功能仍处于测试阶段，如遇问题请提交 [Issue](https://github.com/BiliXWhite/litematica-printer/issues)
-
 ---
 
 ## 🙏 感谢
 
-- [bunny_i](https://github.com/bunnyi116) - 开发者之一
 - [aleksilassila](https://github.com/aleksilassila/litematica-printer) - 原创基础
 - [zhaixianyu](https://github.com/zhaixianyu/litematica-printer) - 二改版本
+- [BiliXWhite](https://github.com/BiliXWhite/litematica-printer) - 二改版本（本分支的直接基础）
 - [bunnyi116](https://github.com/bunnyi116/fabric-bedrock-miner) - 新的破基岩
+- [masa](https://github.com/masa-fn) - Litematica / MaLiLib
 
 以及所有支持开发的朋友，包括你！💖
+
+---
+
+## 📄 协议
+
+本项目基于 [AGPL-3.0](LICENSE) 协议开源。
