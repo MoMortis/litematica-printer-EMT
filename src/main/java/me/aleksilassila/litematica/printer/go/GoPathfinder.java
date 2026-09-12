@@ -380,8 +380,13 @@ public final class GoPathfinder {
      * 需要疾跑助力，执行侧（GoExecutor）在边缘探测到前方无地板时起跳。
      * 起跳点头顶须留空（腾空弧线上升超过一格），缺口格全弧线（脚/头/头顶）无碰撞，
      * 中途遇到有地板的格子即放弃（那种地形由 平移+短跳 覆盖）。
+     * 「自动寻路 - 强制疾跑」未开启时不生成跑酷跳边（执行侧不允许任何跑酷跳，含 1 格缺口），
+     * 路径自然绕开缺口或判定不可达。
      */
     private void parkour(Node cur, int dx, int dz) {
+        if (!me.aleksilassila.litematica.printer.config.Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
+            return;
+        }
         if (waterAt(cur.x, cur.y, cur.z) || !passable(cur.x, cur.y + 2, cur.z)) {
             return; // 水中无法疾跑起跳；起跳点需头顶留空
         }

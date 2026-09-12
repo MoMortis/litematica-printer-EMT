@@ -243,14 +243,24 @@ public final class GoExecutor {
             }
             if (player.onGround() && wp.getY() == feetY && hDist > 1.5 && hDist < 5.0
                     && floorAheadMissing(player, dx, dz)) {
+                // 「自动寻路 - 强制疾跑」未开启：不允许任何跑酷跳（含 1 格缺口）。
+                // 寻路侧同步不生成跑酷跳边（见 GoPathfinder.parkour），此处仅在
+                // 配置切换后残留的旧路径经过缺口时兜底——在边缘停住（零输入），
+                // 交给卡住检测重算绕开缺口的路径，绝不前走进缺口
+                if (!Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
+                    parkourPauseTicks = 0; // 丢弃可能残留的停顿状态
+                    restorePreJumpYaw(player, takeover);
+                    writeInput(player, 0.0F, 0.0F, false, false, shift);
+                    return;
+                }
                 // 跑酷跳腿：同层 2~4 格外的落点、中间无地板（寻路 parkour 边保证），
                 // 前方 0.4 格探测点越过缺口边缘即处于边缘 → 起跳（见 floorAheadMissing）。
                 // 缺口按到落点路点的水平距离分级
                 // （跑酷只生成正交方向、落点在缺口后一格，触发时 hDist ≈ 缺口+1）：
                 // 1~2 格缺口先停 1gt 再跳——停顿 tick 零输入会当 tick 掐掉进行中的
                 // 疾跑，1 格缺口得以普通跳精确落点，2 格缺口从近静止再疾跑跳依然够远；
-                // 3 格缺口不停顿，直接疾跑跳保住动量（跑酷疾跑跳与强制疾跑开关无关，
-                // 是跳过缺口必需的；疾跑跳落地后另停 1gt 掐掉疾跑，见落地分支）
+                // 3 格缺口不停顿，直接疾跑跳保住动量（强制疾跑开启是跑酷跳的前提；
+                // 疾跑跳落地后另停 1gt 掐掉疾跑，见落地分支）
                 parkour = true;
                 long now = player.tickCount;
                 if (parkourStateTick != now) {

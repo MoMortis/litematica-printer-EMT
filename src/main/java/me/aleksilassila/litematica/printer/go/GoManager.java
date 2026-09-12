@@ -321,8 +321,8 @@ public final class GoManager {
     /**
      * 路点是否已被沿路径方向越过（半径未命中但已过去）：平地连跳/疾跑跳会飞越
      * 路点，横向偏移可能让最近点超出 0.45 半径导致漏推进，当前路点滞留身后会让
-     * 起跳/行走方向指向身后。仅当下一路点同层且为正交方向、玩家已越过该路点
-     * （沿路径方向投影 > 0）且横向偏移仍在路径走廊内（≤0.9 格）时才认定越过；
+     * 起跳/行走方向指向身后。正交与对角（斜向）路段均支持：玩家已越过该路点
+     * （沿路径方向投影 > 0）且横向偏移仍在路径走廊内（垂距 ≤0.9 格）时认定越过；
      * 其余情况维持原判定，交给偏离检测兜底。
      */
     private boolean passedWaypoint(LocalPlayer player, BlockPos wp, @Nullable BlockPos next) {
@@ -331,15 +331,17 @@ public final class GoManager {
         }
         int dirX = Integer.compare(next.getX(), wp.getX());
         int dirZ = Integer.compare(next.getZ(), wp.getZ());
-        if ((dirX == 0) == (dirZ == 0)) {
-            return false; // 重合或非正交（本寻路只生成正交边）：无法定义“越过”
+        if (dirX == 0 && dirZ == 0) {
+            return false; // 重合节点：无法定义"越过"
         }
         double relX = player.getX() - (wp.getX() + 0.5);
         double relZ = player.getZ() - (wp.getZ() + 0.5);
         if (relX * dirX + relZ * dirZ <= 0.0) {
             return false; // 还没到该路点
         }
-        return Math.abs(relX * dirZ - relZ * dirX) <= 0.9; // 横向偏移在走廊内
+        // 横向偏移在走廊内（对角方向的叉积含 √2 长度因子，按方向长度归一成垂距）
+        double dirLen = Math.sqrt((double) dirX * dirX + (double) dirZ * dirZ);
+        return Math.abs(relX * dirZ - relZ * dirX) / dirLen <= 0.9;
     }
 
     private void begin(BlockPos target, @Nullable UUID liveId, DriveMode mode, GoPathfinder.Goal goalEvaluator, @Nullable String startMessage) {
