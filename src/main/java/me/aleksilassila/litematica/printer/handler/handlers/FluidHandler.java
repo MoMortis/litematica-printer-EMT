@@ -35,12 +35,12 @@ public class FluidHandler extends ClientPlayerTickHandler {
 
     @Override
     protected int getTickInterval() {
-        return Configs.Placement.PLACE_INTERVAL.getIntegerValue();
+        return Configs.Print.PLACE_INTERVAL.getIntegerValue();
     }
 
     @Override
     protected int getMaxExecutions() {
-        return Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue();
+        return Configs.Print.PLACE_BLOCKS_PER_TICK.getIntegerValue();
     }
 
     @Override

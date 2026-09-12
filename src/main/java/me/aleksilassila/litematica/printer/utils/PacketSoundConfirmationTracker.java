@@ -18,14 +18,14 @@ public final class PacketSoundConfirmationTracker {
     }
 
     public static void trackPlacement(BlockPos pos, BlockState expectedState) {
-        if (pos == null || expectedState == null || !Configs.Placement.PRINT_SOUND.getBooleanValue()) {
+        if (pos == null || expectedState == null || !Configs.Print.PRINT_SOUND.getBooleanValue()) {
             return;
         }
         track(pos, expectedState, SoundType.PLACEMENT);
     }
 
     public static void trackBreak(BlockPos pos, BlockState brokenState) {
-        if (pos == null || brokenState == null || !Configs.Break.BREAK_SOUND.getBooleanValue()) {
+        if (pos == null || brokenState == null || !Configs.Mine.BREAK_SOUND.getBooleanValue()) {
             return;
         }
         track(pos, brokenState, SoundType.BREAK);

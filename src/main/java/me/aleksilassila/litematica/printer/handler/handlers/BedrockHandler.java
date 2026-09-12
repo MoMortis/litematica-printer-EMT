@@ -18,12 +18,12 @@ public class BedrockHandler extends ClientPlayerTickHandler {
 
     @Override
     protected int getTickInterval() {
-        return Configs.Break.BREAK_INTERVAL.getIntegerValue();
+        return Configs.Mine.BREAK_INTERVAL.getIntegerValue();
     }
 
     @Override
     protected int getMaxExecutions() {
-        return Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
+        return Configs.Mine.BREAK_BLOCKS_PER_TICK.getIntegerValue();
     }
 
     @Override

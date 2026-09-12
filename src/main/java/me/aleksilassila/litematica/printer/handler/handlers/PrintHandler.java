@@ -69,12 +69,12 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     @Override
     protected int getTickInterval() {
-        return Configs.Placement.PLACE_INTERVAL.getIntegerValue();
+        return Configs.Print.PLACE_INTERVAL.getIntegerValue();
     }
 
     @Override
     protected int getMaxExecutions() {
-        return Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue();
+        return Configs.Print.PLACE_BLOCKS_PER_TICK.getIntegerValue();
     }
 
     @Override
@@ -107,7 +107,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
     /** 存在待快速重试的失败方块：不应进入空闲退避跳过 */
     @Override
     protected boolean hasUrgentRetries() {
-        return Configs.Placement.PRINT_USE_PACKET.getBooleanValue() && !retryTable.isEmpty();
+        return Configs.Print.PRINT_USE_PACKET.getBooleanValue() && !retryTable.isEmpty();
     }
 
     /**
@@ -117,7 +117,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
      */
     @Override
     protected int processTargetedScan(int remainingExecs, AtomicReference<Boolean> skipIteration) {
-        if (!Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()
+        if (!Configs.Print.PLACE_SAME_ITEM_FIRST.getBooleanValue()
                 || activePlacementItem == null || level == null) {
             return 0;
         }
@@ -161,7 +161,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (level == null || (retryTable.isEmpty() && pendingConfirm.isEmpty())) {
             return 0;
         }
-        if (!Configs.Placement.PRINT_USE_PACKET.getBooleanValue()) {
+        if (!Configs.Print.PRINT_USE_PACKET.getBooleanValue()) {
             retryTable.clear();
             pendingConfirm.clear();
             return 0;
@@ -233,7 +233,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
 
     @Override
     public boolean canProcessPos(BlockPos blockPos) {
-        if (!Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
+        if (!Configs.Print.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
             activePlacementItem = null;
             nextPlacementItemTick = 0L;
             lastActivePlacementTick = 0L;
@@ -317,7 +317,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         // 放置额度只统计成功放置；失败/暂缓尝试不消耗额度
         setExecuteConsumedQuota(outcome == ExecuteOutcome.PLACED);
         // 失败重试表仅数据包打印模式启用（无本地预测，放置失败不会被本地状态掩盖）
-        if (!Configs.Placement.PRINT_USE_PACKET.getBooleanValue()) {
+        if (!Configs.Print.PRINT_USE_PACKET.getBooleanValue()) {
             return;
         }
         long key = blockPos.asLong();
@@ -366,7 +366,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
                     break;
             }
         }
-        if (Configs.Placement.FALLING_CHECK.getBooleanValue() && ctx.requiredState.getBlock() instanceof FallingBlock) {
+        if (Configs.Print.FALLING_CHECK.getBooleanValue() && ctx.requiredState.getBlock() instanceof FallingBlock) {
             BlockPos downPos = blockPos.below();
 
             if (FallingBlock.isFree(level.getBlockState(downPos))) {
@@ -432,10 +432,10 @@ public class PrintHandler extends ClientPlayerTickHandler {
         ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
         ActionManager.INSTANCE.setWaitForHorizontalLook(action.isWaitForHorizontalLook());
         ActionManager.SendResult sendResult = ActionManager.INSTANCE.sendQueue(player);
-        if (sendResult.isSent() && Configs.Placement.PRINT_USE_PACKET.getBooleanValue()) {
+        if (sendResult.isSent() && Configs.Print.PRINT_USE_PACKET.getBooleanValue()) {
             PacketSoundConfirmationTracker.trackPlacement(blockPos, ctx.requiredState);
         }
-        if (sendResult.isSent() && placementItem != null && Configs.Placement.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
+        if (sendResult.isSent() && placementItem != null && Configs.Print.PLACE_SAME_ITEM_FIRST.getBooleanValue()) {
             activePlacementItem = placementItem;
             lastActivePlacementTick = level.getGameTime();
         }
@@ -467,13 +467,13 @@ public class PrintHandler extends ClientPlayerTickHandler {
         if (tick < nextPlacementItemTick) return false;
         if (activePlacementItem == null || activePlacementItem == item) return true;
         if (hasPendingPlacement(activePlacementItem)
-                && tick - lastActivePlacementTick <= Math.max(Configs.Placement.ITEM_SWITCH_INTERVAL.getIntegerValue() * 5L, 1)) {
+                && tick - lastActivePlacementTick <= Math.max(Configs.Print.ITEM_SWITCH_INTERVAL.getIntegerValue() * 5L, 1)) {
             return false;
         }
         // 活跃物品的待放方块已放完，或虽有余量但长时间(物品切换间隔*5)未成功放置
         // (可能被侦测器安全放置、下落方块检查等规则卡住)，先跳过它尝试下一种物品
         activePlacementItem = null;
-        int interval = Configs.Placement.ITEM_SWITCH_INTERVAL.getIntegerValue();
+        int interval = Configs.Print.ITEM_SWITCH_INTERVAL.getIntegerValue();
         nextPlacementItemTick = tick + interval;
         return interval == 0;
     }
@@ -678,7 +678,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
      * 空集兜底：只读扫描结果为空时，仍把当前缺货的 reqItems 加入订单，避免静默失效（无任何提示）。
      */
     private void requestCloudStoreRefill(Item[] reqItems) {
-        if (!Configs.Placement.PRINT_CLOUD_STORE_REFILL.getBooleanValue()
+        if (!Configs.Special.PRINT_CLOUD_STORE_REFILL.getBooleanValue()
                 || CloudStoreUtils.isRefillInCooldown()) {
             return;
         }
@@ -698,7 +698,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         CloudStoreUtils.tryRequestRefillMany(
                 player,
                 missing,
-                Configs.Placement.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
+                Configs.Special.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
         );
     }
 }

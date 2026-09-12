@@ -6,7 +6,6 @@ import me.aleksilassila.litematica.printer.interfaces.Implementation;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PlayerLook;
 import me.aleksilassila.litematica.printer.utils.BlockUtils;
-import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
@@ -197,9 +196,6 @@ public class Action {
         if (Configs.Print.PLACE_IN_AIR.getBooleanValue() && !this.requiresSupport) {
             return orderedSides.isEmpty() ? null : orderedSides.get(0);
         }
-        if (!this.customSides) {
-            sortSidesByPlayerView(orderedSides, pos);
-        }
         Direction firstValidSide = null;
         BlockState currentState = world.getBlockState(pos);
         for (Direction side : orderedSides) {
@@ -228,25 +224,6 @@ public class Action {
         me.aleksilassila.litematica.printer.enums.DefaultPlaceDirectionType forcedDirection =
                 (me.aleksilassila.litematica.printer.enums.DefaultPlaceDirectionType) Configs.Print.PLACE_DEFAULT_DIRECTION.getOptionListValue();
         return forcedDirection != null ? forcedDirection.toDirection() : null;
-    }
-
-    private static void sortSidesByPlayerView(List<Direction> sides, BlockPos pos) {
-        if (!Configs.Print.PRINT_SORT_SIDES.getBooleanValue() || sides.size() < 2) {
-            return;
-        }
-        LocalPlayer player = Minecraft.getInstance().player;
-        if (player == null) {
-            return;
-        }
-        Vec3 eye = player.getEyePosition();
-        Vec3 center = Vec3.atCenterOf(pos);
-        sides.sort(Comparator.comparingDouble(side -> -getClickedFaceScore(eye, center, side)));
-    }
-
-    private static double getClickedFaceScore(Vec3 eye, Vec3 center, Direction side) {
-        Vec3 toEye = eye.subtract(center);
-        Vec3 clickedFaceNormal = Vec3.atLowerCornerOf(BlockUtils.getVector(side.getOpposite()));
-        return clickedFaceNormal.dot(toEye);
     }
 
     public Action setItem(Item item) {

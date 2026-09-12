@@ -70,13 +70,13 @@ public class BreakUtils {
         LocalPlayer player = LitematicaUtils.client.player;
         if (world == null || player == null || LitematicaUtils.client.gameMode == null) return false;
         BlockState currentState = world.getBlockState(pos);
-        if (Configs.Break.BREAK_CHECK_HARDNESS.getBooleanValue() && currentState.getBlock().defaultDestroyTime() < 0) {
+        if (Configs.Mine.BREAK_CHECK_HARDNESS.getBooleanValue() && currentState.getBlock().defaultDestroyTime() < 0) {
             return false;
         }
-        if (Configs.Break.BREAK_AVOID_FLUID.getBooleanValue() && isFluidProtected(pos, world)) {
+        if (Configs.Mine.BREAK_AVOID_FLUID.getBooleanValue() && isFluidProtected(pos, world)) {
             return false;
         }
-        if (Configs.Break.BREAK_AVOID_SUPPORT.getBooleanValue() && isSupportProtected(pos, world)) {
+        if (Configs.Mine.BREAK_AVOID_SUPPORT.getBooleanValue() && isSupportProtected(pos, world)) {
             return false;
         }
         return !currentState.isAir() &&
@@ -88,8 +88,8 @@ public class BreakUtils {
     }
 
     private static void ensureFluidAvoidMatcher() {
-        List<String> configured = List.copyOf(Configs.Break.BREAK_FLUID_LIST.getStrings());
-        FluidAvoidStrategyType strategy = (FluidAvoidStrategyType) Configs.Break.BREAK_FLUID_STRATEGY.getOptionListValue();
+        List<String> configured = List.copyOf(Configs.Mine.BREAK_FLUID_LIST.getStrings());
+        FluidAvoidStrategyType strategy = (FluidAvoidStrategyType) Configs.Mine.BREAK_FLUID_STRATEGY.getOptionListValue();
         if (fluidMatcherInitialized && fluidListSnapshot.equals(configured)) {
             fluidStrategySnapshot = strategy;
             return;
@@ -162,7 +162,7 @@ public class BreakUtils {
     }
 
     public static boolean breakRestriction(@Nullable ClientLevel level, @Nullable BlockPos pos, BlockState blockState) {
-        if (Configs.Break.BREAK_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {
+        if (Configs.Mine.BREAK_LIMITER.getOptionListValue().equals(ExcavateListMode.TWEAKEROO)) {
             if (!ModUtils.isTweakerooLoaded()) return true;
             UsageRestriction.ListType listType = PlacementTweaks.BLOCK_TYPE_BREAK_RESTRICTION.getListType();
             if (listType == UsageRestriction.ListType.BLACKLIST) {
@@ -175,12 +175,12 @@ public class BreakUtils {
                 return true;
             }
         } else {
-            IConfigOptionListEntry optionListValue = Configs.Break.BREAK_LIMIT.getOptionListValue();
+            IConfigOptionListEntry optionListValue = Configs.Mine.BREAK_LIMIT.getOptionListValue();
             if (optionListValue == UsageRestriction.ListType.BLACKLIST) {
-                return Configs.Break.BREAK_BLACKLIST.getStrings().stream()
+                return Configs.Mine.BREAK_BLACKLIST.getStrings().stream()
                         .noneMatch(string -> matchesRule(string, level, pos, blockState));
             } else if (optionListValue == UsageRestriction.ListType.WHITELIST) {
-                return Configs.Break.BREAK_WHITELIST.getStrings().stream()
+                return Configs.Mine.BREAK_WHITELIST.getStrings().stream()
                         .anyMatch(string -> matchesRule(string, level, pos, blockState));
             } else {
                 return true;
@@ -368,7 +368,7 @@ public class BreakUtils {
             return;
         }
         // 非阻塞型挖掘：玩家手动挖掘时整体暂停，保留队列/目标
-        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && isPlayerMining()) {
+        if (Configs.Mine.BREAK_NON_BLOCKING.getBooleanValue() && isPlayerMining()) {
             return;
         }
         if (this.externalDestroyLockTicks > 0) {

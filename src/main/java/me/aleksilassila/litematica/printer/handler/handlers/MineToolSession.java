@@ -29,7 +29,7 @@ final class MineToolSession {
     }
 
     void beginTick() {
-        int configuredBudget = Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
+        int configuredBudget = Configs.Mine.BREAK_BLOCKS_PER_TICK.getIntegerValue();
         this.remainingInstantBudget = configuredBudget <= 0 ? -1 : configuredBudget;
         this.remainingSafeToolBreaks = BreakUtils.getCurrentToolSafeBreakBudget();
     }

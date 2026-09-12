@@ -35,12 +35,12 @@ public class FillHandler extends ClientPlayerTickHandler {
 
     @Override
     protected int getTickInterval() {
-        return Configs.Placement.PLACE_INTERVAL.getIntegerValue();
+        return Configs.Print.PLACE_INTERVAL.getIntegerValue();
     }
 
     @Override
     protected int getMaxExecutions() {
-        return Configs.Placement.PLACE_BLOCKS_PER_TICK.getIntegerValue();
+        return Configs.Print.PLACE_BLOCKS_PER_TICK.getIntegerValue();
     }
 
     @Override
@@ -105,7 +105,7 @@ public class FillHandler extends ClientPlayerTickHandler {
             if (!InventoryUtils.switchToItems(player, this.fillModeItemList)) {
                 return;
             }
-            if (Configs.Placement.FALLING_CHECK.getBooleanValue() &&
+            if (Configs.Print.FALLING_CHECK.getBooleanValue() &&
                 player.getMainHandItem().getItem() instanceof BlockItem item &&
                 item.getBlock() instanceof FallingBlock block &&
                 FallingBlock.isFree(level.getBlockState(blockPos.below()))

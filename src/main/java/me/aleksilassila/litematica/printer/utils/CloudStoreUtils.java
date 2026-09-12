@@ -85,15 +85,15 @@ public class CloudStoreUtils {
         if (!ModUtils.isCloudStoreLoaded()) {
             return false;
         }
-        if (!Configs.Placement.REFILL_AMOUNT_ADJUST.getKeybind().isKeybindHeld()) {
+        if (!Configs.Hotkeys.REFILL_AMOUNT_ADJUST.getKeybind().isKeybindHeld()) {
             return false;
         }
         int delta = yOffset > 0 ? 1 : -1;
-        if (Configs.Placement.REFILL_SCROLL_REVERSE.getBooleanValue()) {
+        if (Configs.Special.REFILL_SCROLL_REVERSE.getBooleanValue()) {
             delta = -delta;
         }
         fi.dy.masa.malilib.config.options.ConfigInteger config =
-                Configs.Placement.PRINT_CLOUD_STORE_REFILL_AMOUNT;
+                Configs.Special.PRINT_CLOUD_STORE_REFILL_AMOUNT;
         int value = Math.max(config.getMinIntegerValue(),
                 Math.min(config.getMaxIntegerValue(), config.getIntegerValue() + delta));
         config.setIntegerValue(value);
@@ -106,7 +106,7 @@ public class CloudStoreUtils {
      */
     public static void showRefillAmountOverlay() {
         MessageUtils.setOverlayMessage("[打印机] 云仓库单次取货数量: "
-                + Configs.Placement.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue());
+                + Configs.Special.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue());
     }
 
     /**
@@ -214,7 +214,7 @@ public class CloudStoreUtils {
         long threshold = REFILL_COOLDOWN_MS;
         try {
             threshold = Math.max(threshold,
-                    Configs.Placement.PRINT_CLOUD_STORE_REFILL_COOLDOWN.getIntegerValue() * 1000L);
+                    Configs.Special.PRINT_CLOUD_STORE_REFILL_COOLDOWN.getIntegerValue() * 1000L);
         } catch (Throwable ignored) {
         }
         return threshold + 60_000L;
@@ -304,7 +304,7 @@ public class CloudStoreUtils {
             }
             long cooldown;
             if (success) {
-                cooldown = Configs.Placement.PRINT_CLOUD_STORE_REFILL_COOLDOWN.getIntegerValue() * 1000L;
+                cooldown = Configs.Special.PRINT_CLOUD_STORE_REFILL_COOLDOWN.getIntegerValue() * 1000L;
             } else {
                 cooldown = REFILL_COOLDOWN_MS;
             }

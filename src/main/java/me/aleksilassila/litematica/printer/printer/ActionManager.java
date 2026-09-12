@@ -259,7 +259,7 @@ public class ActionManager {
         this.activeSource = click.source;
         try {
             BlockHitResult blockHitResult = new BlockHitResult(hitVec, click.side, click.target, false);
-            boolean localPrediction = !Configs.Placement.PRINT_USE_PACKET.getBooleanValue();
+            boolean localPrediction = !Configs.Print.PRINT_USE_PACKET.getBooleanValue();
             for (int i = 0; i < click.repeatCount; i++) {
                 // 每次放置前实时重查库存预算（count - 保留数 - 在途未确认消耗），
                 // 预算耗尽立即停止本 click 的放置。

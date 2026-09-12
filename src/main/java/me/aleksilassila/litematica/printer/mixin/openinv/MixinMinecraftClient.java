@@ -85,7 +85,7 @@ public abstract class MixinMinecraftClient {
             // 不在原理图内 → 取世界方块
             item = level.getBlockState(pos).getBlock().asItem();
         }
-        boolean forceCloudStore = Configs.Placement.PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE.getBooleanValue();
+        boolean forceCloudStore = Configs.Special.PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE.getBooleanValue();
         // 潜影盒物品要求身上是"空盒"才算已拥有；有物品的潜影盒不算。
         // 判定A（inMain）：主背包主栏直接持有该物品（不含潜影盒内容）——快捷潜影盒用。
         // 判定B（inShulkers）：主栏 + 所有背包潜影盒内容 —— 云仓库手动补货用。
@@ -113,13 +113,13 @@ public abstract class MixinMinecraftClient {
             }
             // 云仓库-手动补货：主栏与潜影盒都没有才下单（与快捷潜影盒互斥）
             if (!inShulkers
-                    && (forceCloudStore || Configs.Placement.PRINT_CLOUD_STORE_MANUAL_REFILL.getBooleanValue())
+                    && (forceCloudStore || Configs.Special.PRINT_CLOUD_STORE_MANUAL_REFILL.getBooleanValue())
                     && item != net.minecraft.world.item.Items.AIR
                     && ModUtils.isCloudStoreLoaded()) {
                 me.aleksilassila.litematica.printer.utils.CloudStoreUtils.tryRequestRefillImmediate(
                         player,
                         item,
-                        Configs.Placement.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
+                        Configs.Special.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
                 );
             }
         }

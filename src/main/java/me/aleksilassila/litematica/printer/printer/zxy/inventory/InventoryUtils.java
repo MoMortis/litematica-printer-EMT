@@ -172,7 +172,7 @@ public class InventoryUtils {
             AbstractContainerMenu sc = player.containerMenu;
             if (!player.containerMenu.equals(player.inventoryMenu)) return false;
             //排除合成栏 装备栏 副手
-            if (Configs.Placement.STORE_ORDERLY.getBooleanValue() && sc.slots.stream().skip(9).limit(sc.slots.size() - 10).noneMatch(slot -> slot.getItem().isEmpty())
+            if (Configs.Print.STORE_ORDERLY.getBooleanValue() && sc.slots.stream().skip(9).limit(sc.slots.size() - 10).noneMatch(slot -> slot.getItem().isEmpty())
                     && (Configs.Core.QUICK_SHULKER.getBooleanValue() || Configs.Core.CLOUD_INVENTORY.getBooleanValue())) {
                 // 缺料且背包满：限频尝试补货；没有可补的货时不返回 true，
                 // 打印机继续扫描其他方块（缺料方块已被放置冷却跳过），不再全场停工

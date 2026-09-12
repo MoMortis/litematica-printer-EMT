@@ -114,15 +114,15 @@ public class ConfigUtils {
     }
 
     public static int getPlaceCooldown() {
-        return Configs.Placement.PLACE_COOLDOWN.getIntegerValue();
+        return Configs.Print.PLACE_COOLDOWN.getIntegerValue();
     }
 
     public static int getBreakCooldown() {
-        return Configs.Break.BREAK_COOLDOWN.getIntegerValue();
+        return Configs.Mine.BREAK_COOLDOWN.getIntegerValue();
     }
 
     public static float getBreakProgressThreshold() {
-        int value = Configs.Break.BREAK_PROGRESS_THRESHOLD.getIntegerValue();
+        int value = Configs.Mine.BREAK_PROGRESS_THRESHOLD.getIntegerValue();
         if (value < 70) {
             value = 70;
         } else if (value > 100) {

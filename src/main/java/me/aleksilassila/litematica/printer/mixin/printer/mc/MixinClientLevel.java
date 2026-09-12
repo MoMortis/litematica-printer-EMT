@@ -40,7 +40,7 @@ public abstract class MixinClientLevel implements PacketUtils.SequenceExtension 
     private void suppressPrinterPlacementSound(Entity entity, SoundEvent sound, SoundSource source,
                                                 float volume, float pitch, CallbackInfo ci) {
         if (source == SoundSource.BLOCKS && ActionManager.INSTANCE.isPrintInteractionActive()
-                && !Configs.Placement.PRINT_SOUND.getBooleanValue()) {
+                && !Configs.Print.PRINT_SOUND.getBooleanValue()) {
             ci.cancel();
         }
     }

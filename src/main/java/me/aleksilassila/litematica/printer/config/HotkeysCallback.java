@@ -48,7 +48,7 @@ public class HotkeysCallback {
             return true;
         }
 
-        if (key == Configs.Placement.REFILL_AMOUNT_ADJUST.getKeybind()) {
+        if (key == Configs.Hotkeys.REFILL_AMOUNT_ADJUST.getKeybind()) {
             CloudStoreUtils.showRefillAmountOverlay();
             return true;
         }

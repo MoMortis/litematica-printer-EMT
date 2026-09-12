@@ -272,12 +272,12 @@ if (this.delayedDestroyLocalPrediction) {
      */
     @Unique
     private boolean litematica_printer$instantMine(BlockPos blockPos, Direction direction) {
-        if (!Configs.Break.BREAK_USE_PACKET.getBooleanValue()
-                || !Configs.Break.BREAK_INSTANT_MINE.getBooleanValue()) {
+        if (!Configs.Mine.BREAK_USE_PACKET.getBooleanValue()
+                || !Configs.Mine.BREAK_INSTANT_MINE.getBooleanValue()) {
             return false;
         }
         // 纱幕-列表：仅在列表内的方块触发同 tick 同时发包挖掘开始与结束
-        java.util.List<String> veilList = Configs.Break.BREAK_INSTANT_MINE_LIST.getStrings();
+        java.util.List<String> veilList = Configs.Mine.BREAK_INSTANT_MINE_LIST.getStrings();
         if (!veilList.isEmpty() && this.minecraft.level != null) {
             net.minecraft.world.level.block.state.BlockState veilState = this.minecraft.level.getBlockState(blockPos);
             if (veilList.stream().noneMatch(s -> me.aleksilassila.litematica.printer.utils.PinYinSearchUtils.matchName(s, veilState))) {
@@ -290,7 +290,7 @@ if (this.delayedDestroyLocalPrediction) {
         this.isDestroying = false;
         this.destroyProgress = 0.0F;
         PacketUtils.sendPacket(sequence -> getActionPacket(Action.START_DESTROY_BLOCK, blockPos, direction, sequence));
-        if (Configs.Break.BREAK_SOUND.getBooleanValue() && this.minecraft.level != null) {
+        if (Configs.Mine.BREAK_SOUND.getBooleanValue() && this.minecraft.level != null) {
             PacketSoundConfirmationTracker.trackBreak(blockPos, this.minecraft.level.getBlockState(blockPos));
         }
         PacketUtils.sendPacket(sequence -> getActionPacket(Action.STOP_DESTROY_BLOCK, blockPos, direction, sequence));
@@ -306,7 +306,7 @@ if (this.delayedDestroyLocalPrediction) {
             return BlockBreakResult.FAILED;
         }
         // 非阻塞型挖掘：玩家手动挖掘时让出破坏状态（含同 tick 秒破路径）
-        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
+        if (Configs.Mine.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
             return BlockBreakResult.ABORTED;
         }
 
@@ -391,7 +391,7 @@ if (this.delayedDestroyLocalPrediction) {
             return BlockBreakResult.FAILED;
         }
         // 非阻塞型挖掘：玩家手动挖掘时让出破坏状态
-        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
+        if (Configs.Mine.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
             return BlockBreakResult.ABORTED;
         }
         // 这很体面：同 tick 数据包秒破（打印流程的普通破坏队列路径）
@@ -444,7 +444,7 @@ if (this.delayedDestroyLocalPrediction) {
             return BlockBreakResult.FAILED;
         }
         ensureHasSentCarriedItem();
-        boolean useDelayedDestroy = forceDelayedDestroy || Configs.Break.BREAK_USE_DELAYED_DESTROY.getBooleanValue();
+        boolean useDelayedDestroy = forceDelayedDestroy || Configs.Mine.BREAK_USE_DELAYED_DESTROY.getBooleanValue();
         if (blockState.isAir()) {
             if (this.hasDelayedDestroy && blockPos.equals(this.delayedDestroyPos)) {
                 this.hasDelayedDestroy = false;
@@ -595,9 +595,9 @@ if (this.delayedDestroyLocalPrediction) {
             }
         }
         level.addDestroyBlockEffect(pos, state);
-        if (Configs.Break.BREAK_USE_PACKET.getBooleanValue()) {
+        if (Configs.Mine.BREAK_USE_PACKET.getBooleanValue()) {
             PacketSoundConfirmationTracker.trackBreak(pos, state);
-        } else if (Configs.Break.BREAK_SOUND.getBooleanValue()) {
+        } else if (Configs.Mine.BREAK_SOUND.getBooleanValue()) {
             level.playLocalSound(pos, state.getSoundType().getBreakSound(), net.minecraft.sounds.SoundSource.BLOCKS, 1.0F, 0.8F, false);
         }
     }

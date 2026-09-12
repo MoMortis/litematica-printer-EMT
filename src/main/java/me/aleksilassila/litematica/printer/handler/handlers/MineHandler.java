@@ -38,7 +38,7 @@ public class MineHandler extends ClientPlayerTickHandler {
     }
 
     private boolean isParallelMode() {
-        return Configs.Break.BREAK_PARALLEL.getBooleanValue();
+        return Configs.Mine.BREAK_PARALLEL.getBooleanValue();
     }
 
     public static boolean mineRestriction(BlockState blockState) {
@@ -77,18 +77,18 @@ public class MineHandler extends ClientPlayerTickHandler {
 
     @Override
     protected int getTickInterval() {
-        return Configs.Break.BREAK_INTERVAL.getIntegerValue();
+        return Configs.Mine.BREAK_INTERVAL.getIntegerValue();
     }
 
     @Override
     protected int getMaxExecutions() {
-        return isParallelMode() ? 0 : Configs.Break.BREAK_BLOCKS_PER_TICK.getIntegerValue();
+        return isParallelMode() ? 0 : Configs.Mine.BREAK_BLOCKS_PER_TICK.getIntegerValue();
     }
 
     @Override
     protected boolean canIterate() {
         // 非阻塞型挖掘：玩家手动挖掘时暂停整个挖掘迭代
-        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
+        if (Configs.Mine.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
             return false;
         }
         if (!isParallelMode()) {
@@ -111,7 +111,7 @@ public class MineHandler extends ClientPlayerTickHandler {
     @Override
     public boolean canProcessPos(BlockPos pos) {
         // 非阻塞型挖掘：玩家手动挖掘时停止收集新候选
-        if (Configs.Break.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
+        if (Configs.Mine.BREAK_NON_BLOCKING.getBooleanValue() && BreakUtils.isPlayerMining()) {
             return false;
         }
         if (isOnCooldown(pos) || BlockPosCooldownManager.INSTANCE.isOnCooldown(level, FluidHandler.NAME, pos)) {

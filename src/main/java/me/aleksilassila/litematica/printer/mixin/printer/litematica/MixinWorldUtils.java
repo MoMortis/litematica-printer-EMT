@@ -59,13 +59,13 @@ public class MixinWorldUtils {
         }
 
         if (!inShulkers
-                && (Configs.Placement.PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE.getBooleanValue()
-                || Configs.Placement.PRINT_CLOUD_STORE_MANUAL_REFILL.getBooleanValue())
+                && (Configs.Special.PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE.getBooleanValue()
+                || Configs.Special.PRINT_CLOUD_STORE_MANUAL_REFILL.getBooleanValue())
                 && ModUtils.isCloudStoreLoaded()) {
             CloudStoreUtils.tryRequestRefillImmediate(
                     mc.player,
                     item,
-                    Configs.Placement.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
+                    Configs.Special.PRINT_CLOUD_STORE_REFILL_AMOUNT.getIntegerValue()
             );
         }
     }
