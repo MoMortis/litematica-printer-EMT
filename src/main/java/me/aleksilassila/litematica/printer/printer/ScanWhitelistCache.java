@@ -6,7 +6,9 @@ import fi.dy.masa.litematica.schematic.verifier.SchematicVerifier;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.mixin.printer.litematica.SchematicVerifierAccessor;
+import me.aleksilassila.litematica.printer.printer.verifier.VerifierDataView;
 import me.aleksilassila.litematica.printer.utils.PinYinSearchUtils;
+import com.google.common.collect.HashMultimap;
 import net.minecraft.world.level.block.state.BlockState;
 
 import java.util.HashMap;
@@ -94,14 +96,23 @@ public final class ScanWhitelistCache {
             if (verifier == null || !verifier.isFinished()) {
                 continue; // 未验证完成的验证器没有可靠的缺失/高亮数据
             }
-            SchematicVerifierAccessor accessor = (SchematicVerifierAccessor) verifier;
-            Set<SchematicVerifier.MismatchType> selectedCats = accessor.printer$getSelectedCategories();
+            Set<SchematicVerifier.MismatchType> selectedCats;
+            HashMultimap<SchematicVerifier.MismatchType, SchematicVerifier.BlockMismatch> selectedMap;
+            if (verifier instanceof VerifierDataView view) {
+                // 优化版验证器：选择容器经视图接口暴露（读锁下拷贝）
+                selectedCats = view.getSelectedMismatchTypes();
+                selectedMap = view.getSelectedMismatchEntries();
+            } else {
+                SchematicVerifierAccessor accessor = (SchematicVerifierAccessor) verifier;
+                selectedCats = accessor.printer$getSelectedCategories();
+                selectedMap = accessor.printer$getSelectedEntries();
+            }
             if (selectedCats != null && selectedCats.contains(SchematicVerifier.MismatchType.MISSING)) {
                 allMissing = true;
                 break; // 全类选中时所有未放置方块都是目标，期望状态集无需继续收集
             }
             Set<SchematicVerifier.BlockMismatch> selectedEntries =
-                    accessor.printer$getSelectedEntries().get(SchematicVerifier.MismatchType.MISSING);
+                    selectedMap.get(SchematicVerifier.MismatchType.MISSING);
             for (SchematicVerifier.BlockMismatch mismatch : selectedEntries) {
                 states.add(mismatch.stateExpected);
             }

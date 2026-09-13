@@ -16,6 +16,7 @@ import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.mixin.printer.litematica.SchematicVerifierAccessor;
 import me.aleksilassila.litematica.printer.printer.ScanWhitelistCache;
 import me.aleksilassila.litematica.printer.printer.SchematicStateCache;
+import me.aleksilassila.litematica.printer.printer.verifier.VerifierDataView;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -652,43 +653,63 @@ public final class AutoWalkScanner {
             return null;
         }
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
-        BlockPos best = null;
-        double bestDistSq = Double.MAX_VALUE;
+        BlockPos[] best = {null};
+        double[] bestDistSq = {Double.MAX_VALUE};
+        BlockPos.MutableBlockPos mpos = new BlockPos.MutableBlockPos();
         for (SchematicPlacement placement : DataManager.getSchematicPlacementManager().getAllSchematicsPlacements()) {
             SchematicVerifier verifier = placement.getSchematicVerifier();
             if (verifier == null || !verifier.isFinished()) {
                 continue; // 该放置未验证过 → 无验证器目标，交由扫描器兜底
             }
-            ArrayListMultimap<Pair<BlockState, BlockState>, BlockPos> missing =
-                    ((SchematicVerifierAccessor) verifier).printer$getMissingBlocksPositions();
-            if (missing == null || missing.isEmpty()) {
-                continue;
-            }
-            for (Pair<BlockState, BlockState> key : missing.keySet()) {
-                if (!ScanWhitelistCache.isWhitelisted(key.getLeft())) {
-                    continue; // 白名单外且未被高亮的缺失方块（统一判定）
+            if (verifier instanceof VerifierDataView view) {
+                // 优化版验证器：错误按子区块分桶存储，经视图回调遍历（坐标为 64 位打包值）
+                view.forEachMismatch(SchematicVerifier.MismatchType.MISSING, (pair, packed) -> {
+                    if (!ScanWhitelistCache.isWhitelisted(pair.getLeft())) {
+                        return true; // 白名单外且未被高亮的缺失方块（统一判定）
+                    }
+                    mpos.set(BlockPos.getX(packed), BlockPos.getY(packed), BlockPos.getZ(packed));
+                    best[0] = considerVerifierCandidate(level, player, now, mpos, best[0], bestDistSq);
+                    return true;
+                });
+            } else {
+                ArrayListMultimap<Pair<BlockState, BlockState>, BlockPos> missing =
+                        ((SchematicVerifierAccessor) verifier).printer$getMissingBlocksPositions();
+                if (missing == null || missing.isEmpty()) {
+                    continue;
                 }
-                for (BlockPos pos : missing.get(key)) {
-                    if (!level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)
-                            || !isChunkVisible(pos.getX() >> 4, pos.getZ() >> 4)) {
-                        continue; // 未加载或渲染距离外（看不见地形）
+                for (Pair<BlockState, BlockState> key : missing.keySet()) {
+                    if (!ScanWhitelistCache.isWhitelisted(key.getLeft())) {
+                        continue; // 白名单外且未被高亮的缺失方块（统一判定）
                     }
-                    if (unreachableCooldown.get(pos.asLong()) > now) {
-                        continue;
-                    }
-                    if (targetCompleted(pos)) {
-                        continue;
-                    }
-                    double dx = pos.getX() + 0.5 - player.getX();
-                    double dy = pos.getY() + 0.5 - player.getY();
-                    double dz = pos.getZ() + 0.5 - player.getZ();
-                    double distSq = dx * dx + dy * dy + dz * dz;
-                    if (distSq < bestDistSq) {
-                        bestDistSq = distSq;
-                        best = pos;
+                    for (BlockPos pos : missing.get(key)) {
+                        best[0] = considerVerifierCandidate(level, player, now, pos, best[0], bestDistSq);
                     }
                 }
             }
+        }
+        return best[0];
+    }
+
+    /** 校验单个候选目标（加载/可见/冷却/完成判定）并按距离择优；返回新的 best */
+    private BlockPos considerVerifierCandidate(ClientLevel level, LocalPlayer player, long now,
+                                               BlockPos pos, BlockPos best, double[] bestDistSq) {
+        if (!level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)
+                || !isChunkVisible(pos.getX() >> 4, pos.getZ() >> 4)) {
+            return best; // 未加载或渲染距离外（看不见地形）
+        }
+        if (unreachableCooldown.get(pos.asLong()) > now) {
+            return best;
+        }
+        if (targetCompleted(pos)) {
+            return best;
+        }
+        double dx = pos.getX() + 0.5 - player.getX();
+        double dy = pos.getY() + 0.5 - player.getY();
+        double dz = pos.getZ() + 0.5 - player.getZ();
+        double distSq = dx * dx + dy * dy + dz * dz;
+        if (distSq < bestDistSq[0]) {
+            bestDistSq[0] = distSq;
+            return pos.immutable();
         }
         return best;
     }

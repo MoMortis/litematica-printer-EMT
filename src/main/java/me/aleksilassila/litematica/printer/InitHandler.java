@@ -32,6 +32,8 @@ public class InitHandler implements IInitializationHandler {
         initModConfig();
         initConfigCallback();
         HighlightBlockRenderer.init();  // 高亮显示方块渲染器
+        me.aleksilassila.litematica.printer.printer.verifier.PendingChunkRenderer.init(); // 验证器待验证区块标记
+        me.aleksilassila.litematica.printer.printer.verifier.VerifierRegistry.init(); // 验证器跨维度注册表（断线清理）
     }
 
     private void initConfigCallback() {

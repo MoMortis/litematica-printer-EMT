@@ -134,6 +134,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 32)
                 .build();
 
+        // 验证器优化：开启后投影验证器改用优化版实现（按子区块分桶存储 + 后台线程扫描 +
+        // 全路径时长预算），重进服务器后生效
+        public static final ConfigBoolean VERIFIER_OPTIMIZED = bool("verifierOptimized")
+                .defaultValue(false)
+                .build();
+
         // 核心 - 检查玩家方块交互范围
         public static final ConfigBoolean CHECK_PLAYER_INTERACTION_RANGE = bool("checkPlayerInteractionRange")
                 .defaultValue(true)
@@ -273,6 +279,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 FLUID,
                 WORK_RANGE,
                 ITERATION_TIME_LIMIT,
+                VERIFIER_OPTIMIZED,
                 RENDER_HUD,
                 LAG_CHECK,
                 LAG_CHECK_MAX,

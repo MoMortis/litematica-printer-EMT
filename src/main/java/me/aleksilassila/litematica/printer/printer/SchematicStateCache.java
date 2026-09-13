@@ -12,6 +12,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
+import me.aleksilassila.litematica.printer.printer.verifier.VerifierActiveUpdate;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -181,6 +182,12 @@ public final class SchematicStateCache {
         }
         e.verdict = verdict;
         e.verdictTick = now;
+        // 主动回填：扫描器路过即对账，把与优化版验证器记录不一致的差异提交进复查管线
+        //（区域内才生效、仅漂移处产生提交；开销为一次区域索引盒测试 + 验证器哈希读）
+        RegionEntry owner = findRegionEntry(pos);
+        if (owner != null) {
+            VerifierActiveUpdate.onScannerVerdict(owner.placement, pos, required, current);
+        }
         return verdict == BlockMatchResult.CORRECT;
     }
 
@@ -326,6 +333,19 @@ public final class SchematicStateCache {
                 }
             }
         }
+    }
+
+    /** 定位坐标所属的启用 subregion 索引条目（仅盒包含测试，供主动回填取所属放置） */
+    @Nullable
+    private RegionEntry findRegionEntry(BlockPos pos) {
+        ensureRegionIndex();
+        for (int i = 0; i < regionIndex.size(); i++) {
+            RegionEntry re = regionIndex.get(i);
+            if (re.box.contains(pos)) {
+                return re;
+            }
+        }
+        return null;
     }
 
     @Nullable
