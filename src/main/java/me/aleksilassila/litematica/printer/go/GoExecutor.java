@@ -154,7 +154,7 @@ public final class GoExecutor {
         // 不越权透传：shift 保留键盘/打印已写入的现状（原版 KeyboardInput 本就每 tick 从物理键盘重写），
         // 寻路自身绝不主动潜行，对打印的潜行流程零干预
         boolean shift = player.input.keyPresses.shift();
-        boolean takeover = Configs.Special.GO_TAKEOVER_VIEW.getBooleanValue();
+        boolean takeover = Configs.Go.GO_TAKEOVER_VIEW.getBooleanValue();
 
         // 跑酷跳空中微调窗口：起跳后（视角恢复的 tick 起）到落地，用速率伺服微调
         // WASD 把落点修正到锁定目标（见 parkourAirControl）；着地/入水/悬挂即退出
@@ -247,7 +247,7 @@ public final class GoExecutor {
                 // 寻路侧同步不生成跑酷跳边（见 GoPathfinder.parkour），此处仅在
                 // 配置切换后残留的旧路径经过缺口时兜底——在边缘停住（零输入），
                 // 交给卡住检测重算绕开缺口的路径，绝不前走进缺口
-                if (!Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
+                if (!Configs.Go.GO_FORCE_SPRINT.getBooleanValue()) {
                     parkourPauseTicks = 0; // 丢弃可能残留的停顿状态
                     restorePreJumpYaw(player, takeover);
                     writeInput(player, 0.0F, 0.0F, false, false, shift);
@@ -324,7 +324,7 @@ public final class GoExecutor {
         if (takeover) {
             float offset = (hanging || parkour || jumpUp || sprintHop)
                     ? 0.0F
-                    : (float) Configs.Special.GO_VIEW_OFFSET.getIntegerValue();
+                    : (float) Configs.Go.GO_VIEW_OFFSET.getIntegerValue();
             float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz)) + offset;
             if (Math.abs(Mth.wrapDegrees(targetYaw - player.getYRot())) >= 1.0F) {
                 player.setYRot(targetYaw);
@@ -347,7 +347,7 @@ public final class GoExecutor {
 
         // 最大速度限制：按「自动寻路 - 最大速度」（格/秒）缩放移动向量；
         // 疾跑全速 = 20 / 3.5638 ≈ 5.612 格/秒，超过全速的值等效不限速（原版物理会把 >1 的输入归一化）
-        float maxSpeed = (float) Configs.Special.GO_MAX_SPEED.getDoubleValue();
+        float maxSpeed = (float) Configs.Go.GO_MAX_SPEED.getDoubleValue();
         float speedFactor = Math.min(1.0F, maxSpeed * (GoPathfinder.SPRINT_COST / 20.0F));
         strafe *= speedFactor;
         forward *= speedFactor;
@@ -372,7 +372,7 @@ public final class GoExecutor {
         } else {
             // 仅「自动寻路 - 强制疾跑」开启时请求疾跑（等效一直按住 Ctrl），能否
             // 真正冲刺由原版条件决定；关闭时绝不请求疾跑
-            sprint = Configs.Special.GO_FORCE_SPRINT.getBooleanValue();
+            sprint = Configs.Go.GO_FORCE_SPRINT.getBooleanValue();
         }
         writeInput(player, strafe, forward, jump, sprint, shift);
     }
@@ -391,7 +391,7 @@ public final class GoExecutor {
         double tx = parkourAirTarget.getX() + 0.5 - player.getX();
         double tz = parkourAirTarget.getZ() + 0.5 - player.getZ();
         if (takeover) {
-            float offset = (float) Configs.Special.GO_VIEW_OFFSET.getIntegerValue();
+            float offset = (float) Configs.Go.GO_VIEW_OFFSET.getIntegerValue();
             float targetYaw = (float) Math.toDegrees(Math.atan2(-tx, tz)) + offset;
             if (Math.abs(Mth.wrapDegrees(targetYaw - player.getYRot())) >= 1.0F) {
                 player.setYRot(targetYaw);
@@ -484,7 +484,7 @@ public final class GoExecutor {
      */
     @Nullable
     private static BlockPos sprintHopTarget(LocalPlayer player) {
-        if (!Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
+        if (!Configs.Go.GO_FORCE_SPRINT.getBooleanValue()) {
             return null;
         }
         List<BlockPos> path = GoManager.INSTANCE.getPath();
@@ -537,7 +537,7 @@ public final class GoExecutor {
             dx /= dist;
             dz /= dist;
             if (takeover) {
-                float offset = (float) Configs.Special.GO_VIEW_OFFSET.getIntegerValue();
+                float offset = (float) Configs.Go.GO_VIEW_OFFSET.getIntegerValue();
                 float targetYaw = (float) Math.toDegrees(Math.atan2(-dx, dz)) + offset;
                 if (Math.abs(Mth.wrapDegrees(targetYaw - player.getYRot())) >= 1.0F) {
                     player.setYRot(targetYaw);
@@ -550,7 +550,7 @@ public final class GoExecutor {
             float cos = (float) Math.cos(yawRad);
             float strafe = (float) (dx * cos + dz * sin);
             float forward = (float) (dz * cos - dx * sin);
-            float maxSpeed = (float) Configs.Special.GO_MAX_SPEED.getDoubleValue();
+            float maxSpeed = (float) Configs.Go.GO_MAX_SPEED.getDoubleValue();
             float speedFactor = Math.min(1.0F, maxSpeed * (GoPathfinder.SPRINT_COST / 20.0F));
             strafe *= speedFactor;
             forward *= speedFactor;

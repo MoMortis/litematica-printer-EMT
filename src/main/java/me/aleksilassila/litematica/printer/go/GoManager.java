@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.go;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.AbstractClientPlayer;
@@ -63,6 +64,13 @@ public final class GoManager {
     private volatile BlockPos goal;
     private volatile UUID liveTargetId;
     private volatile List<BlockPos> path = List.of();
+    /** 多目标模式（扫描寻路派发）的站立格→候选映射；null = 单目标腿 */
+    @Nullable
+    private volatile Long2ObjectOpenHashMap<BlockPos> multiGoalCells;
+    /** 最近一次多目标腿到达的目标格（玩家脚格）：到达后置位，新会话/玩家失效时清空；
+     *  stop 不清（供扫描器在腿结束后反查） */
+    @Nullable
+    private volatile BlockPos reachedGoalCell;
 
     // ===== 主线程专用状态 =====
     private int waypointIndex;
@@ -130,7 +138,28 @@ public final class GoManager {
         if (mc.player == null || mc.level == null) {
             return;
         }
+        multiGoalCells = null;
         begin(target, null, DriveMode.AUTO, GoPathfinder.adjacentGoal(target), null);
+    }
+
+    /**
+     * 多目标自动派发（扫描自动寻路·按路径最短选目标）：把全部候选的紧邻站立格作为
+     * 一个目标集合寻路，第一个定稿的目标即路径最短候选；到达时记下玩家脚格，
+     * 供扫描器经 {@link #getReachedGoalCell()} 反查是哪个候选。
+     */
+    public void autoDispatchMulti(GoPathfinder.Goal goalSet,
+                                  Long2ObjectOpenHashMap<BlockPos> cellToTarget) {
+        if (mc.player == null || mc.level == null) {
+            return;
+        }
+        multiGoalCells = cellToTarget;
+        begin(null, null, DriveMode.AUTO, goalSet, null);
+    }
+
+    /** 最近一次多目标腿到达的目标格（未到达/单目标腿为 null） */
+    @Nullable
+    public BlockPos getReachedGoalCell() {
+        return reachedGoalCell;
     }
 
     public boolean isManualActive() {
@@ -151,6 +180,7 @@ public final class GoManager {
         path = List.of();
         waypointIndex = 0;
         liveTargetId = null;
+        multiGoalCells = null; // reachedGoalCell 保留：扫描器在腿结束后反查
         if (wasActive && reason != null) {
             msg("§e[寻路] " + reason);
         }
@@ -171,6 +201,8 @@ public final class GoManager {
             driveMode = DriveMode.NONE;
             activeGoal = null;
             path = List.of();
+            multiGoalCells = null;
+            reachedGoalCell = null;
             return;
         }
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
@@ -200,6 +232,10 @@ public final class GoManager {
         GoPathfinder.Goal ag = activeGoal;
         if (ag != null && ag.isInGoal(player.getBlockX(), player.getBlockY(), player.getBlockZ())) {
             if (driveMode == DriveMode.AUTO) {
+                if (multiGoalCells != null) {
+                    // 多目标腿：记下到达的目标格，供扫描器反查是哪个候选（stop 不清它）
+                    reachedGoalCell = player.blockPosition().immutable();
+                }
                 stopInternal(); // 自动模式：到达即释放控制，等待逻辑由扫描器负责
             } else {
                 stop("已到达目标附近");
@@ -220,8 +256,8 @@ public final class GoManager {
             nextDeviationCheckTick = now + DEVIATION_CHECK_INTERVAL_TICKS;
         } else if (now >= nextDeviationCheckTick && !calculating) {
             nextDeviationCheckTick = now + DEVIATION_CHECK_INTERVAL_TICKS;
-            if (Configs.Special.GO_DEVIATION_STOP.getBooleanValue()) {
-                int maxDist = Configs.Special.GO_DEVIATION_DISTANCE.getIntegerValue();
+            if (Configs.Go.GO_DEVIATION_STOP.getBooleanValue()) {
+                int maxDist = Configs.Go.GO_DEVIATION_DISTANCE.getIntegerValue();
                 double maxDistSq = sq(maxDist);
                 boolean grounded = player.onGround() || player.isInWater();
                 boolean externalAir = !grounded && !GoExecutor.isSelfJumpAirborne();
@@ -344,7 +380,7 @@ public final class GoManager {
         return Math.abs(relX * dirZ - relZ * dirX) / dirLen <= 0.9;
     }
 
-    private void begin(BlockPos target, @Nullable UUID liveId, DriveMode mode, GoPathfinder.Goal goalEvaluator, @Nullable String startMessage) {
+    private void begin(@Nullable BlockPos target, @Nullable UUID liveId, DriveMode mode, GoPathfinder.Goal goalEvaluator, @Nullable String startMessage) {
         active = true;
         calcSerial++;
         calculating = false;
@@ -353,6 +389,7 @@ public final class GoManager {
         goal = target;
         liveTargetId = liveId;
         path = List.of();
+        reachedGoalCell = null; // 新会话清掉上一条腿的到达记录
         waypointIndex = 0;
         bestDistToGoal = Float.MAX_VALUE;
         repaths = 0;
@@ -381,14 +418,13 @@ public final class GoManager {
         calculating = true;
         long serial = ++calcSerial;
         ClientLevel level = mc.level;
-        BlockPos goalPos = goal;
         GoPathfinder.Goal goalEvaluator = activeGoal;
-        if (goalPos == null || goalEvaluator == null) {
+        if (goalEvaluator == null) {
             calculating = false;
             return;
         }
-        long budgetMs = Configs.Special.GO_TIME_LIMIT.getIntegerValue();
-        int maxFall = Configs.Special.GO_MAX_FALL.getIntegerValue();
+        long budgetMs = Configs.Go.GO_TIME_LIMIT.getIntegerValue();
+        int maxFall = Configs.Go.GO_MAX_FALL.getIntegerValue();
         CALC_EXECUTOR.execute(() -> {
             GoPathfinder.Result calcResult = null;
             try {

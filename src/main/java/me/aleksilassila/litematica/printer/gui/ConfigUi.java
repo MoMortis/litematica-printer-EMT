@@ -81,7 +81,8 @@ public class ConfigUi extends GuiConfigsBase {
         EXCAVATE(I18n.of("category.mine")),
         FILL(I18n.of("category.fill")),
         FLUID(I18n.of("category.fluid")),
-        SPECIAL(I18n.of("category.special"));
+        SPECIAL(I18n.of("category.special")),
+        GO(I18n.of("category.go"));
 
         private final I18n i18n;
 
@@ -106,6 +107,7 @@ public class ConfigUi extends GuiConfigsBase {
                 case FLUID -> Configs.Fluid.OPTIONS;
                 case HOTKEYS -> Configs.Hotkeys.OPTIONS;
                 case SPECIAL -> Configs.Special.OPTIONS;
+                case GO -> Configs.Go.OPTIONS;
             };
         }
     }

@@ -91,11 +91,11 @@ public class PrintHandler extends ClientPlayerTickHandler {
     /** 扫描白名单：生效时主循环里非白名单格位在点查缓存处直接跳过，预算全部留给白名单方块 */
     @Override
     protected boolean shouldSkipFromScan(BlockPos pos) {
-        if (!ScanWhitelistCache.active() || level == null) {
+        if (!ScanWhitelistCache.PRINT.active() || level == null) {
             return false;
         }
         BlockState state = SchematicStateCache.INSTANCE.getSchematicState(pos);
-        return state != null && !ScanWhitelistCache.isWhitelisted(state);
+        return state != null && !ScanWhitelistCache.PRINT.isWhitelisted(state);
     }
 
     /** 方案六：打印模式启用空闲退避（空轮后 1→2→4→…→10 tick，失效信号立即恢复） */
@@ -247,7 +247,7 @@ public class PrintHandler extends ClientPlayerTickHandler {
         }
         // 扫描白名单：生效时只处理列表内方块与验证器高亮的"缺失方块"（并集，见 ScanWhitelistCache），
         // 其余不放置、不重试、不参与定向扫描
-        if (!ScanWhitelistCache.isWhitelisted(ctx.requiredState)) {
+        if (!ScanWhitelistCache.PRINT.isWhitelisted(ctx.requiredState)) {
             return false;
         }
         // 跳过潜影盒打印：直接跳过所有潜影盒的放置

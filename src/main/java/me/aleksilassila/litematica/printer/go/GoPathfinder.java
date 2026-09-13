@@ -1,6 +1,9 @@
 package me.aleksilassila.litematica.printer.go;
 
+import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
+import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import me.aleksilassila.litematica.printer.config.Configs;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.BlockTags;
@@ -10,6 +13,10 @@ import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.function.BooleanSupplier;
 
 /**
@@ -20,6 +27,17 @@ import java.util.function.BooleanSupplier;
  * 单次计算受时间预算约束，超时返回 best-so-far（已探索节点中离目标最近的），
  * 实现"走到离目标最近的位置"语义。
  * 每次寻路新建实例，线程封闭（在后台计算线程上运行）。
+ *
+ * <p>性能措施（均不改变搜索结果）：
+ * <ul>
+ * <li>地形探测记忆化——passable/walkableFloor/water/climbable 按坐标缓存，
+ *     同一格子被不同邻居重复探测的碰撞求值只算一次（缓存设上限防大图内存膨胀）；</li>
+ * <li>启发值收紧——水平单价与「强制疾跑」对齐（关=步行 4.633，开=疾跑 3.564，
+ *     注意疾跑下 4 格跑酷跳实际 3.0 tick/格，启发值略激进，属既有取舍），
+ *     距离用 octile（直线+对角混合），上升分量取跳上边扣除水平份额后的下界；</li>
+ * <li>跑酷探测剪枝——4 个正交同层邻格都有地板的节点不可能起跳越缺口
+ *     （gap=1 检查必失败），直接跳过整个跑酷探测，平地节点省 ~60 次探测。</li>
+ * </ul>
  */
 public final class GoPathfinder {
     public static final float COST_INF = 1_000_000.0F;
@@ -35,9 +53,37 @@ public final class GoPathfinder {
     private static final float MIN_IMPROVEMENT = 0.01F;
     private static final int MAX_EMPTY_CHUNKS = 50;
     private static final int MAX_NODES = 300_000;
+    /** 地形探测缓存上限（条）：超出即整表清空。1.5M 条约 27MB，触及该量级的搜索本就被预算掐断 */
+    private static final int PROBE_CACHE_MAX = 1_500_000;
 
     private static final int[][] DIRS = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}};
     private static final int[][] DIAGS = {{1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
+
+    /** 探测缓存位：有碰撞（可站立的地面） */
+    private static final byte BIT_SOLID = 1;
+    /** 探测缓存位：岩浆 */
+    private static final byte BIT_LAVA = 2;
+    /** 探测缓存位：水 */
+    private static final byte BIT_WATER = 4;
+    /** 探测缓存位：可攀爬（梯子/藤蔓等） */
+    private static final byte BIT_CLIMB = 8;
+
+    /** 启发值水平单价：与「强制疾跑」开关对齐。Goal 构造时快照，搜索中不读配置 */
+    static float horizUnit() {
+        return Configs.Go.GO_FORCE_SPRINT.getBooleanValue() ? SPRINT_COST : WALK_COST;
+    }
+
+    /** 启发值上升分量下界：跳上一格的成本扣除其水平位移份额（攀爬 8.51/格 仍覆盖） */
+    static float upUnit() {
+        return JUMP_UP_COST - horizUnit();
+    }
+
+    /** octile 距离（直线 + 对角混合的 8 向网格路径长度下界） */
+    static float octile(float dx, float dz) {
+        float ax = Math.abs(dx);
+        float az = Math.abs(dz);
+        return Math.max(ax, az) + 0.41421356F * Math.min(ax, az);
+    }
 
     /** 寻路目标 */
     public interface Goal {
@@ -51,6 +97,8 @@ public final class GoPathfinder {
         int gx = pos.getX();
         int gy = pos.getY();
         int gz = pos.getZ();
+        float unit = horizUnit();
+        float upB = upUnit();
         return new Goal() {
             @Override
             public boolean isInGoal(int x, int y, int z) {
@@ -59,11 +107,9 @@ public final class GoPathfinder {
 
             @Override
             public float heuristic(int x, int y, int z) {
-                float dx = x - gx;
-                float dz = z - gz;
                 float up = Math.max(0, y - gy);
-                // 上升每格的启发值取跳上成本的保守低估
-                return (float) Math.sqrt(dx * dx + dz * dz) * SPRINT_COST + up * 7.0F;
+                // octile 与上升下界均不高于真实路径成本（可采纳），且沿边变化不超过边成本（一致）
+                return octile(x - gx, z - gz) * unit + up * upB;
             }
         };
     }
@@ -74,6 +120,11 @@ public final class GoPathfinder {
      * （目标格是待放置方块的空位，站进去会挡住打印机放置）。
      */
     public static Goal adjacentGoal(BlockPos target) {
+        int tx = target.getX();
+        int ty = target.getY();
+        int tz = target.getZ();
+        float unit = horizUnit();
+        float upB = upUnit();
         return new Goal() {
             @Override
             public boolean isInGoal(int x, int y, int z) {
@@ -82,14 +133,105 @@ public final class GoPathfinder {
 
             @Override
             public float heuristic(int x, int y, int z) {
-                // 到目标剩余水平路程的下界：与目标中心距离减 1（相邻格距目标 1 格）
-                float dx = x - target.getX();
-                float dz = z - target.getZ();
-                float flat = Math.max(0.0F, (float) Math.sqrt(dx * dx + dz * dz) - 1.0F);
-                float up = Math.max(0, y - target.getY() - 1);
-                return flat * SPRINT_COST + up * 7.0F;
+                // 到目标剩余水平路程的下界：octile 距离减 1（相邻格距目标 1 格，度量 1-Lipschitz）
+                float flat = Math.max(0.0F, octile(x - tx, z - tz) - 1.0F);
+                float up = Math.max(0, y - ty - 1);
+                return flat * unit + up * upB;
             }
         };
+    }
+
+    /**
+     * 目标集合（多目标 A*）：全部候选方块的紧邻站立格（水平曼哈顿 1、Y ±1）作为终点，
+     * 第一个被搜索定稿的目标格即"路径成本最短"的候选——选目标与算路径一次完成。
+     * 启发值 = min over 候选分桶的"节点到桶包围盒（候选外扩 1 格，覆盖全部站立格）的
+     * 水平距离 × 水平单价 + 低于桶底的垂直攀爬 × 上升下界"：包围盒距离不高于盒内任意
+     * 站立格的真实水平距离，可采纳；各桶项沿边 Lipschitz 且不超过边成本，min 后仍一致。
+     */
+    public static final class GoalSet implements Goal {
+        /** 站立格 → 所属候选（相邻候选共享站立格时先到先得） */
+        private final Long2ObjectOpenHashMap<BlockPos> cellToTarget;
+        private final LongOpenHashSet standCells;
+        /** 候选分桶包围盒（已外扩 1 格，覆盖站立格） */
+        private final Bucket[] buckets;
+        private final float unit;
+        private final float upB;
+
+        private GoalSet(Long2ObjectOpenHashMap<BlockPos> cellToTarget, Bucket[] buckets) {
+            this.cellToTarget = cellToTarget;
+            this.standCells = new LongOpenHashSet(cellToTarget.keySet());
+            this.buckets = buckets;
+            this.unit = horizUnit();
+            this.upB = upUnit();
+        }
+
+        /** 站立格 → 候选方块映射（供派发方在到达后反查是哪个候选被选中） */
+        public Long2ObjectOpenHashMap<BlockPos> cellToTarget() {
+            return cellToTarget;
+        }
+
+        @Override
+        public boolean isInGoal(int x, int y, int z) {
+            return standCells.contains(BlockPos.asLong(x, y, z));
+        }
+
+        @Override
+        public float heuristic(int x, int y, int z) {
+            float best = Float.MAX_VALUE;
+            for (Bucket b : buckets) {
+                float dx = Math.max(Math.max(b.loX - x, x - b.hiX), 0);
+                float dz = Math.max(Math.max(b.loZ - z, z - b.hiZ), 0);
+                float dv = y < b.loY ? (b.loY - y) : 0.0F;
+                float h = (float) Math.sqrt(dx * dx + dz * dz) * unit + dv * upB;
+                if (h < best) {
+                    best = h;
+                }
+            }
+            return best;
+        }
+    }
+
+    /** 候选按 16³ 子区块的包围盒（坐标含外扩） */
+    private static final class Bucket {
+        int loX = Integer.MAX_VALUE;
+        int loY = Integer.MAX_VALUE;
+        int loZ = Integer.MAX_VALUE;
+        int hiX = Integer.MIN_VALUE;
+        int hiY = Integer.MIN_VALUE;
+        int hiZ = Integer.MIN_VALUE;
+    }
+
+    /**
+     * 构造目标集合：候选按离 from 的直线距离排序预截 limit 个（直线距离只作预筛，
+     * 最短目标仍由路径成本裁决），再展开为站立格集合与分桶包围盒。
+     */
+    public static GoalSet goalSet(List<BlockPos> targets, int limit, BlockPos from) {
+        ArrayList<BlockPos> list = new ArrayList<>(targets);
+        if (list.size() > limit) {
+            list.sort(Comparator.comparingDouble(p -> p.distSqr(from)));
+            while (list.size() > limit) {
+                list.remove(list.size() - 1);
+            }
+        }
+        Long2ObjectOpenHashMap<BlockPos> cellToTarget = new Long2ObjectOpenHashMap<>(list.size() * 16);
+        Map<Long, Bucket> bucketMap = new HashMap<>();
+        for (BlockPos t : list) {
+            for (int dy = -1; dy <= 1; dy++) {
+                for (int[] d : DIRS) {
+                    long key = BlockPos.asLong(t.getX() + d[0], t.getY() + dy, t.getZ() + d[1]);
+                    cellToTarget.putIfAbsent(key, t);
+                }
+            }
+            long sk = BlockPos.asLong(t.getX() >> 4, t.getY() >> 4, t.getZ() >> 4);
+            Bucket b = bucketMap.computeIfAbsent(sk, k -> new Bucket());
+            b.loX = Math.min(b.loX, t.getX() - 1);
+            b.loY = Math.min(b.loY, t.getY() - 1);
+            b.loZ = Math.min(b.loZ, t.getZ() - 1);
+            b.hiX = Math.max(b.hiX, t.getX() + 1);
+            b.hiY = Math.max(b.hiY, t.getY() + 1);
+            b.hiZ = Math.max(b.hiZ, t.getZ() + 1);
+        }
+        return new GoalSet(cellToTarget, bucketMap.values().toArray(new Bucket[0]));
     }
 
     /** 脚部方块坐标 (x,y,z) 是否处于目标方块的"紧邻可站立"位置（节点与玩家脚部共用同一判定） */
@@ -105,11 +247,15 @@ public final class GoPathfinder {
         public final boolean reachedGoal;
         /** 终点到目标的启发值换算的粗略距离（格） */
         public final float distanceToGoal;
+        /** 到达的目标格坐标（仅目标集合搜索且到达时有值，未到达为 null） */
+        @Nullable
+        public final BlockPos goalCell;
 
-        Result(ArrayList<BlockPos> positions, boolean reachedGoal, float distanceToGoal) {
+        Result(ArrayList<BlockPos> positions, boolean reachedGoal, float distanceToGoal, @Nullable BlockPos goalCell) {
             this.positions = positions;
             this.reachedGoal = reachedGoal;
             this.distanceToGoal = distanceToGoal;
+            this.goalCell = goalCell;
         }
     }
 
@@ -216,8 +362,9 @@ public final class GoPathfinder {
     private final float[] fallTicks;
     private final Long2ObjectOpenHashMap<Node> map = new Long2ObjectOpenHashMap<>(4096);
     private final Heap heap = new Heap();
+    /** 地形探测缓存：bit0=solid bit1=lava bit2=water bit3=climbable，-1=未缓存 */
+    private final Long2ByteOpenHashMap probeCache = new Long2ByteOpenHashMap();
     private final BlockPos.MutableBlockPos cursorA = new BlockPos.MutableBlockPos();
-    private final BlockPos.MutableBlockPos cursorB = new BlockPos.MutableBlockPos();
     private int emptyChunks;
 
     private GoPathfinder(ClientLevel level, Goal goal, int maxFall) {
@@ -225,6 +372,7 @@ public final class GoPathfinder {
         this.goal = goal;
         this.maxFall = maxFall;
         this.fallTicks = buildFallTicks(maxFall + 4);
+        this.probeCache.defaultReturnValue((byte) -1);
     }
 
     /**
@@ -283,10 +431,24 @@ public final class GoPathfinder {
         for (int[] d : DIRS) {
             descend(cur, d[0], d[1]);
         }
-        for (int[] d : DIRS) {
-            parkour(cur, d[0], d[1]);
+        // 跑酷探测剪枝：4 个正交同层邻格都有地板时，任何方向的 gap=1 检查必失败
+        //（缺口格有地板直接放弃），不可能产生跑酷跳边，整段探测可跳过
+        if (Configs.Go.GO_FORCE_SPRINT.getBooleanValue() && gapAdjacent(cur)) {
+            for (int[] d : DIRS) {
+                parkour(cur, d[0], d[1]);
+            }
         }
         climb(cur);
+    }
+
+    /** 当前节点是否紧邻"同层无地板"的格子（跑酷跳的必要条件） */
+    private boolean gapAdjacent(Node cur) {
+        for (int[] d : DIRS) {
+            if (!walkableFloor(cur.x + d[0], cur.y, cur.z)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 平移：同层走到相邻格 */
@@ -381,12 +543,9 @@ public final class GoPathfinder {
      * 起跳点头顶须留空（腾空弧线上升超过一格），缺口格全弧线（脚/头/头顶）无碰撞，
      * 中途遇到有地板的格子即放弃（那种地形由 平移+短跳 覆盖）。
      * 「自动寻路 - 强制疾跑」未开启时不生成跑酷跳边（执行侧不允许任何跑酷跳，含 1 格缺口），
-     * 路径自然绕开缺口或判定不可达。
+     * 路径自然绕开缺口或判定不可达。调用方已保证开关开启且当前节点紧邻缺口。
      */
     private void parkour(Node cur, int dx, int dz) {
-        if (!me.aleksilassila.litematica.printer.config.Configs.Special.GO_FORCE_SPRINT.getBooleanValue()) {
-            return;
-        }
         if (waterAt(cur.x, cur.y, cur.z) || !passable(cur.x, cur.y + 2, cur.z)) {
             return; // 水中无法疾跑起跳；起跳点需头顶留空
         }
@@ -495,35 +654,59 @@ public final class GoPathfinder {
     }
 
     /**
+     * 单格地形探测（带缓存）：一次 getBlockState + 碰撞求值得出 4 个结论位，
+     * passable/walkableFloor/water/climbable 共享同一份缓存——同一格子平均会被
+     * 不同邻居重复探测 6~10 次，缓存后碰撞求值只算一次。
+     */
+    private byte probe(int x, int y, int z) {
+        long key = BlockPos.asLong(x, y, z);
+        byte b = probeCache.get(key);
+        if (b >= 0) {
+            return b;
+        }
+        BlockState state = level.getBlockState(cursorA.set(x, y, z));
+        b = 0;
+        if (!state.getCollisionShape(level, cursorA).isEmpty()) {
+            b |= BIT_SOLID;
+        } else if (state.getFluidState().is(FluidTags.LAVA)) {
+            b |= BIT_LAVA;
+        }
+        if (state.getFluidState().is(FluidTags.WATER)) {
+            b |= BIT_WATER;
+        }
+        if (state.is(BlockTags.CLIMBABLE)) {
+            b |= BIT_CLIMB;
+        }
+        if (probeCache.size() >= PROBE_CACHE_MAX) {
+            probeCache.clear(); // 上限兜底：超大搜索的缓存收益递减，防内存膨胀
+        }
+        probeCache.put(key, b);
+        return b;
+    }
+
+    /**
      * 该格可通行：无碰撞且不是岩浆（水可通行，走水中动作有额外成本）。
      * 梯子/藤蔓等可攀爬方块按可通行处理——它们的碰撞体是贴墙薄片（原版未设
      * noCollission，getCollisionShape 返回薄片而非空），但对寻路而言攀爬格
      * 就是要走进/穿过的格子，按碰撞为空判定会把所有攀爬路线判死。
      */
     private boolean passable(int x, int y, int z) {
-        BlockState state = level.getBlockState(cursorA.set(x, y, z));
-        if (state.is(BlockTags.CLIMBABLE)) {
-            return true;
-        }
-        if (!state.getCollisionShape(level, cursorA).isEmpty()) {
-            return false;
-        }
-        return !state.getFluidState().is(FluidTags.LAVA);
+        byte b = probe(x, y, z);
+        return (b & BIT_CLIMB) != 0 || (b & (BIT_SOLID | BIT_LAVA)) == 0;
     }
 
     /** (x,y,z) 脚位的下方方块是否有碰撞（可站立） */
     private boolean walkableFloor(int x, int y, int z) {
-        BlockState below = level.getBlockState(cursorB.set(x, y - 1, z));
-        return !below.getCollisionShape(level, cursorB).isEmpty();
+        return (probe(x, y - 1, z) & BIT_SOLID) != 0;
     }
 
     private boolean waterAt(int x, int y, int z) {
-        return level.getBlockState(cursorB.set(x, y, z)).getFluidState().is(FluidTags.WATER);
+        return (probe(x, y, z) & BIT_WATER) != 0;
     }
 
     /** (x,y,z) 是否为可攀爬方块（梯子/藤蔓等） */
     private boolean climbableAt(int x, int y, int z) {
-        return level.getBlockState(cursorB.set(x, y, z)).is(BlockTags.CLIMBABLE);
+        return (probe(x, y, z) & BIT_CLIMB) != 0;
     }
 
     private Result buildPath(Node end, boolean reachedGoal) {
@@ -536,7 +719,8 @@ public final class GoPathfinder {
             out.add(new BlockPos(n.x, n.y, n.z));
         }
         Collections.reverse(out);
-        return new Result(out, reachedGoal, end.h / SPRINT_COST);
+        BlockPos goalCell = reachedGoal ? new BlockPos(end.x, end.y, end.z) : null;
+        return new Result(out, reachedGoal, end.h / SPRINT_COST, goalCell);
     }
 
     /** 模拟 MC 重力：下落 n 格所需 tick 数 */

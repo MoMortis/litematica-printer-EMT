@@ -309,7 +309,7 @@ public final class SchematicStateCache {
 
     /**
      * 收集与原理图相交的所有子区块最小角坐标（世界坐标，去重）。
-     * 供"扫描自动寻路"DFS 找中心（离玩家最近的未放置方块所在子区块）用：
+     * 供"扫描自动寻路"FIND 阶段选中心（离玩家最近的原理图子区块）用：
      * 直接由 subregion 盒展开子区块范围，无需逐格扫描。
      */
     public void collectIntersectingSections(java.util.function.Consumer<BlockPos> out) {
