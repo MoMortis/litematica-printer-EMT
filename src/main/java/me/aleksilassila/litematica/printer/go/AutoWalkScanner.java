@@ -54,7 +54,7 @@ public final class AutoWalkScanner {
     public static final AutoWalkScanner INSTANCE = new AutoWalkScanner();
 
     /** 临时调试开关：排查不派发问题（定位后关闭） */
-    private static final boolean DEBUG_WALK = true;
+    private static final boolean DEBUG_WALK = false;
 
     private static void debug(String message) {
         if (DEBUG_WALK) {
