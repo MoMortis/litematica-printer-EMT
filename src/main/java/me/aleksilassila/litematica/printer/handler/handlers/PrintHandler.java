@@ -12,6 +12,8 @@ import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
+import me.aleksilassila.litematica.printer.go.GhastRideState;
+import me.aleksilassila.litematica.printer.go.GhastShiftBlacklist;
 import me.aleksilassila.litematica.printer.guide.Guides;
 import me.aleksilassila.litematica.printer.guide.guides.ShulkerPlacementGuard;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
@@ -405,12 +407,24 @@ public class PrintHandler extends ClientPlayerTickHandler {
                 && !BlockUtils.isReplaceable(level.getBlockState(blockPos))) {
             return ExecuteOutcome.FAILED;
         }
+        // 骑乘乐魂期间：按潜行键＝下马。故「始终潜行」视为关闭，且需要 shift 的放置一律跳过
+        //（记入临时黑名单，直到玩家离开乐魂——下车/换乘即清空）。
+        boolean ridingGhast = GhastRideState.riddenGhast(player) != null;
+        // 必须无条件调用：contains 同时承担"离开乐魂时清空黑名单"的职责，
+        // 若用 ridingGhast 短路，未骑乘期间永不清理（只增不减，且下次骑乘旧条目仍生效）
+        if (GhastShiftBlacklist.contains(player, blockPos)) {
+            return ExecuteOutcome.DEFERRED; // 已拉黑：暂缓（不消耗放置额度）
+        }
         boolean useShift;
         if (action.getShift() == null) {
             useShift = (Implementation.isInteractive(level.getBlockState(blockPos.relative(side)).getBlock()) && !(action instanceof ClickAction))
-                    || Configs.Print.PRINT_FORCED_SNEAK.getBooleanValue();
+                    || (Configs.Print.PRINT_FORCED_SNEAK.getBooleanValue() && !ridingGhast);
         } else {
             useShift = action.getShift();
+        }
+        if (useShift && ridingGhast) {
+            GhastShiftBlacklist.add(player, blockPos);
+            return ExecuteOutcome.DEFERRED; // 骑乘时不能潜行：跳过，留到下车后再打
         }
         action.setActionSource(ActionManager.ActionSource.PRINT);
         action.queueAction(blockPos, side, useShift, player, reqItems);

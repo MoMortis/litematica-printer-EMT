@@ -98,7 +98,7 @@ public final class AutoWalkScanner {
     private Long2ObjectOpenHashMap<BlockPos> legGoalCells;
     /** 当前寻路腿的多目标 Goal（与 legGoalCells 同源；手动 /go 暂停恢复时重新派发用） */
     @Nullable
-    private GoPathfinder.GoalSet legGoalSet;
+    private GoPathfinder.Goal legGoalSet;
     /** 多目标搜索失败后的单目标回退截止 tick */
     private long multiFallbackTick;
 
@@ -186,6 +186,11 @@ public final class AutoWalkScanner {
         BlockPos base = cursorSection;
         if (level == null || base == null) {
             state = State.IDLE;
+            return;
+        }
+        // 乐魂寻路开启但当前不可飞行（未骑乘/非第一上鞍者/缺挽具/静默态）：不派发自动腿，
+        // 否则会出现"任务已激活却永远不动"的僵局（HUD 已有对应提示，骑上后自动恢复）
+        if (Configs.Go.GHAST_PATHFIND.getBooleanValue() && !GhastRideState.canFly(mc.player)) {
             return;
         }
         // 上一条自动寻路还在走：等它走完再派发新任务（不中途打断行走中的旧任务）
@@ -297,13 +302,25 @@ public final class AutoWalkScanner {
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
         if (Configs.Go.PATH_NEAREST_TARGET.getBooleanValue()
                 && candidates.size() >= 2 && now >= multiFallbackTick) {
-            GoPathfinder.GoalSet goalSet = GoPathfinder.goalSet(candidates,
-                    Configs.Go.PATH_TARGET_CANDIDATE_LIMIT.getIntegerValue(), player.blockPosition());
+            int limit = Configs.Go.PATH_TARGET_CANDIDATE_LIMIT.getIntegerValue();
+            GoPathfinder.Goal goalSet;
+            Long2ObjectOpenHashMap<BlockPos> cells;
+            if (Configs.Go.GHAST_PATHFIND.getBooleanValue() && GhastRideState.canFly(player)) {
+                // 乐魂飞行：悬停位集合（切比雪夫半径随并集箱尺寸动态推导）
+                GhastGoal.HoverGoalSet hover = GhastGoal.hoverGoalSet(candidates, limit,
+                        player.blockPosition(), GoManager.INSTANCE.ghastHoverRadius());
+                goalSet = hover;
+                cells = hover.cellToTarget();
+            } else {
+                GoPathfinder.GoalSet walkSet = GoPathfinder.goalSet(candidates, limit, player.blockPosition());
+                goalSet = walkSet;
+                cells = walkSet.cellToTarget();
+            }
             legGoalSet = goalSet;
-            legGoalCells = goalSet.cellToTarget();
+            legGoalCells = cells;
             target = null; // 多目标腿的目标到到达后才确定
-            debug("多目标派发 候选=" + candidates.size() + " 站立格=" + legGoalCells.size());
-            GoManager.INSTANCE.autoDispatchMulti(goalSet, legGoalCells);
+            debug("多目标派发 候选=" + candidates.size() + " 目标位=" + legGoalCells.size());
+            GoManager.INSTANCE.autoDispatchMulti(goalSet, cells);
         } else {
             BlockPos best = null;
             double bestDistSq = Double.MAX_VALUE;
@@ -384,6 +401,15 @@ public final class AutoWalkScanner {
     private void tickWaiting() {
         BlockPos t = target;
         if (t == null) {
+            enterScanning();
+            return;
+        }
+        // 骑乘期间被判"需要 shift"而拉黑：本机无法放置该方块，立即放弃换下一个，
+        // 避免在此无限等待（打印机只会一直暂缓）；黑名单在离开乐魂时清空
+        if (GhastShiftBlacklist.contains(mc.player, t)) {
+            unreachableCooldown.put(t.asLong(),
+                    ClientPlayerTickManager.getCurrentHandlerTime() + UNREACHABLE_COOLDOWN_TICKS);
+            target = null;
             enterScanning();
             return;
         }
@@ -597,12 +623,22 @@ public final class AutoWalkScanner {
     }
 
     /**
+     * 是否处于"乐魂飞行"模式。飞行靠悬停到达、**不需要落脚点**，
+     * 因此走路版的落脚点预检（{@link #filterStandSpot}）在飞行模式下必须跳过——
+     * 否则空中的待放方块会被整批误删，功能直接不可用。
+     */
+    private boolean ghastFlying(@Nullable LocalPlayer player) {
+        return Configs.Go.GHAST_PATHFIND.getBooleanValue() && GhastRideState.canFly(player);
+    }
+
+    /**
      * 派发前预检：剔除周围无合法落脚点的候选（只删必死，不误删活——判定语义见
      * {@link GoPathfinder#hasStandableNeighbor}）。本轮不派、不写冷却表：
      * 下轮派发（目标完成/回到扫描态）时会重新预检，地形变化后自然恢复。
+     * 乐魂飞行模式不适用（见 {@link #ghastFlying}）。
      */
     private void filterStandSpot(ClientLevel level, ArrayList<BlockPos> candidates) {
-        if (level == null || candidates.isEmpty()) {
+        if (level == null || candidates.isEmpty() || ghastFlying(mc.player)) {
             return;
         }
         int before = candidates.size();
@@ -670,6 +706,9 @@ public final class AutoWalkScanner {
         }
         if (unreachableCooldown.get(pos.asLong()) > now) {
             return false;
+        }
+        if (GhastShiftBlacklist.contains(mc.player, pos)) {
+            return false; // 骑乘时"需要 shift 的放置"已拉黑：不再派发（离开乐魂自动清空）
         }
         return !targetCompleted(pos);
     }

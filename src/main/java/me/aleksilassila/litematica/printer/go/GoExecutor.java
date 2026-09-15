@@ -135,11 +135,21 @@ public final class GoExecutor {
         if (!GoManager.INSTANCE.isActive()) {
             // 寻路已停止：跳跃临时转向还没恢复的话把视角还回去
             restorePreJumpYaw(player, false);
+            GhastFlyer.releasePitch(player); // 飞行接管过 pitch 就回正，否则停止后按 W 会继续下潜
             clearStaleInput(player);
             return;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player != player || player.isPassenger()) {
+        if (mc.player != player) {
+            return;
+        }
+        // 骑乘：乐魂寻路开启且骑乘"可操控"的乐魂时，走三维飞行驱动；
+        // 其余骑乘情形保持原行为（走路寻路不接管骑乘输入）
+        if (player.isPassenger()) {
+            if (Configs.Go.GHAST_PATHFIND.getBooleanValue() && GhastRideState.canFly(player)
+                    && !isContainerUiOpen(player)) {
+                GhastFlyer.drive(player);
+            }
             return;
         }
         // 仅容器类界面暂停（打印换料/补货/箱子界面，走远会被服务端强制关闭容器）；
@@ -575,7 +585,7 @@ public final class GoExecutor {
      * moveVector（strafe, forward）为模拟量，方向与相机无关。
      * shift 位由调用方透传现状，本方法不做任何潜行决策。
      */
-    private static void writeInput(LocalPlayer player, float strafe, float forward, boolean jump, boolean sprint, boolean shift) {
+    static void writeInput(LocalPlayer player, float strafe, float forward, boolean jump, boolean sprint, boolean shift) {
         player.input.keyPresses = new net.minecraft.world.entity.player.Input(
                 forward > 0.05F, forward < -0.05F, strafe > 0.05F, strafe < -0.05F, jump, shift, sprint);
         ((ClientInputAccessor) player.input).printer$setMoveVector(new Vec2(strafe, forward));

@@ -8,6 +8,7 @@ import me.aleksilassila.litematica.printer.enums.WorkingModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickHandler;
 import me.aleksilassila.litematica.printer.handler.GuiBlockInfo;
 import me.aleksilassila.litematica.printer.handler.handlers.GuiHandler;
+import me.aleksilassila.litematica.printer.go.GhastRideState;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Gui;
@@ -322,6 +323,30 @@ public abstract class MixinGui {
             }
             RenderUtils.drawString(String.join(", ", modeNames), centerX, centerY + 52, Color.WHITE, true, true);
         }
+
+        // 乐魂寻路：骑乘状态不满足时，在模式名下方给出绿色提示（避免静默失效）
+        if (Configs.Go.GHAST_PATHFIND.getBooleanValue()) {
+            String ghastHint = ghastHint();
+            if (ghastHint != null) {
+                RenderUtils.drawString(ghastHint, centerX, centerY + 64, new Color(85, 255, 85), true, true);
+            }
+        }
+    }
+
+    /**
+     * 乐魂寻路的骑乘状态提示文案；可操控时返回 null。
+     * 每种"不可操控"的原因各对应一条提示（未骑 / 非第一上鞍者 / 未装备挽具 / 被站立占用）。
+     */
+    @Unique
+    private String ghastHint() {
+        GhastRideState.Status status = GhastRideState.check(Minecraft.getInstance().player);
+        return switch (status) {
+            case NOT_RIDING -> "乐魂寻路：请骑乘快乐恶魂";
+            case NOT_CONTROLLER -> "乐魂寻路：你不是该乐魂的操控者";
+            case NO_HARNESS -> "乐魂寻路：请先给乐魂装备挽具";
+            case STILL_TIMEOUT -> "乐魂寻路：乐魂被站立占用，无法操控";
+            case OK -> null;
+        };
     }
 
     @Unique

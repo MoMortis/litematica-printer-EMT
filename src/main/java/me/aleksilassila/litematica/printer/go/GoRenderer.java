@@ -45,7 +45,12 @@ public final class GoRenderer {
 
         List<BlockPos> path = GoManager.INSTANCE.getPath();
         int index = GoManager.INSTANCE.getWaypointIndex();
-        Vec3 prev = player.position();
+        // 起点必须是「导航主体」位置：乐魂飞行时为恶魂，走路时为玩家。
+        // 若固定用玩家位置，飞行时起点会比路点基准高约 3.4 格，画出斜跨数格的线。
+        Vec3 prev = GoManager.INSTANCE.navPosition();
+        if (prev == null) {
+            return;
+        }
         for (int i = index; i < path.size(); i++) {
             Vec3 next = center(path.get(i));
             Gizmos.line(prev, next, PATH_COLOR);

@@ -670,6 +670,13 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 乐魂寻路：开启后不再走路移动，改为骑乘快乐恶魂做三维飞行移动
+        //（需骑乘"可操控"的乐魂：本人为第一乘客、已装备挽具、非静默态；
+        //  飞行空间须完全落在原理图预测的空气格内，详见设计方案）
+        public static final ConfigBoolean GHAST_PATHFIND = bool("ghastPathfind")
+                .defaultValue(false)
+                .build();
+
         // 按路径最短选目标：派发时对全部候选做一次多目标寻路，选路径成本最短的目标
         //（关闭 = 维持直线距离最近 + 单目标寻路的旧行为）
         public static final ConfigBoolean PATH_NEAREST_TARGET = bool("pathNearestTarget")
@@ -763,6 +770,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 PRINT_SCAN_AUTOWALK,          // 扫描自动寻路（总开关置顶）
+                GHAST_PATHFIND,               // 乐魂寻路
                 PATH_NEAREST_TARGET,
                 PATH_TARGET_CANDIDATE_LIMIT,
                 WALK_SCAN_WHITELIST,
