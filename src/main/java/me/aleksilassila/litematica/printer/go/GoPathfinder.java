@@ -1,9 +1,11 @@
 package me.aleksilassila.litematica.printer.go;
 
+import it.unimi.dsi.fastutil.longs.Long2BooleanOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.printer.SchematicStateCache;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.BlockTags;
@@ -664,9 +666,25 @@ public final class GoPathfinder {
         if (b >= 0) {
             return b;
         }
-        BlockState state = level.getBlockState(cursorA.set(x, y, z));
-        b = 0;
-        if (!state.getCollisionShape(level, cursorA).isEmpty()) {
+        b = probeBlock(level, cursorA, x, y, z);
+        if (probeCache.size() >= PROBE_CACHE_MAX) {
+            probeCache.clear(); // 上限兜底：超大搜索的缓存收益递减，防内存膨胀
+        }
+        probeCache.put(key, b);
+        return b;
+    }
+
+    /**
+     * 单格地形位求值（无缓存、线程安全、包内共用）：
+     * bit0=solid bit1=lava bit2=water bit3=climbable。
+     * 寻路的 {@link #probe}（实例缓存）与主线程的候选落脚点预检（
+     * {@link #hasStandableNeighbor}，独立缓存）都调用本方法，
+     * 位规则只有一处实现，杜绝两边手工复刻产生偏差。
+     */
+    static byte probeBlock(ClientLevel level, BlockPos.MutableBlockPos mpos, int x, int y, int z) {
+        BlockState state = level.getBlockState(mpos.set(x, y, z));
+        byte b = 0;
+        if (!state.getCollisionShape(level, mpos).isEmpty()) {
             b |= BIT_SOLID;
         } else if (state.getFluidState().is(FluidTags.LAVA)) {
             b |= BIT_LAVA;
@@ -677,11 +695,73 @@ public final class GoPathfinder {
         if (state.is(BlockTags.CLIMBABLE)) {
             b |= BIT_CLIMB;
         }
-        if (probeCache.size() >= PROBE_CACHE_MAX) {
-            probeCache.clear(); // 上限兜底：超大搜索的缓存收益递减，防内存膨胀
-        }
-        probeCache.put(key, b);
         return b;
+    }
+
+    /** 预检结果缓存上限（条）：超出整表清空（候选坐标 → 是否有合法落脚点） */
+    private static final int STAND_SPOT_CACHE_MAX = 4096;
+    /** 预检结果缓存：仅主线程（派发处）访问，与后台寻路的实例缓存互不共享 */
+    private static final Long2BooleanOpenHashMap STAND_SPOT_CACHE = new Long2BooleanOpenHashMap();
+    /** 缓存构建时的世界修订号：方块/原理图/维度变化（SchematicStateCache 修订号）即失效重算 */
+    private static long standSpotCacheRevision = Long.MIN_VALUE;
+
+    /**
+     * 候选方块周围是否存在至少一个 A* 实际可产生的紧邻落脚格
+     * （水平曼哈顿 1、Y±1，与 {@link #goalSet} 展开的站立格一致，不含候选格本身）。
+     * 这是派发前的「只删必死」剪枝：任一紧邻格满足即保留，绝不因单格站不了判死候选；
+     * 判定有效 ≠ 能到达（中间有沟/墙仍由寻路裁决），判定无效 = 任何起点都站不到，
+     * 因此不会误删可到达目标。结果按坐标缓存，世界修订号变化即失效重算。
+     */
+    static boolean hasStandableNeighbor(ClientLevel level, BlockPos target) {
+        long rev = SchematicStateCache.INSTANCE.getRevision();
+        if (rev != standSpotCacheRevision) {
+            standSpotCacheRevision = rev;
+            STAND_SPOT_CACHE.clear();
+        }
+        long key = target.asLong();
+        if (STAND_SPOT_CACHE.containsKey(key)) {
+            return STAND_SPOT_CACHE.get(key);
+        }
+        boolean ok = computeStandableNeighbor(level, target);
+        if (STAND_SPOT_CACHE.size() >= STAND_SPOT_CACHE_MAX) {
+            STAND_SPOT_CACHE.clear(); // 上限兜底：防内存膨胀
+        }
+        STAND_SPOT_CACHE.put(key, ok);
+        return ok;
+    }
+
+    private static boolean computeStandableNeighbor(ClientLevel level, BlockPos target) {
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        int tx = target.getX();
+        int ty = target.getY();
+        int tz = target.getZ();
+        for (int dy = -1; dy <= 1; dy++) {
+            for (int[] d : DIRS) {
+                int x = tx + d[0];
+                int y = ty + dy;
+                int z = tz + d[1];
+                if (!level.hasChunk(x >> 4, z >> 4)) {
+                    continue; // 未加载列：A* 的 loaded() 同样拒绝，不算合法落脚点
+                }
+                // 地面站立：脚下实心 + 本格可通行 + 头部可通行（与全部移动生成器同条件）
+                byte under = probeBlock(level, m, x, y - 1, z);
+                if ((under & BIT_SOLID) != 0) {
+                    byte feet = probeBlock(level, m, x, y, z);
+                    byte head = probeBlock(level, m, x, y + 1, z);
+                    if (((feet & BIT_CLIMB) != 0 || (feet & (BIT_SOLID | BIT_LAVA)) == 0)
+                            && ((head & BIT_CLIMB) != 0 || (head & (BIT_SOLID | BIT_LAVA)) == 0)) {
+                        return true;
+                    }
+                }
+                // 攀爬悬挂：本格是可攀爬方块（climb() 允许悬挂节点，不要求脚下实心）。
+                // 只认「本格可爬」、不收窄到邻层——宁可保守漏删（多派死候选由 A* 证伪），
+                // 也不误删本可攀爬到达的活目标
+                if ((probeBlock(level, m, x, y, z) & BIT_CLIMB) != 0) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /**

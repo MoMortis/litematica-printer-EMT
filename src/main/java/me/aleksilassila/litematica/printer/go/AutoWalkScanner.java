@@ -274,6 +274,7 @@ public final class AutoWalkScanner {
             }
             candidates.add(pos);
         }
+        filterStandSpot(mc.level, candidates); // 落脚点预检：剔除周围无合法落脚点的候选
         if (candidates.isEmpty()) {
             debug("子区块无有效候选（收集" + sectionCandidates.size() + "个）→ sectionDone");
             sectionCandidates.clear();
@@ -587,11 +588,28 @@ public final class AutoWalkScanner {
     private boolean tryDispatchVerifierTarget(ClientLevel level) {
         ArrayList<BlockPos> candidates = new ArrayList<>();
         collectVerifierCandidates(level, candidates);
+        filterStandSpot(level, candidates);
         if (candidates.isEmpty()) {
             return false;
         }
         dispatchCandidates(candidates);
         return true;
+    }
+
+    /**
+     * 派发前预检：剔除周围无合法落脚点的候选（只删必死，不误删活——判定语义见
+     * {@link GoPathfinder#hasStandableNeighbor}）。本轮不派、不写冷却表：
+     * 下轮派发（目标完成/回到扫描态）时会重新预检，地形变化后自然恢复。
+     */
+    private void filterStandSpot(ClientLevel level, ArrayList<BlockPos> candidates) {
+        if (level == null || candidates.isEmpty()) {
+            return;
+        }
+        int before = candidates.size();
+        candidates.removeIf(pos -> !GoPathfinder.hasStandableNeighbor(level, pos));
+        if (candidates.size() < before) {
+            debug("落脚点预检剔除 " + (before - candidates.size()) + "/" + before + " 个候选");
+        }
     }
 
     /**
