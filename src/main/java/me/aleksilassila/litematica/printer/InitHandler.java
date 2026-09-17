@@ -13,23 +13,9 @@ import me.aleksilassila.litematica.printer.utils.bedrock.BedrockUtils;
 import static me.aleksilassila.litematica.printer.config.Configs.*;
 
 public class InitHandler implements IInitializationHandler {
-    private static void initModConfig() {
-        // 箱子追踪 (模组没加载的情况下，进行关闭)
-        if (!ModUtils.isChestTrackerLoaded()) {
-            Core.AUTO_INVENTORY.setBooleanValue(false);  // 自动设置远程交互
-            Core.CLOUD_INVENTORY.setBooleanValue(false); // 远程交互容器
-        }
-        //#if MC >= 12001
-        if (ModUtils.isChestTrackerLoaded()) {
-            me.aleksilassila.litematica.printer.printer.zxy.chesttracker.MemoryUtils.setup();
-        }
-        //#endif
-    }
-
     @Override
     public void registerModHandlers() {
         Configs.init();
-        initModConfig();
         initConfigCallback();
         HighlightBlockRenderer.init();  // 高亮显示方块渲染器
         me.aleksilassila.litematica.printer.printer.verifier.PendingChunkRenderer.init(); // 验证器待验证区块标记

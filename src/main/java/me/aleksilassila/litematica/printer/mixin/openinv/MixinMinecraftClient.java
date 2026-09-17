@@ -103,10 +103,9 @@ public abstract class MixinMinecraftClient {
         }
         boolean inShulkers = me.aleksilassila.litematica.printer.utils.InventoryUtils.countAvailableIncludingShulkers(player, item) > 0;
         if (!player.getAbilities().instabuild) {
-            // 快捷潜影盒优先：主栏没有但潜影盒里有 → 从背包潜影盒取
+            // 快捷潜影盒：主栏没有但潜影盒里有 → 从背包潜影盒取
             if (!inMain && inShulkers
-                    && (Configs.Core.CLOUD_INVENTORY.getBooleanValue()
-                    || Configs.Core.QUICK_SHULKER.getBooleanValue())) {
+                    && Configs.Core.QUICK_SHULKER.getBooleanValue()) {
                 InventoryUtils.addQuickShulkerDemand(item);
                 InventoryUtils.switchItem();
                 return;
@@ -128,7 +127,7 @@ public abstract class MixinMinecraftClient {
     //#else
     //$$ private int doItemPick(Inventory instance, ItemStack stack, Operation<Integer> original) {
     //$$     int slotWithStack = original.call(instance, stack);
-    //$$     if(!player.getAbilities().instabuild && (Configs.Core.CLOUD_INVENTORY.getBooleanValue() || Configs.Core.QUICK_SHULKER.getBooleanValue()) && slotWithStack == -1){
+    //$$ if(!player.getAbilities().instabuild && Configs.Core.QUICK_SHULKER.getBooleanValue() && slotWithStack == -1){
     //$$         Item item = stack.getItem();
     //$$         InventoryUtils.addQuickShulkerDemand(item);
     //$$         InventoryUtils.switchItem();

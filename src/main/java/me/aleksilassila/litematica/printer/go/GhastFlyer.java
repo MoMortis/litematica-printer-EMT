@@ -55,6 +55,9 @@ public final class GhastFlyer {
     private static final int ESCAPE_TICKS = 24;
     /** 脱困方向探测位移（格）：箱子挪到该处仍无碰撞、也不压原理图方块，才认为"这个方向走得通" */
     private static final double ESCAPE_PROBE = 3.0;
+    /** 脱困方向探测的沿途取样步长（格）：只查终点那一个箱位会漏掉"途中有棱角"——
+     *  箱子挪到 3 格外放得下，路上却可能蹭上方块（恶魂箱体 4×4，拐角处最容易） */
+    private static final double ESCAPE_PROBE_STEP = 1.0;
     /**
      * 脱困的飞行目标距离（格）：比"松手误差"（水平 {@link #HORIZ_ARRIVE} 格、垂直 1 格）大一点就够，
      * 真正收工看的是"已脱离重叠 + 至少挪开 {@link #ESCAPE_MIN_MOVE} 格"（见 {@link #drive}），
@@ -220,9 +223,12 @@ public final class GhastFlyer {
      * 表现为原地不动；此时原地重算只会得到同一条贴墙路线（起点没变），偏航纠正也因转向
      * 后仍被挡而卡死。朝"另一个能容下箱子的方向"飞一段，就能把乐魂挪出阻塞点。
      *
-     * <p>方向按优先级探测（箱子挪到 {@link #ESCAPE_PROBE} 格外仍无碰撞、且不压原理图方块才选中）：
-     * 正上 → 斜上侧向 → 正侧向 → 斜上后方 → 正后 → 正下。优先向上是因为贴墙时上方
-     * 通常开阔，且上升键（空格）与视线解耦、最可控。选中后朝 {@link #ESCAPE_DRIVE} 格外飞：
+     * <p>方向表覆盖<b>全向</b>：以「指向路点的前方 a」与「左向 s」为基，一组 18 个方向——
+     * 正上/正下、水平 8 向（前、前左、左、后左、后、后右、右、前右）以及它们的斜上/斜下变体。
+     * 优先级：正上 → 斜上侧向/前方/后方 → 正侧向 → 正后 → 正前 → 斜下侧/后/前 → 正下。
+     * 先挑正上是因为贴墙时上方通常开阔，且上升键（空格）与视线解耦、最可控；正前是既定被堵
+     * 的方向，探测代价仅一次判定，故放在水平向的最后；下降排最后是因为下降与水平移动互斥
+     * （见 {@link #drive}），飞起来最别扭。选中后朝 {@link #ESCAPE_DRIVE} 格外飞：
      * 驱动距离必须大于探测距离，否则控制律在 1.6 格内就松手，实际只挪出去一点点（仍压着方块）。
      *
      * @return 是否成功进入脱困状态（无可用方向时返回 false，交由调用方重算路径）
@@ -253,34 +259,36 @@ public final class GhastFlyer {
         }
         double sx = -az; // 侧向（左）
         double sz = ax;
-        double[][] candidates = {
-                {0.0, 1.0, 0.0},          // 正上
-                {sx, 0.7, sz},            // 斜上侧向
-                {-sx, 0.7, -sz},
-                {sx, 0.0, sz},            // 正侧向
-                {-sx, 0.0, -sz},
-                {-ax, 0.7, -az},          // 斜上后方
-                {-ax, 0.0, -az},          // 正后（原路退回）
-                {0.0, -1.0, 0.0}          // 正下（最后手段）
+        // 表项＝{前方分量, 垂直分量, 左向分量}（前/左两个基见上，垂直分量 1/0/−1＝升/平/降）
+        double[][] table = {
+                {0.0, 1.0, 0.0},        // 正上
+                {0.0, 1.0, 1.0},        // 斜上左
+                {0.0, 1.0, -1.0},       // 斜上右
+                {1.0, 1.0, 1.0},        // 斜上左前
+                {1.0, 1.0, -1.0},       // 斜上右前
+                {-1.0, 1.0, 1.0},       // 斜上左后
+                {-1.0, 1.0, -1.0},      // 斜上右后
+                {0.0, 0.0, 1.0},        // 正左
+                {0.0, 0.0, -1.0},       // 正右
+                {-1.0, 0.0, 0.0},       // 正后（原路退回）
+                {1.0, 0.0, 0.0},        // 正前（被堵方向，通常一探即否）
+                {0.0, -1.0, 1.0},       // 斜下左
+                {0.0, -1.0, -1.0},      // 斜下右
+                {-1.0, -1.0, 1.0},      // 斜下左后
+                {-1.0, -1.0, -1.0},     // 斜下右后
+                {1.0, -1.0, 1.0},       // 斜下左前
+                {1.0, -1.0, -1.0},      // 斜下右前
+                {0.0, -1.0, 0.0}        // 正下（最后手段）
         };
-        for (double[] c : candidates) {
-            double len = Math.sqrt(c[0] * c[0] + c[1] * c[1] + c[2] * c[2]);
-            double dirX = c[0] / len;
-            double dirY = c[1] / len;
-            double dirZ = c[2] / len;
-            double probeX = x + dirX * ESCAPE_PROBE;
-            double probeY = y + dirY * ESCAPE_PROBE;
-            double probeZ = z + dirZ * ESCAPE_PROBE;
-            if (!BlockStateUtils.isColumnLoaded(level, Mth.floor(probeX) >> 4, Mth.floor(probeZ) >> 4)) {
-                continue; // 未加载区块：飞进去拿不到地形，放弃该方向
-            }
-            AABB probe = spec.at(probeX, probeY, probeZ);
-            if (!level.noCollision(probe)) {
-                continue;
-            }
-            // 原理图一侧：脱困方向同样不能钻进"现实里还是空气、原理图却排了方块"的格子
-            //（那边没有真实碰撞，只看 noCollision 会一路蹭进建筑内部）
-            if (GhastPathfinder.boxHitsSchematic(probe)) {
+        for (double[] c : table) {
+            double dirX = ax * c[0] + sx * c[2];
+            double dirZ = az * c[0] + sz * c[2];
+            double dirY = c[1];
+            double len = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
+            dirX /= len;
+            dirY /= len;
+            dirZ /= len;
+            if (!escapeRouteClear(level, spec, x, y, z, dirX, dirY, dirZ)) {
                 continue;
             }
             escapeX = x;
@@ -293,6 +301,59 @@ public final class GhastFlyer {
             return true;
         }
         return false;
+    }
+
+    /**
+     * 脱困方向是否走得通：按<b>控制律实际会飞的轨迹</b>逐档取样，而不是只看终点那一个箱位。
+     *
+     * <p>只看终点会漏掉"途中有棱角"：箱子挪到 {@link #ESCAPE_PROBE} 格外虽然放得下，路上却可能
+     * 蹭到方块。轨迹形状取决于方向类型（见 {@link #drive}）：
+     * <ul>
+     * <li>上升/水平：水平推进与空格上升<b>同时生效</b>，走的是一条直线；</li>
+     * <li>下降：{@code pitch} 恒 0 时不会降低高度，只有低头到底（90°）才是纯垂直下降，
+     *     故实际是"先平飞到目标水平投影、再垂直落"的折线。</li>
+     * </ul>
+     */
+    private static boolean escapeRouteClear(ClientLevel level, GhastPathfinder.BoxSpec spec,
+                                           double x, double y, double z,
+                                           double dirX, double dirY, double dirZ) {
+        double hd = Math.sqrt(dirX * dirX + dirZ * dirZ);
+        if (dirY < 0.0 && hd > 1.0E-6) {
+            // 下降折线：水平段（保持当前高度）→ 垂直段（在目标水平投影处下落）
+            if (!escapeSegmentClear(level, spec, x, y, z, dirX / hd, 0.0, dirZ / hd, ESCAPE_PROBE * hd)) {
+                return false;
+            }
+            return escapeSegmentClear(level, spec, x + dirX * ESCAPE_PROBE, y, z + dirZ * ESCAPE_PROBE,
+                    0.0, -1.0, 0.0, ESCAPE_PROBE * -dirY);
+        }
+        return escapeSegmentClear(level, spec, x, y, z, dirX, dirY, dirZ, ESCAPE_PROBE);
+    }
+
+    /**
+     * 沿单位方向逐档取样（步长 {@link #ESCAPE_PROBE_STEP}）：每一档都要满足
+     * "区块已加载 + 箱体不碰撞 + 不压原理图方块"，任一档不过就否掉这个方向。
+     */
+    private static boolean escapeSegmentClear(ClientLevel level, GhastPathfinder.BoxSpec spec,
+                                              double x, double y, double z,
+                                              double ux, double uy, double uz, double length) {
+        for (double d = ESCAPE_PROBE_STEP; d <= length + 1.0E-6; d += ESCAPE_PROBE_STEP) {
+            double px = x + ux * d;
+            double py = y + uy * d;
+            double pz = z + uz * d;
+            if (!BlockStateUtils.isColumnLoaded(level, Mth.floor(px) >> 4, Mth.floor(pz) >> 4)) {
+                return false; // 未加载区块：飞进去拿不到地形，放弃该方向
+            }
+            AABB probe = spec.at(px, py, pz);
+            if (!level.noCollision(probe)) {
+                return false;
+            }
+            // 原理图一侧：脱困方向同样不能钻进"现实里还是空气、原理图却排了方块"的格子
+            //（那边没有真实碰撞，只看 noCollision 会一路蹭进建筑内部）
+            if (GhastPathfinder.boxHitsSchematic(probe)) {
+                return false;
+            }
+        }
+        return true;
     }
 
     /**

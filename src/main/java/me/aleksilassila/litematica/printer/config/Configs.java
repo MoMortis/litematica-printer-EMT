@@ -41,7 +41,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
     private static final KeybindSettings GUI_NO_ORDER = KeybindSettings.create(KeybindSettings.Context.GUI, KeyAction.PRESS, false, false, false, true);
 
     // 配置页面是否可视(函数式, 动态获取, 全局统一使用)
-    private static final BooleanSupplier isLoadChestTrackerLoaded = ModUtils::isChestTrackerLoaded;
     private static final BooleanSupplier isLoadCloudStoreLoaded = ModUtils::isCloudStoreLoaded;
     private static final BooleanSupplier isSingle = () -> Core.WORK_MODE.getOptionListValue().equals(WorkingModeType.SINGLE);
     private static final BooleanSupplier isMulti = () -> Core.WORK_MODE.getOptionListValue().equals(WorkingModeType.MULTI);
@@ -240,30 +239,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 20)
                 .build();
 
-        // 远程交互 - 开关
-        public static final ConfigBoolean CLOUD_INVENTORY = bool("cloudInventory")
-                .defaultValue(false)
-                .setVisible(isLoadChestTrackerLoaded) // 仅箱子追踪 Mod 加载时显示
-                .build();
-
-        // 远程交互 - 自动设置远程交互
-        public static final ConfigBoolean AUTO_INVENTORY = bool("autoInventory")
-                .defaultValue(false)
-                .setVisible(isLoadChestTrackerLoaded) // 仅箱子追踪 Mod 加载时显示
-                .build();
-
-        // 远程交互 - 库存白名单
-        public static final ConfigStringList INVENTORY_LIST = stringList("inventoryList")
-                .defaultValue(Blocks.CHEST)
-                .setVisible(isLoadChestTrackerLoaded) // 仅箱子追踪 Mod 加载时显示
-                .build();
-
-        // 容器同步与打印机添加库存高亮颜色
+        // 容器同步 - 高亮颜色
         public static final ConfigColor SYNC_INVENTORY_COLOR = color("syncInventoryColor")
                 .defaultValue("#4CFF4CE6")
                 .build();
 
-        // 容器同步/库存高亮渲染距离（0 为不限制）
+        // 容器同步 - 高亮渲染距离（0 为不限制）
         public static final ConfigInteger SYNC_HIGHLIGHT_RENDER_DISTANCE = integer("syncHighlightRenderDistance")
                 .defaultValue(64)
                 .range(0, 256)
@@ -300,9 +281,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 QUICK_SHULKER,
                 QUICK_SHULKER_MAX_STACKS,
                 QUICK_SHULKER_COOLDOWN,
-                CLOUD_INVENTORY,
-                AUTO_INVENTORY,
-                INVENTORY_LIST,
                 SYNC_INVENTORY_COLOR,
                 SYNC_HIGHLIGHT_RENDER_DISTANCE
         );
@@ -536,12 +514,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
             .defaultValue(true)
             .build();
 
-        // 储存管理 - 有序存放
-        public static final ConfigBoolean STORE_ORDERLY = bool("storeOrderly")
-                .defaultValue(false)
-                .build();
-
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                // 发包与音效
+                PRINT_USE_PACKET,
+                PRINT_SOUND,
+
                 PRINT_SELECTION_TYPE,
                 EASY_PLACE_PROTOCOL,
                 PLACE_IN_AIR,
@@ -574,16 +551,12 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 REPAIR_RAIL_SHAPE,
                 PRINT_RESERVE_ITEMS,
                 PRINT_RESERVE_ITEM_COUNT,
-                // 原「放置方块」目录
-                PRINT_USE_PACKET,
-                PRINT_SOUND,
                 PLACE_INTERVAL,
                 PLACE_BLOCKS_PER_TICK,
                 PLACE_SAME_ITEM_FIRST,
                 ITEM_SWITCH_INTERVAL,
                 PLACE_COOLDOWN,
-                FALLING_CHECK,
-                STORE_ORDERLY
+                FALLING_CHECK
         );
     }
 
@@ -647,18 +620,23 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(isLoadCloudStoreLoaded) // 仅云仓库 Mod 加载时显示
                 .build();
 
+        // 特殊配置项列表（按功能分组排序：原版限制放宽 → 原理图渲染 → 云仓库补货）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                // 原版/他模组限制放宽
                 UNLOCK_BEACON_EFFECTS,
                 TWEAKEROO_ANGEL_BLOCK_MAY_BUILD,
+
+                // 原理图渲染过滤
                 RENDER_ONLY_BLOCKS,
                 RENDER_ONLY_BLOCK_LIST,
-                // 云仓库
+
+                // 云仓库补货（需云仓库 Mod）
                 PRINT_CLOUD_STORE_REFILL,
                 PRINT_CLOUD_STORE_MANUAL_REFILL,
+                PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE,
                 PRINT_CLOUD_STORE_REFILL_COOLDOWN,
                 PRINT_CLOUD_STORE_REFILL_AMOUNT,
-                REFILL_SCROLL_REVERSE,
-                PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE
+                REFILL_SCROLL_REVERSE
         );
     }
 
@@ -739,6 +717,114 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 32)
                 .build();
 
+        // ===== 乐魂寻路（飞行）代价 =====
+        // 逐条对应「移动方式 → 路程代价」，单位＝几何格；寻路开始时快照一次。
+        // 与下方的「行走寻路代价」完全独立，互不影响。
+
+        // 乐魂寻路 - 正交代价：上下／前后／左右移动 1 格（默认 1，即一格）
+        public static final ConfigDouble GO_GHAST_COST_ORTHO = doubleValue("goGhastCostOrtho")
+                .defaultValue(1.0D)
+                .range(0.1D, 10.0D)
+                .build();
+
+        // 乐魂寻路 - 面对角代价：同时在两个轴上各移动 1 格（默认 √2＝1.41421356）
+        public static final ConfigDouble GO_GHAST_COST_DIAG2 = doubleValue("goGhastCostDiag2")
+                .defaultValue(1.41421356D)
+                .range(0.1D, 10.0D)
+                .build();
+
+        // 乐魂寻路 - 体对角代价：三个轴同时各移动 1 格（默认 √3＝1.7320508）
+        public static final ConfigDouble GO_GHAST_COST_DIAG3 = doubleValue("goGhastCostDiag3")
+                .defaultValue(1.7320508D)
+                .range(0.1D, 10.0D)
+                .build();
+
+        // 乐魂寻路 - 上升倍率：凡含上升的步，在上述三档代价上乘该倍率（整数，默认 2：空格上升
+        // 推力只有水平的一半；调高更愿意平飞，1 ＝ 上升与平飞同价）。
+        // 下限取 1 是为了让启发值（几何路程下界，不含倍率）始终可采纳，A* 的最优性才成立。
+        public static final ConfigInteger GO_GHAST_ASCEND_MULT = integer("goGhastAscendMult")
+                .defaultValue(2)
+                .range(1, 32)
+                .build();
+
+        // 乐魂寻路 - 下降倍率：凡含下降的步，在上述三档代价上乘该倍率（整数，默认 2，与上升同价）。
+        // 下降要先飞到位再低头（见 GhastFlyer.drive），并不比上升划算，故默认不便宜；
+        // 调高更愿意绕开下降段，1 ＝ 下降与平飞同价
+        public static final ConfigInteger GO_GHAST_DESCEND_MULT = integer("goGhastDescendMult")
+                .defaultValue(2)
+                .range(1, 32)
+                .build();
+
+        // 乐魂寻路 - 贴墙惩罚：紧贴方块（三维切比雪夫 1 格）的格单步加价，隔开一整格以上不加价
+        //（默认 6，0 = 不惩罚）
+        public static final ConfigDouble GO_GHAST_WALL_PENALTY = doubleValue("goGhastWallPenalty")
+                .defaultValue(6.0D)
+                .range(0.0D, 64.0D)
+                .build();
+
+        // 乐魂寻路 - 末端升降权重：每格垂直移动再按"该步离目标的水平距离（封顶 16 格）"加价，
+        // 使路线呈"长距离平飞 + 末端集中升降"（默认 0.2，0 = 关闭该机制，高度可在任意位置改变）
+        public static final ConfigDouble GO_GHAST_VERT_LATE_WEIGHT = doubleValue("goGhastVertLateWeight")
+                .defaultValue(0.2D)
+                .range(0.0D, 2.0D)
+                .build();
+
+        // ===== 行走寻路代价 =====
+        // 逐条对应「移动方式 → 代价」，单位＝tick（按原版实测速度折算）；寻路开始时快照一次。
+        // 与上方的「乐魂寻路代价」完全独立，互不影响。
+
+        // 行走寻路 - 步行代价：平移 1 格（默认 20/4.317 ≈ 4.633）。
+        // 落地（走下悬崖）＝该值＋按 MC 重力模拟出的下落 tick；同层爬出攀爬列＝该值；
+        // 攀爬列下移 1 格＝该值＋下落 1 格的 tick
+        public static final ConfigDouble GO_WALK_COST = doubleValue("goWalkCost")
+                .defaultValue(4.633D)
+                .range(0.1D, 60.0D)
+                .build();
+
+        // 行走寻路 - 面对角代价：同层斜走 1 格（默认 4.633×√2 ≈ 6.552）
+        public static final ConfigDouble GO_WALK_DIAGONAL_COST = doubleValue("goWalkDiagonalCost")
+                .defaultValue(6.552D)
+                .range(0.1D, 60.0D)
+                .build();
+
+        // 行走寻路 - 跳上一格代价（默认 4.633＋5 ＝ 9.633）；跳入攀爬列亦按此价
+        public static final ConfigDouble GO_JUMP_UP_COST = doubleValue("goJumpUpCost")
+                .defaultValue(9.633D)
+                .range(0.1D, 60.0D)
+                .build();
+
+        // 行走寻路 - 涉水代价：涉水 1 格（默认 20/2.2 ≈ 9.091）；涉水对角＝该值×√2
+        public static final ConfigDouble GO_WATER_COST = doubleValue("goWaterCost")
+                .defaultValue(9.091D)
+                .range(0.1D, 60.0D)
+                .build();
+
+        // 行走寻路 - 攀爬代价：梯子／藤蔓沿列 1 格（默认 20/2.35 ≈ 8.511）
+        public static final ConfigDouble GO_LADDER_COST = doubleValue("goLadderCost")
+                .defaultValue(8.511D)
+                .range(0.1D, 60.0D)
+                .build();
+
+        // 行走寻路 - 翻出梯顶代价：从梯顶翻出（跳＋侧移，默认 8.511＋4 ＝ 12.511）
+        public static final ConfigDouble GO_LADDER_EXIT_COST = doubleValue("goLadderExitCost")
+                .defaultValue(12.511D)
+                .range(0.1D, 60.0D)
+                .build();
+
+        // 行走寻路 - 跑酷跳代价：疾跑跳过缺口（腾空约 12 tick，可覆盖 2~4 格；默认 12）。
+        // 调高会让寻路更不愿意跳缺口
+        public static final ConfigDouble GO_PARKOUR_COST = doubleValue("goParkourCost")
+                .defaultValue(12.0D)
+                .range(0.0D, 60.0D)
+                .build();
+
+        // 行走寻路 - 疾跑代价：仅作启发值下界与路径时长换算，不参与任何移动方式的边成本
+        //（默认 20/5.612 ≈ 3.564）。开启「强制疾跑」时启发值按该值估算
+        public static final ConfigDouble GO_SPRINT_COST = doubleValue("goSprintCost")
+                .defaultValue(3.564D)
+                .range(0.1D, 60.0D)
+                .build();
+
         // 自动寻路 - 最大速度：寻路移动的速度上限（格/秒），超过疾跑全速的值等效不限速
         public static final ConfigDouble GO_MAX_SPEED = doubleValue("goMaxSpeed")
                 .defaultValue(5.7D)
@@ -776,20 +862,52 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(1, 16)
                 .build();
 
+        // 寻路配置项列表（按功能分组排序：总开关与移动方式 → 目标选择 → 扫描白名单 → 子区块扫描顺序 →
+        // 通用参数 → 乐魂寻路代价 → 行走寻路代价 → 行走控制）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                // 总开关与移动方式
                 PRINT_SCAN_AUTOWALK,          // 扫描自动寻路（总开关置顶）
-                GHAST_PATHFIND,               // 乐魂寻路
+                GHAST_PATHFIND,               // 乐魂寻路（改为三维飞行）
+
+                // 目标选择
                 PATH_NEAREST_TARGET,
                 PATH_TARGET_CANDIDATE_LIMIT,
+
+                // 扫描白名单
                 WALK_SCAN_WHITELIST,
                 WALK_SCAN_WHITELIST_LIST,
+
+                // 子区块扫描顺序
                 PRINT_SCAN_SECTION_ORDER,
                 PRINT_SCAN_X_REVERSE,
                 PRINT_SCAN_Y_REVERSE,
                 PRINT_SCAN_Z_REVERSE,
+
+                // 通用寻路参数
                 GO_TIME_LIMIT,
-                GO_MAX_FALL,
                 GO_COST_LIMIT_FACTOR,
+                GO_MAX_FALL,
+
+                // 乐魂寻路（飞行）代价
+                GO_GHAST_COST_ORTHO,
+                GO_GHAST_COST_DIAG2,
+                GO_GHAST_COST_DIAG3,
+                GO_GHAST_ASCEND_MULT,
+                GO_GHAST_DESCEND_MULT,
+                GO_GHAST_WALL_PENALTY,
+                GO_GHAST_VERT_LATE_WEIGHT,
+
+                // 行走寻路代价
+                GO_WALK_COST,
+                GO_WALK_DIAGONAL_COST,
+                GO_JUMP_UP_COST,
+                GO_WATER_COST,
+                GO_LADDER_COST,
+                GO_LADDER_EXIT_COST,
+                GO_PARKOUR_COST,
+                GO_SPRINT_COST,
+
+                // 行走控制与判停
                 GO_MAX_SPEED,
                 GO_FORCE_SPRINT,
                 GO_TAKEOVER_VIEW,
@@ -923,14 +1041,16 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .build();
 
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                // 发包与音效
+                BREAK_USE_PACKET,
+                BREAK_SOUND,
+
                 MINE_SELECTION_TYPE,          // 挖掘 - 选区类型
                 EXCAVATE_LIMITER,             // 挖掘 - 挖掘模式限制器
                 EXCAVATE_LIMIT,               // 挖掘 - 挖掘模式限制
                 EXCAVATE_WHITELIST,           // 挖掘 - 挖掘白名单
                 EXCAVATE_BLACKLIST,            // 挖掘 - 挖掘黑名单
                 // 原「破坏方块」目录
-                BREAK_USE_PACKET,
-                BREAK_SOUND,
                 BREAK_CHECK_HARDNESS,
                 BREAK_INSTANT_MINE,
                 BREAK_INSTANT_MINE_LIST,
@@ -974,6 +1094,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(FillModeFacingType.NONE)
                 .build();
 
+        // 填充配置项列表（按功能分组排序：选区 → 填充模式 → 方块名单 → 朝向）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 FILL_SELECTION_TYPE,          // 填充 - 选区类型
                 FILL_BLOCK_MODE,              // 填充 - 填充方块模式
@@ -1004,10 +1125,11 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(Blocks.WATER, Blocks.LAVA)
                 .build();
 
+        // 排流体配置项列表（按功能分组排序：选区 → 填充行为 → 方块名单 → 液体名单）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 FLUID_SELECTION_TYPE,         // 排流体 - 选区类型
                 FILL_FLOWING_FLUID,           // 排流体 - 填充流动液体
-                FLUID_REPLACE_BLOCK_LIST,             // 排流体 - 方块名单
+                FLUID_REPLACE_BLOCK_LIST,     // 排流体 - 方块名单
                 FLUID_LIST                    // 排流体 - 液体名单
         );
     }
@@ -1091,64 +1213,31 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // ========== 远程交互热键 ==========
-
-        // 设置打印机库存热键
-        public static final ConfigHotkey PRINTER_INVENTORY = hotkey("printerInventory")
-                .setVisible(isLoadChestTrackerLoaded) // 仅箱子追踪 Mod 加载时显示
-                .build();
-
-        // 清空打印机库存热键
-        public static final ConfigHotkey REMOVE_PRINT_INVENTORY = hotkey("removePrintInventory")
-                .setVisible(isLoadChestTrackerLoaded) // 仅箱子追踪 Mod 加载时显示
-                .build();
-
-        // 上一个箱子
-        public static final ConfigHotkey LAST = hotkey("last")
-                .keybindSettings(GUI_NO_ORDER)
-                .setVisible(isLoadChestTrackerLoaded) // 仅箱子追踪 Mod 加载时显示
-                .build();
-
-        // 下一个箱子
-        public static final ConfigHotkey NEXT = hotkey("next")
-                .keybindSettings(GUI_NO_ORDER)
-                .setVisible(isLoadChestTrackerLoaded) // 仅箱子追踪 Mod 加载时显示
-                .build();
-
-        // 删除当前容器
-        public static final ConfigHotkey DELETE = hotkey("delete")
-                .keybindSettings(GUI_NO_ORDER)
-                .setVisible(isLoadChestTrackerLoaded) // 仅箱子追踪 Mod 加载时显示
-                .build();
-
+        // 快捷键列表（按功能分组排序：基础操作 → 多模开关 → 打印相关 → 容器同步 → 云仓库）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                // 基础操作
                 OPEN_SCREEN,                  // 打开设置菜单
                 WORK_SWITCH_HOTKEY,           // 工作开关快捷键
                 CLOSE_ALL_MODE,               // 关闭全部模式
                 SWITCH_PRINTER_MODE,          // 切换模式
 
-                // 多模
+                // 多模式各功能开关
                 PRINT_HOTKEY,                 // 打印快捷键
                 MINE_HOTKEY,                  // 挖掘快捷键
                 FILL_HOTKEY,                  // 填充快捷键
                 FLUID_HOTKEY,                 // 排流体快捷键
                 BEDROCK,                      // 破基岩
 
-                // 远程交互
+                // 打印相关
+                PRINT_ICE_FOR_WATER_HOTKEY,   // 破冰放水快捷键
+                SCAN_AUTOWALK_HOTKEY,         // 扫描自动寻路快捷键
+
+                // 容器同步
                 SYNC_INVENTORY,               // 同步容器热键
                 SYNC_INVENTORY_CHECK,         // 同步容器开关热键
 
-                // 云仓库
-                REFILL_AMOUNT_ADJUST,         // 取货数量调整（按住+滚轮）
-
-                // 打印
-                PRINT_ICE_FOR_WATER_HOTKEY,   // 破冰放水快捷键
-                SCAN_AUTOWALK_HOTKEY,         // 扫描自动寻路快捷键
-                PRINTER_INVENTORY,            // 设置打印机库存热键
-                REMOVE_PRINT_INVENTORY,       // 清空打印机库存热键
-                LAST,                         // 上一个箱子
-                NEXT,                         // 下一个箱子
-                DELETE                        // 删除当前容器
+                // 云仓库（需云仓库 Mod）
+                REFILL_AMOUNT_ADJUST          // 取货数量调整（按住+滚轮）
         );
     }
 

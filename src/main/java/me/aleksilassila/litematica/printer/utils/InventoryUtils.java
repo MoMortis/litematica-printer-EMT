@@ -49,9 +49,6 @@ public class InventoryUtils {
     private static final int OFFHAND_SLOT_INDEX = 40;
     private static final long MESSAGE_COOLDOWN_MS = 5000L;
     private static final Map<String, Long> LAST_MESSAGE_SEND_TIME = new ConcurrentHashMap<>();
-    @Getter
-    @Setter
-    private static ItemStack orderlyStoreItem; //有序存放临时存储
 
     public static int getSelectedSlot(Inventory inventory) {
         //#if MC > 12104
@@ -483,7 +480,6 @@ public class InventoryUtils {
             }
             if (slot != -1) {
                 ItemStack itemStack = inventory.getItem(slot);
-                orderlyStoreItem = itemStack;
                 return InventoryUtils.setPickedItemToHand(slot, itemStack, client);
             }
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);

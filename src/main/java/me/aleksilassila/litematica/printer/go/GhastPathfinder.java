@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.longs.Long2BooleanOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.printer.SchematicStateCache;
 import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
@@ -25,10 +26,13 @@ import java.util.function.BooleanSupplier;
  *
  * <p>与行走版 {@link GoPathfinder} 的区别：邻域为 26 向自由飞行；成本以几何距离为基准
  * （恶魂速度固定，无速度差异），并按"离目标的水平距离"给垂直分量加价，使路线呈
- * <b>长距离平飞 + 末端集中升降</b>（见 {@link #VERT_LATE_WEIGHT}）；另按"离方块的三维
- * 切比雪夫距离"施加<b>离墙惩罚</b>（见 {@link #CLEARANCE_MAX_PENALTY}），使路线主动与方块
- * 拉开距离、给飞行动量的侧偏留出容错空间；合法性判定的主体是
+ * <b>长距离平飞 + 末端集中升降</b>（见「末端集中升降权重」配置）；另对"紧贴方块"的格
+ * 施加<b>贴墙惩罚</b>（另见下文配置），使路线主动与方块拉开距离、给飞行动量的侧偏留出
+ * 容错空间；合法性判定的主体是
  * <b>「乐魂 + 骑乘者」的并集碰撞箱</b>，而非单格可站立性。
+ *
+ * <p><b>代价全部可配置</b>（{@code 配置 → 寻路 → 乐魂寻路 ...}）：正交/面对角/体对角单价、
+ * 上升倍率、下降倍率、贴墙惩罚、末端集中升降权重，均在新建实例时快照一次，搜索过程中不再读配置。
  *
  * <p><b>合法性 = 双重判定</b>（沿位移按 0.5 格采样，防"跨格穿薄墙"）：
  * <ol>
@@ -42,54 +46,28 @@ import java.util.function.BooleanSupplier;
  * 不触碰任何主线程状态。
  */
 public final class GhastPathfinder {
-    /** 几何路程单价：正交 1 格 = 1，面对角 = √2，体对角 = √3（见 {@link #geoCost}） */
-    private static final float COST_DIAG2 = 1.41421356F;
-    private static final float COST_DIAG3 = 1.7320508F;
     /** 展开节点上限（与时长预算双保险） */
     private static final int MAX_NODES = 120_000;
     /** 扫掠采样步长（格）：单条边最多跨 1 格，0.5 足以覆盖薄墙 */
     private static final double SWEEP_STEP = 0.5;
     /**
-     * 「末端集中升降」加价权重：每格垂直移动 × 每格"到目标的水平距离"。
-     * 离目标越远改高度越贵、贴着目标改免费 → A* 必然先长距离平飞、再在末端一次性升降。
-     * 水平分量不加权，故绕远路只会更贵，不会被"拖后升降"诱导绕路。
+     * 「末端集中升降」加价的距离封顶（格）：超过此距离一律按此值计，防远处加价失控。
+     * （权重本身是配置项，见 {@code Configs.Go.GO_GHAST_VERT_LATE_WEIGHT}）
      */
-    private static final float VERT_LATE_WEIGHT = 0.2F;
-    /** 「末端集中升降」加价的距离封顶（格）：超过此距离一律按此值计，防远处加价失控 */
     private static final float VERT_LATE_CAP = 16.0F;
-    /**
-     * 「离墙惩罚」：路线离方块（真实方块与原理图非空气格）越近，单步代价越高，逼 A* 主动
-     * 与方块拉开距离。寻路只保证"箱子停在格心、沿路点直线飞"时不碰方块，而实际飞行的
-     * 启动/惯性侧偏会让贴脸的路线擦墙卡死；留出余量后这类路线会被代价淘汰。
-     *
-     * <p>距离度量＝三维切比雪夫（格）：{@code 1 格（紧贴箱体）}惩罚最高，按
-     * {@link #CLEARANCE_DECAY} 每格指数衰减，超过 {@link #CLEARANCE_RADIUS} 格不再惩罚。
-     * 惩罚恒 ≥ 0，故启发值仍可采纳、边成本只增不减仍一致。
-     */
-    private static final float CLEARANCE_MAX_PENALTY = 6.0F;
-    /** 离墙惩罚每格的指数衰减系数（0.5＝每远一格减半） */
-    private static final float CLEARANCE_DECAY = 0.5F;
-    /** 离墙惩罚的作用半径（格）：超过该距离不再惩罚（同时决定探测的层数上限） */
-    private static final int CLEARANCE_RADIUS = 3;
     /**
      * 路径允许的<b>最小离墙余量</b>（三维切比雪夫格）：1＝紧贴方块（箱子与方块只隔 0.5 格间隙），
      * 2＝与方块隔开一整格。
      *
      * <p>这是<b>硬约束</b>：贴着脸飞时，起步的推力与惯性就会把箱子擦上墙（现实碰撞会吃掉推力、
      * 或者直接蹭进"原理图排了方块、现实还是空气"的位置），所以"贴邻格"一律不作为路点。
-     * 离墙惩罚（{@link #CLEARANCE_MAX_PENALTY}）在此之上继续鼓励走更开阔的通道。
+     * 在此之上，紧贴格还会被「贴墙惩罚」加价（配置项），继续鼓励走更开阔的通道。
      */
     private static final int MIN_CLEARANCE = 2;
-    /** 离墙惩罚查表：下标＝切比雪夫距离（格）；0 位不用（0＝非法格，不会走到），超半径＝0 */
-    private static final float[] CLEARANCE_PENALTY = buildClearancePenalty();
-
-    private static float[] buildClearancePenalty() {
-        float[] table = new float[CLEARANCE_RADIUS + 2];
-        for (int d = 1; d <= CLEARANCE_RADIUS; d++) {
-            table[d] = CLEARANCE_MAX_PENALTY * (float) Math.pow(CLEARANCE_DECAY, d - 1);
-        }
-        return table;
-    }
+    /** 离墙余量分档：1＝紧贴方块（箱体与方块间隙 &lt;1 格，会被「贴墙惩罚」加价） */
+    private static final int CLEARANCE_HUG = 1;
+    /** 离墙余量分档：2＝与方块隔开一整格以上（不再有额外加价） */
+    private static final int CLEARANCE_CLEAR = 2;
     /** 浮点比较容差 */
     private static final float EPS = 1.0E-4F;
     /** 超时/取消检查间隔（纳秒）：按时间检查而不是"每 N 个节点"——单节点扩展昂贵时
@@ -222,6 +200,20 @@ public final class GhastPathfinder {
     private final int costLimitFactor;
     /** 本次搜索要求的最小离墙余量（格）：严格档 {@link #MIN_CLEARANCE}，放宽档 1（只禁重叠） */
     private final int minClearance;
+    /** 正交 1 格的路程单价（配置快照，见 {@code Configs.Go.GO_GHAST_COST_ORTHO}） */
+    private final float costOrtho;
+    /** 面对角（两轴各跨 1 格）的路程单价（配置快照） */
+    private final float costDiag2;
+    /** 体对角（三轴各跨 1 格）的路程单价（配置快照） */
+    private final float costDiag3;
+    /** 含上升的步在路程单价上乘的倍率（配置快照；空格上升推力只有水平的一半，默认 2） */
+    private final float ascendMult;
+    /** 含下降的步在路程单价上乘的倍率（配置快照；下降要先飞到位再低头，默认 2，与上升同价） */
+    private final float descendMult;
+    /** 紧贴方块（切比雪夫 1 格）的格单步加价（配置快照，0＝不加价） */
+    private final float wallPenalty;
+    /** 末端集中升降的加价权重（配置快照，0＝不施加该机制） */
+    private final float vertLateWeight;
 
     private GhastPathfinder(ClientLevel level, GoPathfinder.Goal goal, BoxSpec box,
                             @Nullable LongOpenHashSet schematicSolid, int costLimitFactor, int minClearance) {
@@ -231,6 +223,13 @@ public final class GhastPathfinder {
         this.schematicSolid = schematicSolid;
         this.costLimitFactor = costLimitFactor;
         this.minClearance = minClearance;
+        this.costOrtho = (float) Configs.Go.GO_GHAST_COST_ORTHO.getDoubleValue();
+        this.costDiag2 = (float) Configs.Go.GO_GHAST_COST_DIAG2.getDoubleValue();
+        this.costDiag3 = (float) Configs.Go.GO_GHAST_COST_DIAG3.getDoubleValue();
+        this.ascendMult = Configs.Go.GO_GHAST_ASCEND_MULT.getIntegerValue();
+        this.descendMult = Configs.Go.GO_GHAST_DESCEND_MULT.getIntegerValue();
+        this.wallPenalty = (float) Configs.Go.GO_GHAST_WALL_PENALTY.getDoubleValue();
+        this.vertLateWeight = (float) Configs.Go.GO_GHAST_VERT_LATE_WEIGHT.getDoubleValue();
         this.bestG.defaultReturnValue(Float.POSITIVE_INFINITY);
     }
 
@@ -274,6 +273,10 @@ public final class GhastPathfinder {
         // 判定刻意只用路程，不含离墙惩罚/末端加价等软偏好——旧版拿含惩罚的总代价去比，
         // 贴墙飞行每步最多多算 6 分，几格就把上限顶爆，走得通的目标被误判"无解"（乐魂原地不动）。
         float limit = GoPathfinder.costLimit(startNode.h, costLimitFactor);
+        // 已定稿的最优目标（多目标＝候选竞争；单目标＝悬停区里最便宜的那一格）。
+        // 弹出目标格不再立即收工，而是继续搜索"下界仍可能更便宜"的分支，直到堆里最小
+        // 的 f 都不小于它的总代价为止——先算出来的必须真的比没算完的便宜，才认它
+        Node bestGoal = null;
 
         while (!open.isEmpty()) {
             Node cur = open.poll();
@@ -282,11 +285,19 @@ public final class GhastPathfinder {
                 continue; // 过期条目（该位置已有更优走法）
             }
             if (goal.isInGoal(cur.pos.getX(), cur.pos.getY(), cur.pos.getZ())) {
-                return buildPath(cur, true);
+                // 只认严格更便宜的目标；成本并列时保持先到者
+                if (bestGoal == null || cur.total() < bestGoal.total()) {
+                    bestGoal = cur;
+                }
+                continue; // 目标格不再扩展：穿过它只会更贵，stop 判定同样会拦下
+            }
+            if (bestGoal != null && cur.f() >= bestGoal.total()) {
+                // 该格及其所有后继的总代价下界已不低于已定稿目标 → 其余目标不可能更便宜，收工
+                break;
             }
             if (cur.g + cur.h > limit) {
-                // 该格及其所有后继的路程都必然超上限 → 剪掉不扩展。剪干净后 open 耗尽、
-                // best 仍是起点，于是与旧版一样"瞬间判无解"，只是不再误杀贴墙的近目标
+                // 该格及其所有后继的路程都必然超上限 → 剪掉不扩展；已定稿的目标不受连坐，
+                // 剪干净后由循环出口返回它（一个都没定稿时才是"判无解"）
                 continue;
             }
             if (cur.h < best.h) {
@@ -300,6 +311,9 @@ public final class GhastPathfinder {
             }
             expanded++;
             expand(cur);
+        }
+        if (bestGoal != null) {
+            return buildPath(bestGoal, true);
         }
         if (best == startNode) {
             return null;
@@ -326,29 +340,32 @@ public final class GhastPathfinder {
         }
     }
 
-    /** 几何路程代价（成本上限的判定口径）：正交 1 格 = 1、面对角 = √2、体对角 = √3；
-     *  上升加倍——空格上升的推力只有水平的一半（源码 up += 0.5 对比 forward = 1.0），
-     *  不修正会让 A* 高估爬升效率、选出实际很慢的垂直路线。 */
+    /** 几何路程代价（成本上限的判定口径）：正交 1 格、面对角、体对角三档单价均为配置项；
+     *  上升与下降各乘一个倍率（默认都是 2）——空格上升的推力只有水平的一半
+     *  （源码 up += 0.5 对比 forward = 1.0），而下降要先水平到位再低头（见 GhastFlyer.drive），
+     *  两者都不比平飞划算，不加价会让 A* 高估升降效率、选出实际很慢的路线。 */
     private float geoCost(int[] d) {
         int manhattan = Math.abs(d[0]) + Math.abs(d[1]) + Math.abs(d[2]);
-        float base = manhattan == 1 ? 1.0F : (manhattan == 2 ? COST_DIAG2 : COST_DIAG3);
-        return d[1] > 0 ? base * 2.0F : base;
+        float base = manhattan == 1 ? costOrtho : (manhattan == 2 ? costDiag2 : costDiag3);
+        if (d[1] > 0) {
+            return base * ascendMult;
+        }
+        return d[1] < 0 ? base * descendMult : base;
     }
 
     /** 软偏好加价（只决定"两条都能到的路选哪条"，不参与可达性判定）：
-     *  「离墙惩罚」＋「末端集中升降」。 */
+     *  「贴墙惩罚」＋「末端集中升降」，两者都是配置项。 */
     private float softCost(int[] d, BlockPos next) {
-        // 「离墙惩罚」：贴方块越是紧，单步代价越高（按切比雪夫距离指数衰减）。飞行的启动
-        // 与惯性会让实际轨迹偏离路点，贴脸的路线一飞就擦墙卡死；惩罚把这类路线淘汰掉，
-        // 路径自动改走与方块留有间隙的通道。格级余量在 sweepFree 的终点判定里已算好（memo）
-        float cost = CLEARANCE_PENALTY[cellClearance(next)];
+        // 「贴墙惩罚」：只罚"紧贴方块"（切比雪夫 1 格）的格，隔开一整格以上不加价。飞行的启动
+        // 与惯性会让实际轨迹偏离路点，贴脸的路线一飞就擦墙卡死；惩罚把这类路线淘汰掉
+        float cost = cellClearance(next) == CLEARANCE_HUG ? wallPenalty : 0.0F;
         // 「末端集中升降」：垂直分量再按"该步离目标的水平距离"加价。平飞的 L 形与"先降后平飞"
         // 的 L 形总成本本是完全并列的（Δy 与水平距离都相同），只靠乘系数选不出末端；
         // 这里让加价随离目标的距离增长，"改高度最便宜的位置"就唯一地落在目标处。
         // 加价恒 ≥ 0，故启发值仍可采纳、且边成本只增不减仍一致。
         if (d[1] != 0) {
             float horizToGoal = Math.min(goal.horizDistanceTo(next.getX(), next.getZ()), VERT_LATE_CAP);
-            cost += VERT_LATE_WEIGHT * Math.abs(d[1]) * horizToGoal;
+            cost += vertLateWeight * Math.abs(d[1]) * horizToGoal;
         }
         return cost;
     }
@@ -387,8 +404,9 @@ public final class GhastPathfinder {
     }
 
     /**
-     * 格级「合法性 + 离墙余量」（带 memo）：返回值 &gt;0 为合法，其值＝该格并集箱到最近方块的
-     * 三维切比雪夫距离（格，封顶 {@link #CLEARANCE_RADIUS}+1）；0＝非法。
+     * 格级「合法性 + 离墙余量」（带 memo）：返回值 &gt;0 为合法，其值只有两档——
+     * {@link #CLEARANCE_HUG}＝紧贴方块（1 格内），{@link #CLEARANCE_CLEAR}＝隔开一整格以上；
+     * 0＝非法。
      */
     private int cellClearance(BlockPos p) {
         long key = p.asLong();
@@ -402,34 +420,29 @@ public final class GhastPathfinder {
     }
 
     /**
-     * 并集箱在该位置的合法性 + 离墙余量：0＝非法；k≥1＝合法且最近方块在三维切比雪夫距离
-     * k 格处（1＝紧贴箱体）；{@link #CLEARANCE_RADIUS}+1＝半径内无方块。
+     * 并集箱在该位置的合法性 + 离墙余量：0＝非法；{@link #CLEARANCE_HUG}＝合法但紧贴方块
+     * （三维切比雪夫距离 1 格）；{@link #CLEARANCE_CLEAR}＝合法且与方块隔开一整格以上。
      *
-     * <p>真实方块一侧用「箱体外扩 k−0.5 格」探测：外扩 0.5 已能把"紧贴"（间隙 0）吃进来，
-     * 外扩 1.5 才能吃到"隔一格"（间隙 1），即外扩量恰好对应切比雪夫格距；原理图一侧逐层
-     * 只扫新增的一圈壳（内层在更小的 k 已判过），避免整箱重复遍历。
+     * <p>只探一层壳就够：硬约束 {@code minClearance} 最多要到 2，加价也只区分"贴／不贴"，
+     * 更远的余量无人使用，故不再逐层外扩。
+     *
+     * <p>真实方块一侧用「箱体外扩 0.5 格」探测：外扩 0.5 已能把"紧贴"（间隙 0）吃进来，
+     * 即外扩量恰好对应切比雪夫格距；原理图一侧只扫距离 1 的那一圈壳。
      */
     private int clearance(AABB b) {
         if (!boxFree(b)) {
             return 0;
         }
-        int baseMinX = Mth.floor(b.minX);
-        int baseMaxX = Mth.floor(b.maxX - 1.0E-7);
-        int baseMinY = Mth.floor(b.minY);
-        int baseMaxY = Mth.floor(b.maxY - 1.0E-7);
-        int baseMinZ = Mth.floor(b.minZ);
-        int baseMaxZ = Mth.floor(b.maxZ - 1.0E-7);
-        for (int k = 1; k <= CLEARANCE_RADIUS; k++) {
-            if (!level.noCollision(b.inflate(k - 0.5))) {
-                return k;
-            }
-            if (schematicSolid != null && !schematicSolid.isEmpty()
-                    && schematicShellHasSolid(k, baseMinX, baseMaxX, baseMinY, baseMaxY,
-                    baseMinZ, baseMaxZ)) {
-                return k;
-            }
+        if (!level.noCollision(b.inflate(0.5))) {
+            return CLEARANCE_HUG;
         }
-        return CLEARANCE_RADIUS + 1;
+        if (schematicSolid != null && !schematicSolid.isEmpty()
+                && schematicShellHasSolid(CLEARANCE_HUG, Mth.floor(b.minX), Mth.floor(b.maxX - 1.0E-7),
+                Mth.floor(b.minY), Mth.floor(b.maxY - 1.0E-7),
+                Mth.floor(b.minZ), Mth.floor(b.maxZ - 1.0E-7))) {
+            return CLEARANCE_HUG;
+        }
+        return CLEARANCE_CLEAR;
     }
 
     /** 双重判定：真实碰撞 + 原理图"非空气"约束 */

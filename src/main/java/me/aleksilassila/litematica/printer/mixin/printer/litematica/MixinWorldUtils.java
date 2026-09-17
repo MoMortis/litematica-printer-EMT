@@ -51,8 +51,7 @@ public class MixinWorldUtils {
                 .countAvailableIncludingShulkers(mc.player, item) > 0;
 
         if (!inMain && inShulkers
-                && (Configs.Core.CLOUD_INVENTORY.getBooleanValue()
-                || Configs.Core.QUICK_SHULKER.getBooleanValue())) {
+                && Configs.Core.QUICK_SHULKER.getBooleanValue()) {
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.addQuickShulkerDemand(item);
             me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.switchItem();
             return;

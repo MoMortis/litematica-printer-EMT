@@ -4,7 +4,6 @@ import lombok.Setter;
 import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
-import me.aleksilassila.litematica.printer.printer.zxy.inventory.SwitchItem;
 import me.aleksilassila.litematica.printer.utils.BlockUtils;
 import me.aleksilassila.litematica.printer.utils.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.PacketUtils;
@@ -234,13 +233,6 @@ public class ActionManager {
             hitVec = targetCenter.add(sideOffset).add(rotatedHitModifier);
         } else {
             hitVec = click.hitModifier;
-        }
-        if (InventoryUtils.getOrderlyStoreItem() != null) {
-            if (InventoryUtils.getOrderlyStoreItem().isEmpty()) {
-                SwitchItem.removeItem(InventoryUtils.getOrderlyStoreItem());
-            } else {
-                SwitchItem.syncUseTime(InventoryUtils.getOrderlyStoreItem());
-            }
         }
         boolean wasSneak = player.isShiftKeyDown();
         if (click.useShift && !wasSneak) {

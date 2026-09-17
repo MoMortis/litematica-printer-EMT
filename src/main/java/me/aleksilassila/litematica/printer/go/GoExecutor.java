@@ -363,9 +363,9 @@ public final class GoExecutor {
         float forward = (float) (dz * cos - dx * sin);
 
         // 最大速度限制：按「自动寻路 - 最大速度」（格/秒）缩放移动向量；
-        // 疾跑全速 = 20 / 3.5638 ≈ 5.612 格/秒，超过全速的值等效不限速（原版物理会把 >1 的输入归一化）
+        // 疾跑全速 = 20 / 疾跑单价 ≈ 5.612 格/秒，超过全速的值等效不限速（原版物理会把 >1 的输入归一化）
         float maxSpeed = (float) Configs.Go.GO_MAX_SPEED.getDoubleValue();
-        float speedFactor = Math.min(1.0F, maxSpeed * (GoPathfinder.SPRINT_COST / 20.0F));
+        float speedFactor = Math.min(1.0F, maxSpeed * (GoPathfinder.sprintCost() / 20.0F));
         strafe *= speedFactor;
         forward *= speedFactor;
         if (hanging && (wp.getX() != player.getBlockX() || wp.getZ() != player.getBlockZ())) {
@@ -568,7 +568,7 @@ public final class GoExecutor {
             float strafe = (float) (dx * cos + dz * sin);
             float forward = (float) (dz * cos - dx * sin);
             float maxSpeed = (float) Configs.Go.GO_MAX_SPEED.getDoubleValue();
-            float speedFactor = Math.min(1.0F, maxSpeed * (GoPathfinder.SPRINT_COST / 20.0F));
+            float speedFactor = Math.min(1.0F, maxSpeed * (GoPathfinder.sprintCost() / 20.0F));
             strafe *= speedFactor;
             forward *= speedFactor;
             writeInput(player, strafe, forward, false, true, shift);

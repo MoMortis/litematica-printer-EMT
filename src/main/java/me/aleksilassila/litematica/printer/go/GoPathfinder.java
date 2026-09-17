@@ -45,14 +45,43 @@ import java.util.function.BooleanSupplier;
 public final class GoPathfinder {
     public static final float COST_INF = 1_000_000.0F;
 
-    static final float WALK_COST = 20.0F / 4.317F;            // 步行一格 4.633 tick
-    static final float DIAGONAL_COST = WALK_COST * 1.41421356F;
-    static final float JUMP_UP_COST = WALK_COST + 5.0F;       // 跳上一格
-    static final float SPRINT_COST = 20.0F / 5.612F;          // 疾跑一格（启发下界）
-    static final float WATER_COST = 20.0F / 2.2F;             // 涉水一格
-    static final float LADDER_COST = 20.0F / 2.35F;           // 爬梯子/藤蔓一格（原版攀爬速度）
-    static final float LADDER_EXIT_UP_COST = LADDER_COST + 4.0F; // 从梯顶翻出（跳+侧移）
-    static final float PARKOUR_COST = 12.0F;                  // 疾跑跳腾空约 12 tick，可覆盖 2~4 格
+    // ===== 行走寻路各移动方式的代价（tick）：逐条对应一行的移动方式，全部来自配置，见 Configs.Go =====
+
+    /** 步行（平移）1 格：默认 20/4.317 ≈ 4.633 */
+    static float walkCost() {
+        return (float) Configs.Go.GO_WALK_COST.getDoubleValue();
+    }
+
+    /** 同层斜走（面对角）1 格：默认 4.633×√2 ≈ 6.552 */
+    static float diagonalCost() {
+        return (float) Configs.Go.GO_WALK_DIAGONAL_COST.getDoubleValue();
+    }
+
+    /** 疾跑 1 格：仅作启发值下界与路径时长换算，不参与任何边成本（默认 ≈ 3.564） */
+    static float sprintCost() {
+        return (float) Configs.Go.GO_SPRINT_COST.getDoubleValue();
+    }
+
+    /** 跳上一格（跳入攀爬列亦按此价）：默认 4.633＋5 ＝ 9.633 */
+    static float jumpUpCost() {
+        return (float) Configs.Go.GO_JUMP_UP_COST.getDoubleValue();
+    }
+
+    /** 涉水 1 格（对角再乘 √2）：默认 20/2.2 ≈ 9.091 */
+    static float waterCost() {
+        return (float) Configs.Go.GO_WATER_COST.getDoubleValue();
+    }
+
+    /** 爬梯子/藤蔓沿列 1 格：默认 20/2.35 ≈ 8.511 */
+    static float ladderCost() {
+        return (float) Configs.Go.GO_LADDER_COST.getDoubleValue();
+    }
+
+    /** 从梯顶翻出（跳+侧移）：默认 8.511＋4 ＝ 12.511 */
+    static float ladderExitCost() {
+        return (float) Configs.Go.GO_LADDER_EXIT_COST.getDoubleValue();
+    }
+
     private static final float MIN_IMPROVEMENT = 0.01F;
     private static final int MAX_EMPTY_CHUNKS = 50;
     private static final int MAX_NODES = 300_000;
@@ -95,12 +124,12 @@ public final class GoPathfinder {
 
     /** 启发值水平单价：与「强制疾跑」开关对齐。Goal 构造时快照，搜索中不读配置 */
     static float horizUnit() {
-        return Configs.Go.GO_FORCE_SPRINT.getBooleanValue() ? SPRINT_COST : WALK_COST;
+        return Configs.Go.GO_FORCE_SPRINT.getBooleanValue() ? sprintCost() : walkCost();
     }
 
     /** 启发值上升分量下界：跳上一格的成本扣除其水平位移份额（攀爬 8.51/格 仍覆盖） */
     static float upUnit() {
-        return JUMP_UP_COST - horizUnit();
+        return jumpUpCost() - horizUnit();
     }
 
     /** octile 距离（直线 + 对角混合的 8 向网格路径长度下界） */
@@ -399,6 +428,15 @@ public final class GoPathfinder {
     private final float[] fallTicks;
     /** 成本上限倍数（0/1＝不设上限；主线程快照，搜索中不读配置） */
     private final int costLimitFactor;
+    /** 各移动方式的单价（tick）：构造时从配置快照一次，搜索中不读配置 */
+    private final float walkCost;
+    private final float diagonalCost;
+    private final float jumpUpCost;
+    private final float waterCost;
+    private final float ladderCost;
+    private final float ladderExitUpCost;
+    private final float parkourCost;
+    private final float sprintCost;
     private final Long2ObjectOpenHashMap<Node> map = new Long2ObjectOpenHashMap<>(4096);
     private final Heap heap = new Heap();
     /** 地形探测缓存：bit0=solid bit1=lava bit2=water bit3=climbable，-1=未缓存 */
@@ -413,6 +451,14 @@ public final class GoPathfinder {
         this.costLimitFactor = costLimitFactor;
         this.fallTicks = buildFallTicks(maxFall + 4);
         this.probeCache.defaultReturnValue((byte) -1);
+        this.walkCost = walkCost();
+        this.diagonalCost = diagonalCost();
+        this.sprintCost = sprintCost();
+        this.jumpUpCost = jumpUpCost();
+        this.waterCost = waterCost();
+        this.ladderCost = ladderCost();
+        this.ladderExitUpCost = ladderExitCost();
+        this.parkourCost = (float) Configs.Go.GO_PARKOUR_COST.getDoubleValue();
     }
 
     /**
@@ -439,14 +485,31 @@ public final class GoPathfinder {
         Node best = startNode;
         // 成本上限：起点到目标的距离下界 × 倍数（0/1＝不设上限）
         float limit = costLimit(startNode.h, costLimitFactor);
+        // 已定稿的最优目标（多目标＝候选竞争；单目标＝目标区域里最便宜的那一格）。
+        // 弹出目标格不再立即收工，而是继续搜索"下界仍可能更便宜"的分支，直到堆里最小
+        // 的 f 都不小于它的成本为止——先算出来的必须真的比没算完的便宜，才认它。
+        // 注意判定用 bestGoal.g 实时读取：同格可能被 decrease-key 换成更便宜的走法。
+        Node bestGoal = null;
         while (!heap.isEmpty()) {
             Node cur = heap.pop();
             if (goal.isInGoal(cur.x, cur.y, cur.z)) {
-                return buildPath(cur, true);
+                // 只认严格更便宜的目标；成本并列时保持先到者
+                if (bestGoal == null || cur.g < bestGoal.g) {
+                    bestGoal = cur;
+                }
+                continue; // 目标格不再扩展：穿过它只会更贵，stop 判定同样会拦下
+            }
+            if (bestGoal != null && cur.f() >= bestGoal.g) {
+                // 该节点及其所有后继的总代价下界已不低于已定稿目标 → 其余目标不可能更便宜，收工
+                break;
             }
             if (cur.f() > limit) {
-                // 堆按 f 有序：pop 出的 f 已超上限，后面的只会更贵 → 目标不可达，立即收工
-                return null;
+                // 堆按 f 有序：pop 出的 f 已超上限，后面的只会更贵 → 剩余目标按"不可达"处理。
+                // 已定稿的目标不被连坐（收工后返回它）；一个都没定稿时保持旧语义：整批判不可达
+                if (bestGoal == null) {
+                    return null;
+                }
+                break;
             }
             if (cur.h < best.h) {
                 best = cur;
@@ -461,6 +524,9 @@ public final class GoPathfinder {
                 break;
             }
             expand(cur);
+        }
+        if (bestGoal != null) {
+            return buildPath(bestGoal, true);
         }
         if (best == startNode) {
             return null;
@@ -511,7 +577,7 @@ public final class GoPathfinder {
         if (!(walkableFloor(nx, cur.y, nz) && passable(nx, cur.y, nz) && passable(nx, cur.y + 1, nz))) {
             return;
         }
-        float cost = waterAt(nx, cur.y, nz) ? WATER_COST : WALK_COST;
+        float cost = waterAt(nx, cur.y, nz) ? waterCost : walkCost;
         offer(cur, nx, cur.y, nz, cost);
     }
 
@@ -529,7 +595,7 @@ public final class GoPathfinder {
                 && passable(cur.x, cur.y, cur.z + dz) && passable(cur.x, cur.y + 1, cur.z + dz))) {
             return;
         }
-        float cost = waterAt(nx, cur.y, nz) ? WATER_COST * 1.41421356F : DIAGONAL_COST;
+        float cost = waterAt(nx, cur.y, nz) ? waterCost * 1.41421356F : diagonalCost;
         offer(cur, nx, cur.y, nz, cost);
     }
 
@@ -548,7 +614,7 @@ public final class GoPathfinder {
         if (!passable(cur.x, cur.y + 2, cur.z)) {
             return;
         }
-        offer(cur, nx, ny, nz, JUMP_UP_COST);
+        offer(cur, nx, ny, nz, jumpUpCost);
     }
 
     /** 走下悬崖：沿相邻列自然下落，落点必须有可站立足面且下落高度受限 */
@@ -584,7 +650,7 @@ public final class GoPathfinder {
         if (fallDist > maxFall) {
             return;
         }
-        offer(cur, nx, feet, nz, WALK_COST + fallTicks[fallDist]);
+        offer(cur, nx, feet, nz, walkCost + fallTicks[fallDist]);
     }
 
     /**
@@ -617,7 +683,7 @@ public final class GoPathfinder {
                 continue;
             }
             if (walkableFloor(lx, cur.y, lz) && passable(lx, cur.y, lz) && passable(lx, cur.y + 1, lz)) {
-                offer(cur, lx, cur.y, lz, PARKOUR_COST);
+                offer(cur, lx, cur.y, lz, parkourCost);
             }
         }
     }
@@ -633,11 +699,11 @@ public final class GoPathfinder {
         if (climbableAt(x, y, z)) {
             // 沿列上爬：头部格 (y+2) 须留空，否则身体在上一格放不下
             if (climbableAt(x, y + 1, z) && passable(x, y + 2, z)) {
-                offer(cur, x, y + 1, z, LADDER_COST);
+                offer(cur, x, y + 1, z, ladderCost);
             }
             // 沿列下爬
             if (climbableAt(x, y - 1, z)) {
-                offer(cur, x, y - 1, z, LADDER_COST);
+                offer(cur, x, y - 1, z, ladderCost);
             }
             for (int[] d : DIRS) {
                 int nx = x + d[0];
@@ -647,11 +713,11 @@ public final class GoPathfinder {
                 }
                 // 同层爬出：相邻站立格
                 if (walkableFloor(nx, y, nz) && passable(nx, y, nz) && passable(nx, y + 1, nz)) {
-                    offer(cur, nx, y, nz, WALK_COST);
+                    offer(cur, nx, y, nz, walkCost);
                 }
                 // 翻上梯顶：相邻高一层的站立格（执行侧跳跃+侧移翻出）
                 if (walkableFloor(nx, y + 1, nz) && passable(nx, y + 1, nz) && passable(nx, y + 2, nz)) {
-                    offer(cur, nx, y + 1, nz, LADDER_EXIT_UP_COST);
+                    offer(cur, nx, y + 1, nz, ladderExitUpCost);
                 }
             }
             return;
@@ -668,14 +734,14 @@ public final class GoPathfinder {
                 continue;
             }
             if (climbableAt(nx, y, nz) && passable(nx, y + 1, nz)) {
-                offer(cur, nx, y, nz, WALK_COST);
+                offer(cur, nx, y, nz, walkCost);
             } else if (climbableAt(nx, y + 1, nz) && passable(nx, y + 2, nz)) {
                 // 跳入攀爬列：攀爬格底端高于站立面一格（墙基半埋、梯子/藤蔓底端悬空一格很常见），
                 // 走不进去也够不着低一层——跳跃扑向攀爬格抓住。执行侧由既有的
                 // "路点高一格且距离 1.8 格内即跳跃"分支完成起跳
-                offer(cur, nx, y + 1, nz, JUMP_UP_COST);
+                offer(cur, nx, y + 1, nz, jumpUpCost);
             } else if (passable(nx, y, nz) && climbableAt(nx, y - 1, nz)) {
-                offer(cur, nx, y - 1, nz, WALK_COST + fallTicks[1]);
+                offer(cur, nx, y - 1, nz, walkCost + fallTicks[1]);
             }
         }
     }
@@ -895,7 +961,7 @@ public final class GoPathfinder {
         }
         Collections.reverse(out);
         BlockPos goalCell = reachedGoal ? new BlockPos(end.x, end.y, end.z) : null;
-        return new Result(out, reachedGoal, end.h / SPRINT_COST, goalCell, end.g);
+        return new Result(out, reachedGoal, end.h / sprintCost, goalCell, end.g);
     }
 
     /** 模拟 MC 重力：下落 n 格所需 tick 数 */

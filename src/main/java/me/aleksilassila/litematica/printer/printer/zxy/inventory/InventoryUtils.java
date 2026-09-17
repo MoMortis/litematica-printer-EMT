@@ -1,8 +1,6 @@
 package me.aleksilassila.litematica.printer.printer.zxy.inventory;
 
 import me.aleksilassila.litematica.printer.I18n;
-import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
-import me.aleksilassila.litematica.printer.utils.ModUtils;
 import me.aleksilassila.litematica.printer.utils.BlockUtils;
 import me.aleksilassila.litematica.printer.utils.MessageUtils;
 import me.aleksilassila.litematica.printer.config.Configs;
@@ -27,27 +25,7 @@ import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
 
-//#if MC > 11904 
-import me.aleksilassila.litematica.printer.printer.zxy.chesttracker.MemoryUtils;
-import me.aleksilassila.litematica.printer.printer.zxy.chesttracker.SearchItem;
-//#elseif MC <= 11904
-//$$ import net.minecraft.core.Registry;
-//$$ import net.minecraft.resources.ResourceLocation;
-//$$ import net.minecraft.resources.ResourceKey;
-//$$ import me.aleksilassila.litematica.printer.printer.zxy.memory.Memory;
-//$$ import me.aleksilassila.litematica.printer.printer.zxy.memory.MemoryDatabase;
-//$$ import me.aleksilassila.litematica.printer.printer.zxy.memory.MemoryUtils;
-    //#if MC > 11902
-    //$$ import net.minecraft.core.registries.Registries;
-    //#endif
-//#endif
-
-//#if MC >= 12001
-//$$ import red.jackf.chesttracker.api.providers.InteractionTracker;
-//#endif
-
 import java.util.HashSet;
-import static me.aleksilassila.litematica.printer.printer.zxy.inventory.OpenInventoryPacket.openIng;
 
 public class InventoryUtils {
     private static final int AUTOMATED_QUICK_SHULKER_SCREEN_PROTECTION_TIMEOUT_TICKS = 40;
@@ -111,7 +89,7 @@ public class InventoryUtils {
         return automatedQuickShulkerScreenProtection
                 && player != null
                 && !player.containerMenu.equals(player.inventoryMenu)
-                && (isOpenHandler || SwitchItem.reSwitchItem != null);
+                && isOpenHandler;
     }
 
     public static void beginAutomatedQuickShulkerScreenProtection() {
@@ -162,65 +140,12 @@ public class InventoryUtils {
         protectedScreen = null;
     }
 
-    /** 补货尝试限频：无货可补时按该间隔重试，期间不阻塞打印扫描（缺料方块由放置冷却跳过） */
-    private static final long REFILL_RETRY_INTERVAL_MS = 1000;
-    private static long nextRefillAttemptMs;
-
     public static boolean switchItem() {
-        if (!lastNeedItemList.isEmpty() && !isOpenHandler && !openIng && OpenInventoryPacket.key == null) {
+        if (!lastNeedItemList.isEmpty() && !isOpenHandler) {
             LocalPlayer player = client.player;
-            AbstractContainerMenu sc = player.containerMenu;
             if (!player.containerMenu.equals(player.inventoryMenu)) return false;
-            //排除合成栏 装备栏 副手
-            if (Configs.Print.STORE_ORDERLY.getBooleanValue() && sc.slots.stream().skip(9).limit(sc.slots.size() - 10).noneMatch(slot -> slot.getItem().isEmpty())
-                    && (Configs.Core.QUICK_SHULKER.getBooleanValue() || Configs.Core.CLOUD_INVENTORY.getBooleanValue())) {
-                // 缺料且背包满：限频尝试补货；没有可补的货时不返回 true，
-                // 打印机继续扫描其他方块（缺料方块已被放置冷却跳过），不再全场停工
-                long nowMs = System.currentTimeMillis();
-                if (nowMs < nextRefillAttemptMs) {
-                    return false;
-                }
-                nextRefillAttemptMs = nowMs + REFILL_RETRY_INTERVAL_MS;
-                return SwitchItem.checkItems();
-            }
-
             if (Configs.Core.QUICK_SHULKER.getBooleanValue() && openShulker(lastNeedItemList)) {
                 return true;
-            } else if (Configs.Core.CLOUD_INVENTORY.getBooleanValue()) {
-                for (Item item : lastNeedItemList) {
-                    //#if MC >= 12001
-                    MemoryUtils.currentMemoryKey = client.level.dimension().identifier();
-                    MemoryUtils.itemStack = new ItemStack(item);
-                    if (SearchItem.search(true)) {
-                        ModUtils.closeScreen++;
-                        isOpenHandler = true;
-                        ClientPlayerTickManager.PRINT.setPrinterMemorySync(true);
-                        return true;
-                    }
-                    //#elseif MC < 12001
-                    //$$
-                    //$$    MemoryDatabase database = MemoryDatabase.getCurrent();
-                    //$$    if (database != null) {
-                    //$$        for (ResourceLocation dimension : database.getDimensions()) {
-                    //$$            for (Memory memory : database.findItems(item.getDefaultInstance(), dimension)) {
-                    //$$                MemoryUtils.setLatestPos(memory.getPosition());
-                        //#if MC < 11904
-                        //$$ OpenInventoryPacket.sendOpenInventory(memory.getPosition(), ResourceKey.create(Registry.DIMENSION_REGISTRY, dimension));
-                        //#else
-                        //$$ OpenInventoryPacket.sendOpenInventory(memory.getPosition(), ResourceKey.create(Registries.DIMENSION, dimension));
-                        //#endif
-                    //$$                if(ModUtils.closeScreen == 0) ModUtils.closeScreen++;
-                    //$$                me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager.PRINT.setPrinterMemorySync(true);
-                    //$$                isOpenHandler = true;
-                    //$$                return true;
-                    //$$            }
-                    //$$        }
-                    //$$    }
-                    //#endif
-                }
-                lastNeedItemList = new HashSet<>();
-                quickShulkerSearchDeadlineNanos = 0L;
-                isOpenHandler = false;
             }
         }
         return false;
@@ -275,11 +200,6 @@ public class InventoryUtils {
                             && Configs.Core.QUICK_SHULKER.getBooleanValue()) {
                         MessageUtils.setOverlayMessage(I18n.INVENTORY_SHULKER_PRESELECT.getName());
                         continue;
-                    }
-                    if (OpenInventoryPacket.key != null) {
-                        SwitchItem.newItem(source, OpenInventoryPacket.pos, OpenInventoryPacket.key, y, -1);
-                    } else {
-                        SwitchItem.newItem(source, null, null, y, shulkerBoxSlot);
                     }
                     fi.dy.masa.malilib.util.InventoryUtils.swapSlots(sc, y, c);
                     me.aleksilassila.litematica.printer.utils.InventoryUtils.setSelectedSlot(player.getInventory(), c);
@@ -338,9 +258,6 @@ public class InventoryUtils {
                         try {
                             shulkerBoxSlot = i;
                             snapshotQuickShulkerInventory(Minecraft.getInstance().player.getInventory());
-                            //#if MC >= 12001 
-                            //$$ if (ModUtils.isLoadMod("chesttracker")) InteractionTracker.INSTANCE.clear();
-                            //#endif
                             BlockUtils.openShulker(stack, shulkerBoxSlot);
                             automatedQuickShulkerOpened = true;
                             isOpenHandler = true;

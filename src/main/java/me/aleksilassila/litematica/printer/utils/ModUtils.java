@@ -32,10 +32,6 @@ public class ModUtils {
         return FabricLoader.getInstance().isModLoaded(modId);
     }
 
-    public static boolean isChestTrackerLoaded(){
-        return isLoadMod("chesttracker");
-    }
-
     public static boolean isCloudStoreLoaded() {
         return isLoadMod("cloudstore");
     }

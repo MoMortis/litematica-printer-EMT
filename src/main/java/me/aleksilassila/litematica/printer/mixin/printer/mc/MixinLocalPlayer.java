@@ -32,8 +32,6 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 //#if MC >= 12001 
-import me.aleksilassila.litematica.printer.printer.zxy.chesttracker.MemoryUtils;
-import me.aleksilassila.litematica.printer.printer.zxy.inventory.OpenInventoryPacket;
 import me.aleksilassila.litematica.printer.utils.ModUtils;
 //#endif
 
@@ -68,16 +66,6 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
         updateChecked = true;
         // 进入服务器自启动：启动"重试开启打印机"会话（死亡重生不重复启动会话）
         me.aleksilassila.litematica.printer.utils.ConfigUtils.startAutoEnableSession();
-    }
-
-    @Inject(at = @At("HEAD"), method = "closeContainer")
-    public void close(CallbackInfo ci) {
-        //#if MC >= 12001
-        if (ModUtils.isChestTrackerLoaded()) {
-            MemoryUtils.saveMemory(this.containerMenu);
-        }
-        OpenInventoryPacket.reSet();
-        //#endif
     }
 
     @Inject(at = @At("HEAD"), method = "tick")

@@ -7,8 +7,6 @@ import me.aleksilassila.litematica.printer.I18n;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
-import me.aleksilassila.litematica.printer.printer.zxy.inventory.OpenInventoryPacket;
-import me.aleksilassila.litematica.printer.printer.zxy.inventory.SwitchItem;
 import me.aleksilassila.litematica.printer.utils.MessageUtils;
 import me.aleksilassila.litematica.printer.utils.ModUtils;
 import me.aleksilassila.litematica.printer.utils.PinYinSearchUtils;
@@ -38,72 +36,18 @@ import net.minecraft.world.phys.Vec3;
 
 import java.util.*;
 
-//#if MC >= 12001 
-import me.aleksilassila.litematica.printer.printer.zxy.chesttracker.MemoryUtils;
-//#elseif MC < 12001
-//$$ import me.aleksilassila.litematica.printer.printer.zxy.memory.MemoryUtils;
-//#endif
-
 //#if MC >= 12102
 import net.minecraft.world.level.chunk.status.ChunkStatus;
 //#else
 //$$ import net.minecraft.world.level.chunk.ChunkStatus;
 //#endif
 
-import static me.aleksilassila.litematica.printer.printer.zxy.inventory.OpenInventoryPacket.*;
 import static net.minecraft.world.level.block.ShulkerBoxBlock.FACING;
 
 public class ZxyUtils {
     private static final Minecraft client = Minecraft.getInstance();
 
-    //旧版箱子追踪
-    @SuppressWarnings("unused")
-    public static boolean qw = false;
-    @SuppressWarnings("unused")
-    public static int currWorldId = 0;
-
-    public static LinkedHashSet<BlockPos> invBlockList = new LinkedHashSet<>();
-    public static boolean printerMemoryAdding = false;
-    @SuppressWarnings("unused")
-    public static boolean syncPrinterInventory = false;
     public static String syncInventoryId = "syncInventory";
-
-    public static void startAddPrinterInventory() {
-        getReadyColor();
-        if (Configs.Core.CLOUD_INVENTORY.getBooleanValue() && !printerMemoryAdding) {
-            printerMemoryAdding = true;
-            //#if MC > 12001
-            if (MemoryUtils.PRINTER_MEMORY == null) MemoryUtils.createPrinterMemory();
-            //#endif
-            for (String string : Configs.Core.INVENTORY_LIST.getStrings()) {
-                invBlockList.addAll(filterBlocksByName(string).stream().filter(InventoryUtils::canOpenInv).toList());
-            }
-            highlightPosList.addAll(invBlockList);
-        }
-    }
-
-    public static void addInv() {
-        if (printerMemoryAdding && !openIng && OpenInventoryPacket.key == null) {
-            if (invBlockList.isEmpty()) {
-                printerMemoryAdding = false;
-                MessageUtils.setOverlayMessage(I18n.INVENTORY_SYNC_ADDED.getName());
-                return;
-            }
-            MessageUtils.setOverlayMessage(I18n.INVENTORY_SYNC_ADDING.getName());
-            for (BlockPos pos : invBlockList) {
-                if (client.level != null) {
-                    //#if MC < 12001
-                    //$$ MemoryUtils.setLatestPos(pos);
-                    //#endif
-                    ModUtils.closeScreen++;
-                    OpenInventoryPacket.sendOpenInventory(pos, client.level.dimension());
-                }
-                invBlockList.remove(pos);
-                highlightPosList.remove(pos);
-                break;
-            }
-        }
-    }
 
     public static LinkedHashSet<BlockPos> syncPosList = new LinkedHashSet<>();
     public static ArrayList<ItemStack> targetBlockInv;
@@ -176,24 +120,19 @@ public class ZxyUtils {
     }
 
     public static boolean openInv(BlockPos pos, boolean ignoreThePrompt) {
-        if (Configs.Core.CLOUD_INVENTORY.getBooleanValue() && OpenInventoryPacket.key == null) {
-            OpenInventoryPacket.sendOpenInventory(pos, client.level.dimension());
-            return true;
-        } else {
-            if (client.player != null && !PlayerUtils.canInteracted(pos)) {
-                if (!ignoreThePrompt)
-                    MessageUtils.setOverlayMessage(I18n.INVENTORY_SYNC_TOO_FAR.getName());
-                return false;
-            }
-            if (client.gameMode != null) {
-                //#if MC < 11904
-                //$$ client.gameMode.useItemOn(client.player, client.level, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(pos), Direction. DOWN, pos, false));
-                //#else
-                client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(pos), Direction.DOWN, pos, false));
-                //#endif
-                return true;
-            } else return false;
+        if (client.player != null && !PlayerUtils.canInteracted(pos)) {
+            if (!ignoreThePrompt)
+                MessageUtils.setOverlayMessage(I18n.INVENTORY_SYNC_TOO_FAR.getName());
+            return false;
         }
+        if (client.gameMode != null) {
+            //#if MC < 11904
+            //$$ client.gameMode.useItemOn(client.player, client.level, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(pos), Direction. DOWN, pos, false));
+            //#else
+            client.gameMode.useItemOn(client.player, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(pos), Direction.DOWN, pos, false));
+            //#endif
+            return true;
+        } else return false;
     }
 
     public static void itemsCount(Map<ItemStack, Integer> itemsCount, ItemStack itemStack) {
@@ -219,7 +158,7 @@ public class ZxyUtils {
                 //按下热键后记录看向的容器 开始同步容器 只会触发一次
                 targetBlockInv = new ArrayList<>();
                 targetItemsCount = new HashMap<>();
-                if (client.player != null && (!Configs.Core.CLOUD_INVENTORY.getBooleanValue() || openIng) && !client.player.containerMenu.equals(client.player.inventoryMenu)) {
+                if (client.player != null && !client.player.containerMenu.equals(client.player.inventoryMenu)) {
                     for (int i = 0; i < client.player.containerMenu.slots.get(0).container.getContainerSize(); i++) {
                         ItemStack copy = client.player.containerMenu.slots.get(i).getItem().copy();
                         itemsCount(targetItemsCount, copy);
@@ -247,39 +186,37 @@ public class ZxyUtils {
                                         ItemStack.isSameItemSameComponents(player.getKey(), target.getKey()) && target.getValue() <= player.getValue())))
                     return;
 
-                if ((!Configs.Core.CLOUD_INVENTORY.getBooleanValue() || !openIng) && OpenInventoryPacket.key == null) {
-                    // 失败重试容器暂存，循环结束后统一加回，避免迭代中修改 syncPosList 触发 CME
-                    List<BlockPos> retryPositions = new ArrayList<>();
-                    Iterator<BlockPos> iterator = syncPosList.iterator();
-                    while (iterator.hasNext()) {
-                        BlockPos pos = iterator.next();
-                        if (!openInv(pos, true)) {
-                            iterator.remove();
-                            // 超距容器：无法打开但不应放弃，保留等待玩家靠近（避免误报同步完成）
-                            if (client.player != null && !PlayerUtils.canInteracted(pos)) {
-                                retryPositions.add(pos);
-                                continue;
-                            }
-                            //打开失败（如距离过远），移到队尾稍后再试，连续失败则放弃该容器
-                            int failCount = syncFailCount.getOrDefault(pos, 0) + 1;
-                            if (failCount >= 5) {
-                                syncFailCount.remove(pos);
-                                highlightPosList.remove(pos);
-                                MessageUtils.setOverlayMessage(I18n.INVENTORY_SYNC_CONTAINER_CANNOT_OPEN.getName());
-                            } else {
-                                syncFailCount.put(pos, failCount);
-                                retryPositions.add(pos);
-                            }
+                // 失败重试容器暂存，循环结束后统一加回，避免迭代中修改 syncPosList 触发 CME
+                List<BlockPos> retryPositions = new ArrayList<>();
+                Iterator<BlockPos> iterator = syncPosList.iterator();
+                while (iterator.hasNext()) {
+                    BlockPos pos = iterator.next();
+                    if (!openInv(pos, true)) {
+                        iterator.remove();
+                        // 超距容器：无法打开但不应放弃，保留等待玩家靠近（避免误报同步完成）
+                        if (client.player != null && !PlayerUtils.canInteracted(pos)) {
+                            retryPositions.add(pos);
                             continue;
                         }
-                        syncFailCount.remove(pos);
-                        ModUtils.closeScreen++;
-                        blockPos = pos;
-                        num = 3;
-                        break;
+                        //打开失败（如距离过远），移到队尾稍后再试，连续失败则放弃该容器
+                        int failCount = syncFailCount.getOrDefault(pos, 0) + 1;
+                        if (failCount >= 5) {
+                            syncFailCount.remove(pos);
+                            highlightPosList.remove(pos);
+                            MessageUtils.setOverlayMessage(I18n.INVENTORY_SYNC_CONTAINER_CANNOT_OPEN.getName());
+                        } else {
+                            syncFailCount.put(pos, failCount);
+                            retryPositions.add(pos);
+                        }
+                        continue;
                     }
-                    syncPosList.addAll(retryPositions);
+                    syncFailCount.remove(pos);
+                    ModUtils.closeScreen++;
+                    blockPos = pos;
+                    num = 3;
+                    break;
                 }
+                syncPosList.addAll(retryPositions);
                 if (syncPosList.isEmpty()) {
                     num = 0;
                     MessageUtils.setOverlayMessage(I18n.INVENTORY_SYNC_COMPLETE.getName());
@@ -365,7 +302,7 @@ public class ZxyUtils {
             syncInv();
         }
         if (num == 3) {
-            //远程打开容器超时（服务器无响应或未收到内容包），放弃本次打开，稍后再试
+            //打开容器超时（服务器无响应或未收到内容包），放弃本次打开，稍后再试
             syncFailNumTime++;
             if (syncFailNumTime >= 40) {
                 syncFailNumTime = 0;
@@ -387,13 +324,10 @@ public class ZxyUtils {
                 num = 2;
             }
         }
-        addInv();
         //回收泄漏的 closeScreen 计数，避免吞掉玩家手动打开的容器界面
-        if (num == 0 && !printerMemoryAdding && !InventoryUtils.isOpenHandler && !openIng &&
-                OpenInventoryPacket.key == null && ModUtils.closeScreen > 0) {
+        if (num == 0 && !InventoryUtils.isOpenHandler && ModUtils.closeScreen > 0) {
             ModUtils.closeScreen--;
         }
-        OpenInventoryPacket.tick();
     }
 
     public static void switchPlayerInvToHotbarAir(int slot) {
@@ -408,13 +342,6 @@ public class ZxyUtils {
                 return;
             }
         }
-    }
-
-    public static void exitGameReSet() {
-        SwitchItem.reSet();
-        isRemote = false;
-        clientTry = false;
-        remoteTime = 0;
     }
 
     /**
