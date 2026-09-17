@@ -1,5 +1,6 @@
 package me.aleksilassila.litematica.printer.utils;
 
+import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.tags.FluidTags;
@@ -15,6 +16,21 @@ import java.util.Optional;
 
 @SuppressWarnings("EnhancedSwitchMigration")
 public class BlockStateUtils extends BlockUtils {
+    /**
+     * 客户端"该区块列是否真的加载"。
+     *
+     * <p><b>不能用 {@code ClientLevel.hasChunk}：它在客户端恒返回 true</b>（字节码就是 {@code return true}），
+     * 拿它当"已加载"判据等于没判——未加载列读到的是空气，会被当成"可通行 / 待放置候选"。
+     * 这里走区块源：{@code getChunkSource().hasChunk(x, z)}，其默认实现是
+     * {@code getChunk(x, z, FULL, false) != null}；客户端该分支在 load=false 时未加载直接返回 null
+     *（load=true 才回退空区块），所以判据可靠。
+     *
+     * <p>纯读（只读客户端区块存储的原子数组），可在工作线程调用。
+     */
+    public static boolean isColumnLoaded(ClientLevel level, int chunkX, int chunkZ) {
+        return level.getChunkSource().hasChunk(chunkX, chunkZ);
+    }
+
     private final static BooleanProperty wallUpProperty = BlockStateProperties.UP;
     private final static EnumProperty<WallSide> wallNorthProperty = BlockStateProperties.NORTH_WALL;
     private final static EnumProperty<WallSide> wallSouthProperty = BlockStateProperties.SOUTH_WALL;

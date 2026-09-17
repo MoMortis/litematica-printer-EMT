@@ -13,6 +13,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.printer.verifier.VerifierActiveUpdate;
+import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -165,8 +166,9 @@ public final class SchematicStateCache {
         if (e != null && e.verdict == BlockMatchResult.CORRECT && now - e.verdictTick < TTL_TICKS) {
             return true;
         }
-        // 区块未加载：世界状态不可信（读到空气），不缓存判定，交由原流程逐 tick 处理
-        if (!level.hasChunk(pos.getX() >> 4, pos.getZ() >> 4)) {
+        // 区块未加载：世界状态不可信（读到空气），不缓存判定，交由原流程逐 tick 处理。
+        // 注意不能用 ClientLevel.hasChunk——它在客户端恒返回 true，见 BlockStateUtils.isColumnLoaded
+        if (!BlockStateUtils.isColumnLoaded(level, pos.getX() >> 4, pos.getZ() >> 4)) {
             return false;
         }
         BlockState required = getSchematicState(pos);
@@ -464,6 +466,118 @@ public final class SchematicStateCache {
                 s = s.rotate(rotation);
             }
             return s;
+        }
+    }
+
+    /**
+     * 后台扫描计划条目：一个启用 subregion 盒与目标子区块的<b>相交范围</b>（已裁到子区块内）
+     * ＋容器＋预计算的变换参数。由 {@link #planSection} 在<b>主线程</b>构造，之后只读、
+     * 可安全交给工作线程逐格读取。
+     *
+     * <p>工作线程只允许读容器与世界，<b>绝不能回写本类缓存/revision</b>，也不得调用
+     * {@link #getSchematicState}（它会清缓存、递增 revision）。
+     */
+    public static final class RegionPlanEntry {
+        public final int minX;
+        public final int minY;
+        public final int minZ;
+        public final int maxX;
+        public final int maxY;
+        public final int maxZ;
+        private final SchematicPlacement placement;
+        private final SubRegionPlacement region;
+        private final String regionName;
+        private final LitematicaBlockStateContainer container;
+        @Nullable
+        private final Mirror mirrorMain;
+        @Nullable
+        private final Mirror mirrorSub;
+        @Nullable
+        private final Rotation rotation;
+
+        private RegionPlanEntry(RegionEntry re, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+            this.minX = minX;
+            this.minY = minY;
+            this.minZ = minZ;
+            this.maxX = maxX;
+            this.maxY = maxY;
+            this.maxZ = maxZ;
+            this.placement = re.placement;
+            this.region = re.region;
+            this.regionName = re.regionName;
+            this.container = re.container;
+            this.mirrorMain = re.mirrorMain;
+            this.mirrorSub = re.mirrorSub;
+            this.rotation = re.rotation;
+        }
+
+        /**
+         * 世界坐标处"原理图期望方块"（含镜像/旋转变换）；坐标不在该 subregion 容器内返回 null。
+         * 纯读：只读预计算参数与容器数组，可在工作线程调用。
+         */
+        @Nullable
+        public BlockState stateAt(int x, int y, int z) {
+            BlockPos local = SchematicUtils.getSchematicContainerPositionFromWorldPosition(
+                    new BlockPos(x, y, z), placement.getSchematic(), regionName, placement, region, container);
+            if (local == null) {
+                return null;
+            }
+            BlockState state = container.get(local.getX(), local.getY(), local.getZ());
+            if (state == null) {
+                return null;
+            }
+            BlockState s = state;
+            if (mirrorMain != null) {
+                s = s.mirror(mirrorMain);
+            }
+            if (mirrorSub != null) {
+                s = s.mirror(mirrorSub);
+            }
+            if (rotation != null) {
+                s = s.rotate(rotation);
+            }
+            return s;
+        }
+    }
+
+    /**
+     * 供"后台子区块扫描"构建只读计划：列出本子区块与各启用 subregion 盒的相交范围。
+     * <b>只在主线程调用</b>（触碰区域索引）；返回的条目可跨线程只读使用。
+     * 返回空列表＝本子区块与原理图不相交。
+     */
+    public List<RegionPlanEntry> planSection(BlockPos base) {
+        ensureRegionIndex();
+        int minX = base.getX();
+        int minY = base.getY();
+        int minZ = base.getZ();
+        int maxX = minX + 15;
+        int maxY = minY + 15;
+        int maxZ = minZ + 15;
+        ArrayList<RegionPlanEntry> out = new ArrayList<>(2);
+        for (int i = 0; i < regionIndex.size(); i++) {
+            RegionEntry re = regionIndex.get(i);
+            int loX = Math.max(re.box.minX, minX);
+            int hiX = Math.min(re.box.maxX, maxX);
+            int loY = Math.max(re.box.minY, minY);
+            int hiY = Math.min(re.box.maxY, maxY);
+            int loZ = Math.max(re.box.minZ, minZ);
+            int hiZ = Math.min(re.box.maxZ, maxZ);
+            if (loX > hiX || loY > hiY || loZ > hiZ) {
+                continue;
+            }
+            out.add(new RegionPlanEntry(re, loX, loY, loZ, hiX, hiY, hiZ));
+        }
+        return out;
+    }
+
+    /**
+     * 把"工作线程判出的世界-原理图差异"提交进验证器复查管线（原"扫描器路过即对账"行为）。
+     * 只能在主线程调用（要查区域索引与验证器数据）。
+     */
+    public void reconcileVerdict(BlockPos pos, BlockState required, BlockState current) {
+        RegionEntry owner = findRegionEntry(pos);
+        if (owner != null) {
+            VerifierActiveUpdate.onScannerVerdict(owner.placement, pos, required, current);
         }
     }
 }

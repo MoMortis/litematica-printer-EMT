@@ -68,11 +68,11 @@ public final class ScanWhitelistCache {
     }
 
     /**
-     * 该方块是否允许被扫描/放置（整个白名单扫描功能的统一判定）。
-     * 白名单未生效时恒返回 true（全量扫描）；
-     * 生效时返回"命中白名单 ∪ 命中验证器高亮的缺失方块"。
+     * 批量扫描前置：把"配置变更检测 + 验证器高亮刷新"提到批次级（每子区块扫描结果合并前调一次），
+     * 而不是逐格重复做——逐格版每次都要读两次配置 + {@code List.copyOf} + {@code equals}。
+     * 之后批次内逐格判定改用 {@link #isWhitelistedFast(BlockState)}。
      */
-    public boolean isWhitelisted(BlockState requiredState) {
+    public void beginScanBatch() {
         boolean en = enabledConfig.get();
         List<String> cur = listConfig.get();
         if (en != enabled || cur.size() != source.size() || !cur.equals(source)) {
@@ -81,10 +81,26 @@ public final class ScanWhitelistCache {
             patterns = List.copyOf(cur);
             matchCache.clear();
         }
+        if (active()) {
+            refreshHighlight(ClientPlayerTickManager.getCurrentHandlerTime());
+        }
+    }
+
+    /**
+     * 该方块是否允许被扫描/放置（整个白名单扫描功能的统一判定）。
+     * 白名单未生效时恒返回 true（全量扫描）；
+     * 生效时返回"命中白名单 ∪ 命中验证器高亮的缺失方块"。
+     */
+    public boolean isWhitelisted(BlockState requiredState) {
+        beginScanBatch();
+        return isWhitelistedFast(requiredState);
+    }
+
+    /** 批次内逐格判定：配置读取与高亮刷新已由 {@link #beginScanBatch()} 完成 */
+    public boolean isWhitelistedFast(BlockState requiredState) {
         if (!active()) {
             return true;
         }
-        refreshHighlight(ClientPlayerTickManager.getCurrentHandlerTime());
         return matchCache.computeIfAbsent(requiredState, st -> {
             for (String s : patterns) {
                 if (PinYinSearchUtils.matchName(s, st)) {

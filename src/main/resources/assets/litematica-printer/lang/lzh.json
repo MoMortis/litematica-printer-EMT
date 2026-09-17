@@ -256,7 +256,7 @@
   "litematica_printer.config.printScanAutoWalk.desc": "摹形時自巡所在區中之未置之石，遣自走載君往之（惟行/馳/躍，不易目）；既至則釋，俟石既置再往次。「行巡白」不啟則盡巡（凡未置之石皆為的），啟且名冊非空則惟巡冊內/驗器所標之石。區循 x+、x-、z+、z-、y+、y- 之序外推。手令自走者先。",
   "litematica_printer.config.ghastPathfind": "樂魂之巡",
   "litematica_printer.config.ghastPathfind.desc": "騎樂魂而飛，代徒行（惟行乎圖中所規之虛空，圖外亦不越實石；人與樂魂之箱皆須容焉）。未騎／非首乘／無鞍／為人所立者，止而示之於中下。",
-  "litematica_printer.config.pathNearestTarget": "擇途至近之的",
+  "litematica_printer.config.pathNearestTarget": "擇最短之路",
   "litematica_printer.config.pathNearestTarget.desc": "啟則自走合諸候選為一尋，取「實行至近」之石載君往（直近而繞遠者不復先）。闔則仍舊：直距至近 + 一的之尋。",
   "litematica_printer.config.pathTargetCandidateLimit": "眾的之限",
   "litematica_printer.config.pathTargetCandidateLimit.desc": "入眾的之尋的候選數上限（16~1024，常 256）。逾者以直距先汰——直距惟先汰，至近之的仍以途決；減之省算，然極繞之境或失真最近者。",

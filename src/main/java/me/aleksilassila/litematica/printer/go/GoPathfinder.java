@@ -6,6 +6,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.printer.SchematicStateCache;
+import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.tags.BlockTags;
@@ -55,6 +56,28 @@ public final class GoPathfinder {
     private static final float MIN_IMPROVEMENT = 0.01F;
     private static final int MAX_EMPTY_CHUNKS = 50;
     private static final int MAX_NODES = 300_000;
+    /** 超时/取消检查间隔（纳秒）：按时间检查而不是"每 N 个节点"——单节点扩展昂贵时，
+     * 节点粒度的检查会让一次"时长预算"实际跑出数倍时长，后续重算只能在单线程队列里
+     * 排队，观感就是"卡死不动" */
+    private static final long CHECK_INTERVAL_NANOS = 1_000_000L;
+
+    /**
+     * 寻路成本上限（0/1＝不设上限）：以「起点到最近目标的路程下界 {@code h0}」为基准，
+     * 返回 {@code h0 × factor}，含义是"绕路最多绕几倍"。
+     *
+     * <p>比较口径必须与 {@code h0} 同单位、且<b>只含路程</b>（走路＝时间成本，飞行＝几何路程），
+     * 不得混入"贴墙小心走/末端集中升降"这类<b>软偏好</b>加价——软偏好是"两条都能到的路选哪条"
+     * 的事，混进来会把上限顶爆，把走得通的目标误判成"无解"（乐魂会表现为原地不动）。
+     * 超限的节点由调用方按"该节点及其后继都不可能到达"剪枝，剪干净后自然收工返回。
+     *
+     * <p>{@code h0} 极小（起点已在目标内）时不剪枝；{@code factor ≤ 1} 视为关闭该上限。
+     */
+    static float costLimit(float h0, int factor) {
+        if (factor <= 1 || h0 <= 0.5F) {
+            return Float.MAX_VALUE;
+        }
+        return h0 * factor;
+    }
     /** 地形探测缓存上限（条）：超出即整表清空。1.5M 条约 27MB，触及该量级的搜索本就被预算掐断 */
     private static final int PROBE_CACHE_MAX = 1_500_000;
 
@@ -92,6 +115,14 @@ public final class GoPathfinder {
         boolean isInGoal(int x, int y, int z);
 
         float heuristic(int x, int y, int z);
+
+        /**
+         * 到目标（水平投影）的距离下界，用于乐魂飞行的「末端集中升降」加价：
+         * 离目标越远，改变高度的代价越高，从而把升降推到末端。默认 0 = 不施加该机制。
+         */
+        default float horizDistanceTo(int x, int z) {
+            return 0.0F;
+        }
     }
 
     /** 目标方块：站在该方块上（允许同 XZ 的 ±1 格，兼容台阶/半砖落脚差异） */
@@ -252,12 +283,16 @@ public final class GoPathfinder {
         /** 到达的目标格坐标（仅目标集合搜索且到达时有值，未到达为 null） */
         @Nullable
         public final BlockPos goalCell;
+        /** 路径总代价（tick＝终点节点的 g）。仅供诊断：多目标选目标时用来对比"选中的是否代价最小" */
+        public final float cost;
 
-        Result(ArrayList<BlockPos> positions, boolean reachedGoal, float distanceToGoal, @Nullable BlockPos goalCell) {
+        Result(ArrayList<BlockPos> positions, boolean reachedGoal, float distanceToGoal,
+               @Nullable BlockPos goalCell, float cost) {
             this.positions = positions;
             this.reachedGoal = reachedGoal;
             this.distanceToGoal = distanceToGoal;
             this.goalCell = goalCell;
+            this.cost = cost;
         }
     }
 
@@ -362,6 +397,8 @@ public final class GoPathfinder {
     private final Goal goal;
     private final int maxFall;
     private final float[] fallTicks;
+    /** 成本上限倍数（0/1＝不设上限；主线程快照，搜索中不读配置） */
+    private final int costLimitFactor;
     private final Long2ObjectOpenHashMap<Node> map = new Long2ObjectOpenHashMap<>(4096);
     private final Heap heap = new Heap();
     /** 地形探测缓存：bit0=solid bit1=lava bit2=water bit3=climbable，-1=未缓存 */
@@ -369,10 +406,11 @@ public final class GoPathfinder {
     private final BlockPos.MutableBlockPos cursorA = new BlockPos.MutableBlockPos();
     private int emptyChunks;
 
-    private GoPathfinder(ClientLevel level, Goal goal, int maxFall) {
+    private GoPathfinder(ClientLevel level, Goal goal, int maxFall, int costLimitFactor) {
         this.level = level;
         this.goal = goal;
         this.maxFall = maxFall;
+        this.costLimitFactor = costLimitFactor;
         this.fallTicks = buildFallTicks(maxFall + 4);
         this.probeCache.defaultReturnValue((byte) -1);
     }
@@ -380,34 +418,44 @@ public final class GoPathfinder {
     /**
      * 从 start 到 goal 的纯行走路径。
      *
-     * @param budgetMs  单次计算时长预算（毫秒）
-     * @param cancelled 取消信号（返回 true 时尽快结束并返回当前最优部分路径）
+     * @param budgetMs        单次计算时长预算（毫秒）
+     * @param costLimitFactor 成本上限倍数（0/1＝不设上限），见 {@link #costLimit}
+     * @param cancelled       取消信号（返回 true 时尽快结束并返回当前最优部分路径）
      */
     @Nullable
     public static Result findPath(ClientLevel level, BlockPos start, Goal goal,
-                                  long budgetMs, int maxFall, BooleanSupplier cancelled) {
-        return new GoPathfinder(level, goal, maxFall).find(start, budgetMs * 1_000_000L, cancelled);
+                                  long budgetMs, int maxFall, int costLimitFactor, BooleanSupplier cancelled) {
+        return new GoPathfinder(level, goal, maxFall, costLimitFactor)
+                .find(start, budgetMs * 1_000_000L, cancelled);
     }
 
     @Nullable
     private Result find(BlockPos start, long budgetNanos, BooleanSupplier cancelled) {
         long deadline = System.nanoTime() + budgetNanos;
+        long nextCheck = System.nanoTime() + CHECK_INTERVAL_NANOS;
         Node startNode = new Node(null, start.getX(), start.getY(), start.getZ(), 0.0F, goal.heuristic(start.getX(), start.getY(), start.getZ()));
         map.put(BlockPos.asLong(startNode.x, startNode.y, startNode.z), startNode);
         heap.push(startNode);
         Node best = startNode;
-        int expanded = 0;
+        // 成本上限：起点到目标的距离下界 × 倍数（0/1＝不设上限）
+        float limit = costLimit(startNode.h, costLimitFactor);
         while (!heap.isEmpty()) {
             Node cur = heap.pop();
             if (goal.isInGoal(cur.x, cur.y, cur.z)) {
                 return buildPath(cur, true);
             }
+            if (cur.f() > limit) {
+                // 堆按 f 有序：pop 出的 f 已超上限，后面的只会更贵 → 目标不可达，立即收工
+                return null;
+            }
             if (cur.h < best.h) {
                 best = cur;
             }
-            if ((++expanded & 63) == 0
-                    && (cancelled.getAsBoolean() || System.nanoTime() >= deadline || map.size() > MAX_NODES)) {
-                break;
+            if (System.nanoTime() >= nextCheck) {
+                nextCheck = System.nanoTime() + CHECK_INTERVAL_NANOS;
+                if (cancelled.getAsBoolean() || System.nanoTime() >= deadline || map.size() > MAX_NODES) {
+                    break;
+                }
             }
             if (emptyChunks >= MAX_EMPTY_CHUNKS) {
                 break;
@@ -648,7 +696,7 @@ public final class GoPathfinder {
     }
 
     private boolean loaded(int x, int z) {
-        if (level.hasChunk(x >> 4, z >> 4)) {
+        if (BlockStateUtils.isColumnLoaded(level, x >> 4, z >> 4)) {
             return true;
         }
         emptyChunks++;
@@ -700,17 +748,30 @@ public final class GoPathfinder {
 
     /** 预检结果缓存上限（条）：超出整表清空（候选坐标 → 是否有合法落脚点） */
     private static final int STAND_SPOT_CACHE_MAX = 4096;
+    /**
+     * 落脚点预检的<b>水平</b>半径（切比雪夫，格）：候选方块水平方向这个范围内的可站立位都算"有地方站"。
+     * 由内向外逐层扫、命中即返回；放宽半径＝更保守的剪枝（宁可多留，交给 A* 裁决），
+     * 同时会让池内"可到达"计数涨得更快（比较门禁更容易凑够）。
+     */
+    private static final int STAND_RADIUS = 3;
+    /** 落脚点预检的<b>竖直</b>容差（格）：上下各 1 层（与站立格的 Y±1 语义一致，不做上下放宽） */
+    private static final int STAND_VERTICAL = 1;
+    /** 预检的逐格地形位缓存上限（条）：超出整表清空。逐格结果与候选无关，可跨候选共享 */
+    private static final int STAND_PROBE_CACHE_MAX = 65536;
+    /** 预检的逐格地形位缓存：格坐标 → 是否可站立（修订号变化即失效） */
+    private static final Long2ByteOpenHashMap STAND_PROBE_CACHE = new Long2ByteOpenHashMap();
+    private static long standProbeRevision = Long.MIN_VALUE;
     /** 预检结果缓存：仅主线程（派发处）访问，与后台寻路的实例缓存互不共享 */
     private static final Long2BooleanOpenHashMap STAND_SPOT_CACHE = new Long2BooleanOpenHashMap();
     /** 缓存构建时的世界修订号：方块/原理图/维度变化（SchematicStateCache 修订号）即失效重算 */
     private static long standSpotCacheRevision = Long.MIN_VALUE;
 
     /**
-     * 候选方块周围是否存在至少一个 A* 实际可产生的紧邻落脚格
-     * （水平曼哈顿 1、Y±1，与 {@link #goalSet} 展开的站立格一致，不含候选格本身）。
-     * 这是派发前的「只删必死」剪枝：任一紧邻格满足即保留，绝不因单格站不了判死候选；
-     * 判定有效 ≠ 能到达（中间有沟/墙仍由寻路裁决），判定无效 = 任何起点都站不到，
-     * 因此不会误删可到达目标。结果按坐标缓存，世界修订号变化即失效重算。
+     * 候选方块周围是否存在至少一个可站立位（<b>水平切比雪夫半径 {@link #STAND_RADIUS}</b>、
+     * <b>竖直 ±{@link #STAND_VERTICAL}</b>，不含候选格本身）。这是派发前的「只删必死」剪枝：
+     * 任一格满足即保留，绝不因单格站不了判死候选；
+     * 判定有效 ≠ 能到达（中间有沟/墙仍由寻路裁决），判定无效 = 周围连站的地方都没有。
+     * 结果按候选坐标缓存，世界修订号变化即失效重算；逐格地形位另有一层按格缓存（跨候选共享）。
      */
     static boolean hasStandableNeighbor(ClientLevel level, BlockPos target) {
         long rev = SchematicStateCache.INSTANCE.getRevision();
@@ -730,38 +791,72 @@ public final class GoPathfinder {
         return ok;
     }
 
+    /**
+     * 由内向外逐层（水平切比雪夫壳 r=1..{@link #STAND_RADIUS} × 竖直 {@link #STAND_VERTICAL}）找落脚点，
+     * 命中即返回：先看最近的位置，绝大多数候选在第 1~2 层就命中，比"整片扫完"便宜得多。
+     */
     private static boolean computeStandableNeighbor(ClientLevel level, BlockPos target) {
-        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
         int tx = target.getX();
         int ty = target.getY();
         int tz = target.getZ();
-        for (int dy = -1; dy <= 1; dy++) {
-            for (int[] d : DIRS) {
-                int x = tx + d[0];
-                int y = ty + dy;
-                int z = tz + d[1];
-                if (!level.hasChunk(x >> 4, z >> 4)) {
-                    continue; // 未加载列：A* 的 loaded() 同样拒绝，不算合法落脚点
-                }
-                // 地面站立：脚下实心 + 本格可通行 + 头部可通行（与全部移动生成器同条件）
-                byte under = probeBlock(level, m, x, y - 1, z);
-                if ((under & BIT_SOLID) != 0) {
-                    byte feet = probeBlock(level, m, x, y, z);
-                    byte head = probeBlock(level, m, x, y + 1, z);
-                    if (((feet & BIT_CLIMB) != 0 || (feet & (BIT_SOLID | BIT_LAVA)) == 0)
-                            && ((head & BIT_CLIMB) != 0 || (head & (BIT_SOLID | BIT_LAVA)) == 0)) {
-                        return true;
+        for (int r = 1; r <= STAND_RADIUS; r++) {
+            for (int dy = -STAND_VERTICAL; dy <= STAND_VERTICAL; dy++) {
+                for (int dx = -r; dx <= r; dx++) {
+                    boolean xEdge = dx == -r || dx == r;
+                    for (int dz = -r; dz <= r; dz++) {
+                        if (!xEdge && !(dz == -r || dz == r)) {
+                            continue; // 只扫本层水平壳（内层已扫过）
+                        }
+                        if (standableAt(level, tx + dx, ty + dy, tz + dz)) {
+                            return true;
+                        }
                     }
-                }
-                // 攀爬悬挂：本格是可攀爬方块（climb() 允许悬挂节点，不要求脚下实心）。
-                // 只认「本格可爬」、不收窄到邻层——宁可保守漏删（多派死候选由 A* 证伪），
-                // 也不误删本可攀爬到达的活目标
-                if ((probeBlock(level, m, x, y, z) & BIT_CLIMB) != 0) {
-                    return true;
                 }
             }
         }
         return false;
+    }
+
+    /** 单格"可站立位"判定（与全部移动生成器同条件），结果按格缓存、世界修订号变化即失效 */
+    private static boolean standableAt(ClientLevel level, int x, int y, int z) {
+        long rev = SchematicStateCache.INSTANCE.getRevision();
+        if (rev != standProbeRevision) {
+            standProbeRevision = rev;
+            STAND_PROBE_CACHE.clear();
+        }
+        long key = BlockPos.asLong(x, y, z);
+        byte cached = STAND_PROBE_CACHE.get(key);
+        if (cached != 0) {
+            return cached > 0;
+        }
+        boolean ok = computeStandable(level, x, y, z);
+        if (STAND_PROBE_CACHE.size() >= STAND_PROBE_CACHE_MAX) {
+            STAND_PROBE_CACHE.clear(); // 上限兜底：防内存膨胀
+        }
+        STAND_PROBE_CACHE.put(key, (byte) (ok ? 1 : -1));
+        return ok;
+    }
+
+    /**
+     * 单格地形判定：脚下实心 + 本格可通行 + 头部可通行 → 可站立；
+     * 或本格是可攀爬方块（climb() 允许悬挂节点，不要求脚下实心——宁可保守漏删，
+     * 也不误删本可攀爬到达的活目标）。
+     */
+    private static boolean computeStandable(ClientLevel level, int x, int y, int z) {
+        if (!BlockStateUtils.isColumnLoaded(level, x >> 4, z >> 4)) {
+            return false; // 未加载列：A* 的 loaded() 同样拒绝，不算合法落脚点
+        }
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        byte under = probeBlock(level, m, x, y - 1, z);
+        if ((under & BIT_SOLID) != 0) {
+            byte feet = probeBlock(level, m, x, y, z);
+            byte head = probeBlock(level, m, x, y + 1, z);
+            if (((feet & BIT_CLIMB) != 0 || (feet & (BIT_SOLID | BIT_LAVA)) == 0)
+                    && ((head & BIT_CLIMB) != 0 || (head & (BIT_SOLID | BIT_LAVA)) == 0)) {
+                return true;
+            }
+        }
+        return (probeBlock(level, m, x, y, z) & BIT_CLIMB) != 0;
     }
 
     /**
@@ -800,7 +895,7 @@ public final class GoPathfinder {
         }
         Collections.reverse(out);
         BlockPos goalCell = reachedGoal ? new BlockPos(end.x, end.y, end.z) : null;
-        return new Result(out, reachedGoal, end.h / SPRINT_COST, goalCell);
+        return new Result(out, reachedGoal, end.h / SPRINT_COST, goalCell, end.g);
     }
 
     /** 模拟 MC 重力：下落 n 格所需 tick 数 */

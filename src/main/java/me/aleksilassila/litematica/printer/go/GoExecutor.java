@@ -135,8 +135,15 @@ public final class GoExecutor {
         if (!GoManager.INSTANCE.isActive()) {
             // 寻路已停止：跳跃临时转向还没恢复的话把视角还回去
             restorePreJumpYaw(player, false);
-            GhastFlyer.releasePitch(player); // 飞行接管过 pitch 就回正，否则停止后按 W 会继续下潜
+            // 先清残留输入，再交给"待命期飞行维护"——
+            // 压住原理图方块时的蹭出去与寻路是否在跑无关，寻路一停就撒手会把脱困掐断
             clearStaleInput(player);
+            if (Configs.Go.GHAST_PATHFIND.getBooleanValue() && GhastRideState.canFly(player)
+                    && !isContainerUiOpen(player)) {
+                GhastFlyer.driveStandby(player); // 无脱困需求时不写输入，玩家手动骑乘不受影响
+            } else {
+                GhastFlyer.releasePitch(player); // 不接管飞行：pitch 回正（同时作废脱困状态）
+            }
             return;
         }
         Minecraft mc = Minecraft.getInstance();

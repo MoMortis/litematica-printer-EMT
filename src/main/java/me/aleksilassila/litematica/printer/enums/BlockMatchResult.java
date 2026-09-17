@@ -64,6 +64,24 @@ public enum BlockMatchResult {
         return WRONG_BLOCK;
     }
 
+    /**
+     * 只回答"是否已正确放置"（扫描判定缓存/后台扫描用）：<b>不触碰覆盖打印列表</b>。
+     *
+     * <p>为什么单独开一个方法：{@link #compare(BlockState, BlockState)} 在后半段会走
+     * {@link #matchesCoverList}，那条分支读写静态 IdentityHashMap（非线程安全），只能在主线程用。
+     * CORRECT 只可能由前两个分支产生（状态相等／同类方块且忽略属性后状态相等），所以本方法的
+     * 结果与 {@code compare(...) == CORRECT} 完全一致，可在工作线程调用。
+     */
+    public static boolean isCorrect(BlockState requiredState, BlockState currentState) {
+        if (requiredState.equals(currentState)) {
+            return true;
+        }
+        if (requiredState.getBlock().equals(currentState.getBlock())) {
+            return BlockStateUtils.statesEqualIgnoreProperties(requiredState, currentState);
+        }
+        return false;
+    }
+
     // ==================== 覆盖打印列表匹配（按状态缓存） ====================
     // 拼音匹配昂贵（SkipListCache/ScanWhitelistCache 均为此建有缓存）；
     // IdentityHashMap 按 BlockState 身份缓存，调用方（扫描/引导）均在主线程

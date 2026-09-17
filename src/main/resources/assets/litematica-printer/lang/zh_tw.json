@@ -256,7 +256,7 @@
   "litematica_printer.config.printScanAutoWalk.desc": "列印工作時自動掃描玩家所在子區塊內的原理圖（時長受「工作時長預算」限制），掃到未放置的方塊就用自動尋路帶你走過去（只用移動/衝刺/跳躍，不改視角）；到達後釋放控制自由移動，等該方塊放置完成再前往下一個。「尋路掃描白名單」未開啟時全量掃描（所有未放置方塊都是目標），開啟且列表非空時只掃列表內/驗證器高亮的方塊。子區塊按 x+、x-、z+、z-、y+、y- 順序向外擴展。手動 /go 優先。",
   "litematica_printer.config.ghastPathfind": "樂魂尋路",
   "litematica_printer.config.ghastPathfind.desc": "開啟後不再走路移動：須騎乘快樂惡魂，做三維飛行前往待放置方塊。飛行空間須完全落在原理圖預測的空氣格內（原理圖之外仍不可穿越真實方塊），且惡魂與玩家的碰撞箱都要放得下。未騎乘／非第一上鞍者／未裝備挽具／被玩家站立佔用時會在螢幕中下方給出提示。",
-  "litematica_printer.config.pathNearestTarget": "按路徑最短選目標",
+  "litematica_printer.config.pathNearestTarget": "最短路徑優先",
   "litematica_printer.config.pathNearestTarget.desc": "開啟後，掃描自動尋路對全部候選做一次多目標尋路，選「真實行走路徑最短」的方塊載玩家過去（直線近但繞路遠的目標不再優先）。關閉後維持舊行為：直線距離最近 + 單目標尋路。",
   "litematica_printer.config.pathTargetCandidateLimit": "多目標候選上限",
   "litematica_printer.config.pathTargetCandidateLimit.desc": "進入多目標尋路目標集合的候選數上限（16~1024，預設 256）。候選超過上限時按直線距離預截——直線距離只作預篩，最短目標仍由路徑成本裁決；調小可降低計算開銷，但極端繞路場景下可能漏掉真最短目標。",

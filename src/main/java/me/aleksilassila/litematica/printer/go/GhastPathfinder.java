@@ -1,12 +1,16 @@
 package me.aleksilassila.litematica.printer.go;
 
+import it.unimi.dsi.fastutil.longs.Long2BooleanOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ByteOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2FloatOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
+import me.aleksilassila.litematica.printer.printer.SchematicStateCache;
+import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.AABB;
 import org.jetbrains.annotations.Nullable;
 
@@ -19,9 +23,12 @@ import java.util.function.BooleanSupplier;
 /**
  * 「乐魂寻路」的三维飞行 A*（纯飞行移动，不挖不放）。
  *
- * <p>与行走版 {@link GoPathfinder} 的区别：邻域为 26 向自由飞行；成本即几何距离
- * （恶魂速度固定，无速度差异）；合法性判定的主体是<b>「乐魂 + 骑乘者」的并集碰撞箱</b>，
- * 而非单格可站立性。
+ * <p>与行走版 {@link GoPathfinder} 的区别：邻域为 26 向自由飞行；成本以几何距离为基准
+ * （恶魂速度固定，无速度差异），并按"离目标的水平距离"给垂直分量加价，使路线呈
+ * <b>长距离平飞 + 末端集中升降</b>（见 {@link #VERT_LATE_WEIGHT}）；另按"离方块的三维
+ * 切比雪夫距离"施加<b>离墙惩罚</b>（见 {@link #CLEARANCE_MAX_PENALTY}），使路线主动与方块
+ * 拉开距离、给飞行动量的侧偏留出容错空间；合法性判定的主体是
+ * <b>「乐魂 + 骑乘者」的并集碰撞箱</b>，而非单格可站立性。
  *
  * <p><b>合法性 = 双重判定</b>（沿位移按 0.5 格采样，防"跨格穿薄墙"）：
  * <ol>
@@ -35,15 +42,60 @@ import java.util.function.BooleanSupplier;
  * 不触碰任何主线程状态。
  */
 public final class GhastPathfinder {
-    /** 移动成本：正交 1 格 = 1，面对角 = √2，体对角 = √3（成本即几何距离） */
+    /** 几何路程单价：正交 1 格 = 1，面对角 = √2，体对角 = √3（见 {@link #geoCost}） */
     private static final float COST_DIAG2 = 1.41421356F;
     private static final float COST_DIAG3 = 1.7320508F;
     /** 展开节点上限（与时长预算双保险） */
     private static final int MAX_NODES = 120_000;
     /** 扫掠采样步长（格）：单条边最多跨 1 格，0.5 足以覆盖薄墙 */
     private static final double SWEEP_STEP = 0.5;
+    /**
+     * 「末端集中升降」加价权重：每格垂直移动 × 每格"到目标的水平距离"。
+     * 离目标越远改高度越贵、贴着目标改免费 → A* 必然先长距离平飞、再在末端一次性升降。
+     * 水平分量不加权，故绕远路只会更贵，不会被"拖后升降"诱导绕路。
+     */
+    private static final float VERT_LATE_WEIGHT = 0.2F;
+    /** 「末端集中升降」加价的距离封顶（格）：超过此距离一律按此值计，防远处加价失控 */
+    private static final float VERT_LATE_CAP = 16.0F;
+    /**
+     * 「离墙惩罚」：路线离方块（真实方块与原理图非空气格）越近，单步代价越高，逼 A* 主动
+     * 与方块拉开距离。寻路只保证"箱子停在格心、沿路点直线飞"时不碰方块，而实际飞行的
+     * 启动/惯性侧偏会让贴脸的路线擦墙卡死；留出余量后这类路线会被代价淘汰。
+     *
+     * <p>距离度量＝三维切比雪夫（格）：{@code 1 格（紧贴箱体）}惩罚最高，按
+     * {@link #CLEARANCE_DECAY} 每格指数衰减，超过 {@link #CLEARANCE_RADIUS} 格不再惩罚。
+     * 惩罚恒 ≥ 0，故启发值仍可采纳、边成本只增不减仍一致。
+     */
+    private static final float CLEARANCE_MAX_PENALTY = 6.0F;
+    /** 离墙惩罚每格的指数衰减系数（0.5＝每远一格减半） */
+    private static final float CLEARANCE_DECAY = 0.5F;
+    /** 离墙惩罚的作用半径（格）：超过该距离不再惩罚（同时决定探测的层数上限） */
+    private static final int CLEARANCE_RADIUS = 3;
+    /**
+     * 路径允许的<b>最小离墙余量</b>（三维切比雪夫格）：1＝紧贴方块（箱子与方块只隔 0.5 格间隙），
+     * 2＝与方块隔开一整格。
+     *
+     * <p>这是<b>硬约束</b>：贴着脸飞时，起步的推力与惯性就会把箱子擦上墙（现实碰撞会吃掉推力、
+     * 或者直接蹭进"原理图排了方块、现实还是空气"的位置），所以"贴邻格"一律不作为路点。
+     * 离墙惩罚（{@link #CLEARANCE_MAX_PENALTY}）在此之上继续鼓励走更开阔的通道。
+     */
+    private static final int MIN_CLEARANCE = 2;
+    /** 离墙惩罚查表：下标＝切比雪夫距离（格）；0 位不用（0＝非法格，不会走到），超半径＝0 */
+    private static final float[] CLEARANCE_PENALTY = buildClearancePenalty();
+
+    private static float[] buildClearancePenalty() {
+        float[] table = new float[CLEARANCE_RADIUS + 2];
+        for (int d = 1; d <= CLEARANCE_RADIUS; d++) {
+            table[d] = CLEARANCE_MAX_PENALTY * (float) Math.pow(CLEARANCE_DECAY, d - 1);
+        }
+        return table;
+    }
     /** 浮点比较容差 */
     private static final float EPS = 1.0E-4F;
+    /** 超时/取消检查间隔（纳秒）：按时间检查而不是"每 N 个节点"——单节点扩展昂贵时
+     * （大箱体 + 原理图逐格判定），节点粒度的检查会让一次"时长预算"实际跑出数倍时长，
+     * 后续重算只能在单线程队列里排队，观感就是"卡死不动" */
+    private static final long CHECK_INTERVAL_NANOS = 1_000_000L;
 
     /** 26 邻域方向（不含零向量） */
     private static final int[][] DIRS26 = buildDirs26();
@@ -106,6 +158,16 @@ public final class GhastPathfinder {
             return Math.max(sizeX, sizeZ) / 2.0;
         }
 
+        /** 规格指纹：偏移/尺寸任一变化（服务器改实体大小等）即让预检缓存失效 */
+        long fingerprint() {
+            return Double.doubleToLongBits(offX) * 31
+                    ^ Double.doubleToLongBits(offY) * 131
+                    ^ Double.doubleToLongBits(offZ) * 1009
+                    ^ Double.doubleToLongBits(sizeX) * 65537
+                    ^ Double.doubleToLongBits(sizeY) * 131071
+                    ^ Double.doubleToLongBits(sizeZ) * 524287;
+        }
+
         /** 乐魂位于给定连续坐标（x/z 中心、y 脚底）时的并集箱 */
         public AABB at(double centerX, double feetY, double centerZ) {
             return new AABB(centerX + offX, feetY + offY, centerZ + offZ,
@@ -117,24 +179,35 @@ public final class GhastPathfinder {
         @Nullable
         final Node parent;
         final BlockPos pos;
+        /** 几何路程累积（正交 1 / 对角 √2 / 体对角 √3，上升加倍）：<b>成本上限的唯一判定口径</b>，
+         *  不含任何软偏好加价，故 {@code g + h} 就是"这条走法至少还要飞多远" */
         final float g;
+        /** 软偏好加价累积（离墙惩罚 + 末端集中升降）：只决定"选哪条路"，不参与"能不能到"的判定 */
+        final float soft;
         final float h;
 
-        Node(@Nullable Node parent, BlockPos pos, float g, float h) {
+        Node(@Nullable Node parent, BlockPos pos, float g, float soft, float h) {
             this.parent = parent;
             this.pos = pos;
             this.g = g;
+            this.soft = soft;
             this.h = h;
         }
 
+        /** 选路用的总代价（路程 + 软偏好），保证原"贴方块少走、末端集中升降"的路线偏好不变 */
         float f() {
-            return g + h;
+            return g + soft + h;
+        }
+
+        /** 路程 + 软偏好（不含启发值）：用于「该位置是否已有更优走法」的比较 */
+        float total() {
+            return g + soft;
         }
     }
 
-    /** 已判定过的格位 → 箱子是否合法（memo）：26 邻域下同一格会被反复当作端点判定，
+    /** 已判定过的格位 → 「合法性 + 离墙余量」（memo）：26 邻域下同一格会被反复当作端点判定，
      *  缓存后碰撞求值与原理图遍历只算一次（判定只依赖固定的箱规格与障碍集合，故可缓存） */
-    private final Long2ByteOpenHashMap cellMemo = new Long2ByteOpenHashMap();
+    private final Long2ByteOpenHashMap clearanceMemo = new Long2ByteOpenHashMap();
 
     private final ClientLevel level;
     private final GoPathfinder.Goal goal;
@@ -145,56 +218,87 @@ public final class GhastPathfinder {
     /** 已确定的最优 g（惰性删除用） */
     private final Long2FloatOpenHashMap bestG = new Long2FloatOpenHashMap();
     private final PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingDouble(Node::f));
+    /** 成本上限倍数（0/1＝不设上限；主线程快照，搜索中不读配置） */
+    private final int costLimitFactor;
+    /** 本次搜索要求的最小离墙余量（格）：严格档 {@link #MIN_CLEARANCE}，放宽档 1（只禁重叠） */
+    private final int minClearance;
 
     private GhastPathfinder(ClientLevel level, GoPathfinder.Goal goal, BoxSpec box,
-                            @Nullable LongOpenHashSet schematicSolid) {
+                            @Nullable LongOpenHashSet schematicSolid, int costLimitFactor, int minClearance) {
         this.level = level;
         this.goal = goal;
         this.box = box;
         this.schematicSolid = schematicSolid;
+        this.costLimitFactor = costLimitFactor;
+        this.minClearance = minClearance;
         this.bestG.defaultReturnValue(Float.POSITIVE_INFINITY);
     }
 
     /**
      * 从 start（恶魂基准格）出发寻路。后台线程调用。
      *
-     * @param budgetMs  单次计算时长预算（毫秒）
-     * @param cancelled 取消信号
+     * <p><b>两档口径</b>：先按 {@link #MIN_CLEARANCE}（离方块至少隔 1 格）找；这样都无解时，
+     * 再放宽到"只不许与方块重叠"重试一次。放宽这一档是为了不把路走死——起点周围若只剩贴邻格
+     * （乐魂贴着墙停着就是这么来的），严格档会直接判无解、乐魂原地不动，比"贴着飞"更糟。
+     *
+     * @param budgetMs        单次计算时长预算（毫秒），放宽档复用同一预算
+     * @param costLimitFactor 成本上限倍数（0/1＝不设上限），见 {@link GoPathfinder#costLimit}
+     * @param cancelled       取消信号
      */
     @Nullable
     public static GoPathfinder.Result findPath(ClientLevel level, BlockPos start, GoPathfinder.Goal goal, BoxSpec box,
                                                @Nullable LongOpenHashSet schematicSolid, long budgetMs,
-                                               BooleanSupplier cancelled) {
-        return new GhastPathfinder(level, goal, box, schematicSolid)
-                .search(start, Math.max(1L, budgetMs) * 1_000_000L, cancelled);
+                                               int costLimitFactor, BooleanSupplier cancelled) {
+        long budgetNanos = Math.max(1L, budgetMs) * 1_000_000L;
+        GoPathfinder.Result strict = new GhastPathfinder(level, goal, box, schematicSolid,
+                costLimitFactor, MIN_CLEARANCE).search(start, budgetNanos, cancelled);
+        if (strict != null || cancelled.getAsBoolean()) {
+            return strict;
+        }
+        return new GhastPathfinder(level, goal, box, schematicSolid,
+                costLimitFactor, 1).search(start, budgetNanos, cancelled);
     }
 
     @Nullable
     private GoPathfinder.Result search(BlockPos start, long budgetNanos, BooleanSupplier cancelled) {
         long deadline = System.nanoTime() + budgetNanos;
-        Node startNode = new Node(null, start, 0.0F,
+        long nextCheck = System.nanoTime() + CHECK_INTERVAL_NANOS;
+        Node startNode = new Node(null, start, 0.0F, 0.0F,
                 goal.heuristic(start.getX(), start.getY(), start.getZ()));
         bestG.put(start.asLong(), 0.0F);
         open.add(startNode);
         int expanded = 0;
         Node best = startNode;
+        // 成本上限：「这条走法至少还要飞多远」＝几何路程 + 到目标的路程下界，超过
+        // 「起点到最近目标的路程下界 × 倍数」即不可达（0/1＝不设上限）。
+        // 判定刻意只用路程，不含离墙惩罚/末端加价等软偏好——旧版拿含惩罚的总代价去比，
+        // 贴墙飞行每步最多多算 6 分，几格就把上限顶爆，走得通的目标被误判"无解"（乐魂原地不动）。
+        float limit = GoPathfinder.costLimit(startNode.h, costLimitFactor);
 
         while (!open.isEmpty()) {
             Node cur = open.poll();
             float known = bestG.get(cur.pos.asLong());
-            if (cur.g > known + EPS) {
-                continue; // 过期条目（该位置已有更优 g）
+            if (cur.total() > known + EPS) {
+                continue; // 过期条目（该位置已有更优走法）
             }
             if (goal.isInGoal(cur.pos.getX(), cur.pos.getY(), cur.pos.getZ())) {
                 return buildPath(cur, true);
             }
+            if (cur.g + cur.h > limit) {
+                // 该格及其所有后继的路程都必然超上限 → 剪掉不扩展。剪干净后 open 耗尽、
+                // best 仍是起点，于是与旧版一样"瞬间判无解"，只是不再误杀贴墙的近目标
+                continue;
+            }
             if (cur.h < best.h) {
                 best = cur;
             }
-            if ((++expanded & 63) == 0
-                    && (cancelled.getAsBoolean() || System.nanoTime() >= deadline || expanded > MAX_NODES)) {
-                break;
+            if (System.nanoTime() >= nextCheck) {
+                nextCheck = System.nanoTime() + CHECK_INTERVAL_NANOS;
+                if (cancelled.getAsBoolean() || System.nanoTime() >= deadline || expanded > MAX_NODES) {
+                    break;
+                }
             }
+            expanded++;
             expand(cur);
         }
         if (best == startNode) {
@@ -209,23 +313,44 @@ public final class GhastPathfinder {
             if (!sweepFree(cur.pos, next)) {
                 continue;
             }
-            float tentative = cur.g + moveCost(d);
+            float geo = cur.g + geoCost(d);
+            float soft = cur.soft + softCost(d, next);
+            float tentative = geo + soft;
             long key = next.asLong();
             if (tentative >= bestG.get(key) - EPS) {
                 continue;
             }
             bestG.put(key, tentative);
-            open.add(new Node(cur, next, tentative,
+            open.add(new Node(cur, next, geo, soft,
                     goal.heuristic(next.getX(), next.getY(), next.getZ())));
         }
     }
 
-    private static float moveCost(int[] d) {
+    /** 几何路程代价（成本上限的判定口径）：正交 1 格 = 1、面对角 = √2、体对角 = √3；
+     *  上升加倍——空格上升的推力只有水平的一半（源码 up += 0.5 对比 forward = 1.0），
+     *  不修正会让 A* 高估爬升效率、选出实际很慢的垂直路线。 */
+    private float geoCost(int[] d) {
         int manhattan = Math.abs(d[0]) + Math.abs(d[1]) + Math.abs(d[2]);
         float base = manhattan == 1 ? 1.0F : (manhattan == 2 ? COST_DIAG2 : COST_DIAG3);
-        // 上升成本加倍：空格上升的推力只有水平的一半（源码 up += 0.5 对比 forward = 1.0），
-        // 不修正会让 A* 高估爬升效率、选出实际很慢的垂直路线
         return d[1] > 0 ? base * 2.0F : base;
+    }
+
+    /** 软偏好加价（只决定"两条都能到的路选哪条"，不参与可达性判定）：
+     *  「离墙惩罚」＋「末端集中升降」。 */
+    private float softCost(int[] d, BlockPos next) {
+        // 「离墙惩罚」：贴方块越是紧，单步代价越高（按切比雪夫距离指数衰减）。飞行的启动
+        // 与惯性会让实际轨迹偏离路点，贴脸的路线一飞就擦墙卡死；惩罚把这类路线淘汰掉，
+        // 路径自动改走与方块留有间隙的通道。格级余量在 sweepFree 的终点判定里已算好（memo）
+        float cost = CLEARANCE_PENALTY[cellClearance(next)];
+        // 「末端集中升降」：垂直分量再按"该步离目标的水平距离"加价。平飞的 L 形与"先降后平飞"
+        // 的 L 形总成本本是完全并列的（Δy 与水平距离都相同），只靠乘系数选不出末端；
+        // 这里让加价随离目标的距离增长，"改高度最便宜的位置"就唯一地落在目标处。
+        // 加价恒 ≥ 0，故启发值仍可采纳、且边成本只增不减仍一致。
+        if (d[1] != 0) {
+            float horizToGoal = Math.min(goal.horizDistanceTo(next.getX(), next.getZ()), VERT_LATE_CAP);
+            cost += VERT_LATE_WEIGHT * Math.abs(d[1]) * horizToGoal;
+        }
+        return cost;
     }
 
     /**
@@ -255,16 +380,56 @@ public final class GhastPathfinder {
         return true;
     }
 
-    /** 格级合法性（带 memo）：恶魂基准格在该格时的并集箱是否合法 */
+    /** 格级合法性（带 memo）：恶魂基准格在该格时的并集箱"不重叠、且离方块至少 {@link #minClearance} 格"
+     *（严格档＝不贴邻、也不贴原理图非空气方块；放宽档＝只不许重叠） */
     private boolean cellFree(BlockPos p) {
+        return cellClearance(p) >= minClearance;
+    }
+
+    /**
+     * 格级「合法性 + 离墙余量」（带 memo）：返回值 &gt;0 为合法，其值＝该格并集箱到最近方块的
+     * 三维切比雪夫距离（格，封顶 {@link #CLEARANCE_RADIUS}+1）；0＝非法。
+     */
+    private int cellClearance(BlockPos p) {
         long key = p.asLong();
-        byte cached = cellMemo.get(key);
+        byte cached = clearanceMemo.get(key);
         if (cached != 0) {
-            return cached > 0;
+            return cached;
         }
-        boolean ok = boxFree(box.at(p.getX() + 0.5, p.getY(), p.getZ() + 0.5));
-        cellMemo.put(key, (byte) (ok ? 1 : -1));
-        return ok;
+        int level = clearance(box.at(p.getX() + 0.5, p.getY(), p.getZ() + 0.5));
+        clearanceMemo.put(key, (byte) level);
+        return level;
+    }
+
+    /**
+     * 并集箱在该位置的合法性 + 离墙余量：0＝非法；k≥1＝合法且最近方块在三维切比雪夫距离
+     * k 格处（1＝紧贴箱体）；{@link #CLEARANCE_RADIUS}+1＝半径内无方块。
+     *
+     * <p>真实方块一侧用「箱体外扩 k−0.5 格」探测：外扩 0.5 已能把"紧贴"（间隙 0）吃进来，
+     * 外扩 1.5 才能吃到"隔一格"（间隙 1），即外扩量恰好对应切比雪夫格距；原理图一侧逐层
+     * 只扫新增的一圈壳（内层在更小的 k 已判过），避免整箱重复遍历。
+     */
+    private int clearance(AABB b) {
+        if (!boxFree(b)) {
+            return 0;
+        }
+        int baseMinX = Mth.floor(b.minX);
+        int baseMaxX = Mth.floor(b.maxX - 1.0E-7);
+        int baseMinY = Mth.floor(b.minY);
+        int baseMaxY = Mth.floor(b.maxY - 1.0E-7);
+        int baseMinZ = Mth.floor(b.minZ);
+        int baseMaxZ = Mth.floor(b.maxZ - 1.0E-7);
+        for (int k = 1; k <= CLEARANCE_RADIUS; k++) {
+            if (!level.noCollision(b.inflate(k - 0.5))) {
+                return k;
+            }
+            if (schematicSolid != null && !schematicSolid.isEmpty()
+                    && schematicShellHasSolid(k, baseMinX, baseMaxX, baseMinY, baseMaxY,
+                    baseMinZ, baseMaxZ)) {
+                return k;
+            }
+        }
+        return CLEARANCE_RADIUS + 1;
     }
 
     /** 双重判定：真实碰撞 + 原理图"非空气"约束 */
@@ -275,8 +440,13 @@ public final class GhastPathfinder {
         if (!level.noCollision(b)) {
             return false;
         }
+        return !schematicBoxHasSolid(b);
+    }
+
+    /** 箱体覆盖的格子是否命中"原理图预测非空气"（余量判定的第 0 层＝整箱） */
+    private boolean schematicBoxHasSolid(AABB b) {
         if (schematicSolid == null || schematicSolid.isEmpty()) {
-            return true;
+            return false;
         }
         int minX = Mth.floor(b.minX);
         int maxX = Mth.floor(b.maxX - 1.0E-7);
@@ -288,12 +458,43 @@ public final class GhastPathfinder {
             for (int y = minY; y <= maxY; y++) {
                 for (int z = minZ; z <= maxZ; z++) {
                     if (schematicSolid.contains(BlockPos.asLong(x, y, z))) {
-                        return false;
+                        return true;
                     }
                 }
             }
         }
-        return true;
+        return false;
+    }
+
+    /**
+     * 离墙余量判定的第 k 层壳扫描：只遍历"外扩 k 格"相对"外扩 k−1 格"新增的那一圈格子
+     * （内层在更小的 k 已判过），避免整箱重复遍历。
+     */
+    private boolean schematicShellHasSolid(int k, int baseMinX, int baseMaxX,
+                                           int baseMinY, int baseMaxY,
+                                           int baseMinZ, int baseMaxZ) {
+        int loX = baseMinX - k;
+        int hiX = baseMaxX + k;
+        int loY = baseMinY - k;
+        int hiY = baseMaxY + k;
+        int loZ = baseMinZ - k;
+        int hiZ = baseMaxZ + k;
+        for (int y = loY; y <= hiY; y++) {
+            boolean yEdge = y == loY || y == hiY;
+            for (int z = loZ; z <= hiZ; z++) {
+                if (yEdge || z == loZ || z == hiZ) {
+                    for (int x = loX; x <= hiX; x++) {
+                        if (schematicSolid.contains(BlockPos.asLong(x, y, z))) {
+                            return true;
+                        }
+                    }
+                } else if (schematicSolid.contains(BlockPos.asLong(loX, y, z))
+                        || (hiX != loX && schematicSolid.contains(BlockPos.asLong(hiX, y, z)))) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /** 箱子横跨的区块是否都已加载（只查四个水平角，足够覆盖轴对齐箱；max 侧去 epsilon 防多查一列） */
@@ -304,16 +505,182 @@ public final class GhastPathfinder {
     }
 
     private boolean loaded(double x, double z) {
-        return level.hasChunk(Mth.floor(x) >> 4, Mth.floor(z) >> 4);
+        return BlockStateUtils.isColumnLoaded(level, Mth.floor(x) >> 4, Mth.floor(z) >> 4);
     }
 
-    /** 结果复用行走版 {@link GoPathfinder.Result}（同包可构造），使 GoManager 的路径处理无需分支 */
+    // ===== 候选预检（乐魂飞行；主线程调用） =====
+
+    /** 悬停位预检的<b>竖直</b>容差（格）：上下各 1 层（比到达判定的 ±3 严，属"只删必死"剪枝） */
+    private static final int HOVER_SPOT_VERTICAL = 1;
+    /** 预检结果缓存上限（条）：超出整表清空 */
+    private static final int HOVER_SPOT_CACHE_MAX = 4096;
+    /** 预检结果缓存：候选坐标 → 周围是否存在可悬停位（主线程专用） */
+    private static final Long2BooleanOpenHashMap HOVER_SPOT_CACHE = new Long2BooleanOpenHashMap();
+    /** 预检逐格缓存上限（条）：超出整表清空。逐格结果与候选无关，可跨候选共享 */
+    private static final int HOVER_CELL_CACHE_MAX = 65536;
+    /** 预检逐格缓存：悬停位格 → 1 可 / 2 不可（跨候选共享） */
+    private static final Long2ByteOpenHashMap HOVER_CELL_CACHE = new Long2ByteOpenHashMap();
+    /** 两个预检缓存的失效基准：世界修订号（方块/原理图/维度）与箱规格指纹 */
+    private static long hoverSpotCacheRevision = Long.MIN_VALUE;
+    private static long hoverCellCacheRevision = Long.MIN_VALUE;
+    private static long hoverCellCacheSpec = Long.MIN_VALUE;
+
+    /**
+     * 候选预检（乐魂飞行・主线程调用）：目标方块周围<b>水平切比雪夫 {@code R}</b>
+     * （{@link GhastGoal#radius}，默认 3）、<b>竖直 ±{@link #HOVER_SPOT_VERTICAL}</b>
+     * （不含目标格本身）内，是否存在一个<b>放得下「乐魂 + 骑乘者」并集碰撞箱、且不是
+     * 原理图预测实心</b>的空气位。
+     *
+     * <p>这是"只删必死"的剪枝：任一格满足即保留（判定有效 ≠ 一定能飞到，绕行仍由 A*
+     * 裁决）；判定无效 = 目标周围连一个停得下的位置都没有（候选必死，A* 只会白烧预算、
+     * 表现为"框在、路线不出"）。判定口径与 {@link #boxFree} 一致（真实碰撞 + 原理图
+     * 非空气），否则预检放行的位置 A* 仍会拒走，剪枝就白做了。
+     */
+    static boolean hasHoverSpot(ClientLevel level, BlockPos target, @Nullable BoxSpec spec) {
+        if (spec == null) {
+            return true; // 拿不到箱规格（未骑乘等）：无法判定，按"不剪枝"放行
+        }
+        long rev = SchematicStateCache.INSTANCE.getRevision();
+        if (rev != hoverSpotCacheRevision) {
+            hoverSpotCacheRevision = rev;
+            HOVER_SPOT_CACHE.clear();
+        }
+        long key = target.asLong();
+        if (HOVER_SPOT_CACHE.containsKey(key)) {
+            return HOVER_SPOT_CACHE.get(key);
+        }
+        boolean ok = computeHoverSpot(level, target, spec);
+        if (HOVER_SPOT_CACHE.size() >= HOVER_SPOT_CACHE_MAX) {
+            HOVER_SPOT_CACHE.clear();
+        }
+        HOVER_SPOT_CACHE.put(key, ok);
+        return ok;
+    }
+
+    /** 由内向外逐层扫（水平壳 r=1..R × 竖直 ±{@link #HOVER_SPOT_VERTICAL}），命中即返回 */
+    private static boolean computeHoverSpot(ClientLevel level, BlockPos target, BoxSpec spec) {
+        int tx = target.getX();
+        int ty = target.getY();
+        int tz = target.getZ();
+        int rMax = GhastGoal.radius(spec.halfWidth());
+        for (int r = 1; r <= rMax; r++) {
+            for (int dy = -HOVER_SPOT_VERTICAL; dy <= HOVER_SPOT_VERTICAL; dy++) {
+                for (int dx = -r; dx <= r; dx++) {
+                    boolean xEdge = dx == -r || dx == r;
+                    for (int dz = -r; dz <= r; dz++) {
+                        if (!xEdge && !(dz == -r || dz == r)) {
+                            continue; // 只扫本层水平壳（内层已扫过）
+                        }
+                        if (hoverSpotAt(level, spec, tx + dx, ty + dy, tz + dz)) {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /** 单格悬停位判定（带跨候选共享的逐格缓存）：已加载 + 并集箱无碰撞 + 箱体覆盖格非原理图实心 */
+    private static boolean hoverSpotAt(ClientLevel level, BoxSpec spec, int x, int y, int z) {
+        long rev = SchematicStateCache.INSTANCE.getRevision();
+        long specPrint = spec.fingerprint();
+        if (rev != hoverCellCacheRevision || specPrint != hoverCellCacheSpec) {
+            hoverCellCacheRevision = rev;
+            hoverCellCacheSpec = specPrint;
+            HOVER_CELL_CACHE.clear();
+        }
+        long key = BlockPos.asLong(x, y, z);
+        byte cached = HOVER_CELL_CACHE.get(key);
+        if (cached != 0) {
+            return cached > 0;
+        }
+        boolean ok = computeHoverSpotAt(level, spec, x, y, z);
+        if (HOVER_CELL_CACHE.size() >= HOVER_CELL_CACHE_MAX) {
+            HOVER_CELL_CACHE.clear();
+        }
+        HOVER_CELL_CACHE.put(key, (byte) (ok ? 1 : 2));
+        return ok;
+    }
+
+    private static boolean computeHoverSpotAt(ClientLevel level, BoxSpec spec, int x, int y, int z) {
+        if (!BlockStateUtils.isColumnLoaded(level, x >> 4, z >> 4)) {
+            return false; // 未加载：读到的必是空气，不能当依据
+        }
+        AABB box = spec.at(x + 0.5, y, z + 0.5);
+        if (!level.noCollision(box)) {
+            return false;
+        }
+        // 原理图一侧：箱体覆盖格里不得有"预测非空气"（将来会放上来的方块会挡住箱体）
+        return !boxHitsSchematic(box);
+    }
+
+    /**
+     * 箱体是否压在"原理图预测非空气"的格子上（<b>主线程</b>调用）。
+     *
+     * <p>寻路的第二重判定（{@link #boxFree}）只管"规划出来的格位与边"；实际飞行会被惯性、
+     * 脱困推力带偏，偏出去的落点没有任何约束，于是乐魂可能钻进"现实里还是空气、原理图却
+     * 已经排好方块"的位置。这个方法给<b>脱困方向探测</b>与<b>实时纠偏</b>复用，口径与寻路一致。
+     */
+    public static boolean boxHitsSchematic(AABB box) {
+        int minX = Mth.floor(box.minX);
+        int maxX = Mth.floor(box.maxX - 1.0E-7);
+        int minY = Mth.floor(box.minY);
+        int maxY = Mth.floor(box.maxY - 1.0E-7);
+        int minZ = Mth.floor(box.minZ);
+        int maxZ = Mth.floor(box.maxZ - 1.0E-7);
+        BlockPos.MutableBlockPos m = new BlockPos.MutableBlockPos();
+        for (int x = minX; x <= maxX; x++) {
+            for (int y = minY; y <= maxY; y++) {
+                for (int z = minZ; z <= maxZ; z++) {
+                    BlockState st = SchematicStateCache.INSTANCE.getSchematicState(m.set(x, y, z));
+                    if (st != null && !st.isAir()) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    /** 结果复用行走版 {@link GoPathfinder.Result}（同包可构造），使 GoManager 的路径处理无需分支。
+     *  路点先做「只留拐点」抽稀（见 {@link #simplifyToTurns}），绿色连线因此不再每格一个节点。 */
     private GoPathfinder.Result buildPath(Node end, boolean reachedGoal) {
         ArrayList<BlockPos> out = new ArrayList<>();
         for (Node n = end; n != null; n = n.parent) {
             out.add(n.pos);
         }
         Collections.reverse(out);
-        return new GoPathfinder.Result(out, reachedGoal, end.h, reachedGoal ? end.pos : null);
+        simplifyToTurns(out);
+        return new GoPathfinder.Result(out, reachedGoal, end.h, reachedGoal ? end.pos : null, end.total());
+    }
+
+    /**
+     * 「只留拐点」抽稀（原地修改）：保留起点、方向发生变化的拐点、终点，直线段上的中间点全部删除。
+     *
+     * <p>为什么不改变实际路线：被删掉的点与相邻保留点在<b>同一条直线段</b>上（逐格方向完全相同），
+     * 飞行控制律本来就是"朝当前路点直飞"，删掉它们后朝远端保留点直飞，轨迹仍是同一条直线；
+     * 而渲染的绿色连线（每格心一个节点）会明显变疏。
+     */
+    private static void simplifyToTurns(ArrayList<BlockPos> path) {
+        if (path.size() <= 2) {
+            return;
+        }
+        ArrayList<BlockPos> kept = new ArrayList<>(path.size());
+        kept.add(path.get(0));
+        for (int i = 1; i < path.size() - 1; i++) {
+            BlockPos a = path.get(i - 1);
+            BlockPos b = path.get(i);
+            BlockPos c = path.get(i + 1);
+            boolean turn = Integer.compare(b.getX(), a.getX()) != Integer.compare(c.getX(), b.getX())
+                    || Integer.compare(b.getY(), a.getY()) != Integer.compare(c.getY(), b.getY())
+                    || Integer.compare(b.getZ(), a.getZ()) != Integer.compare(c.getZ(), b.getZ());
+            if (turn) {
+                kept.add(b);
+            }
+        }
+        kept.add(path.get(path.size() - 1));
+        path.clear();
+        path.addAll(kept);
     }
 }

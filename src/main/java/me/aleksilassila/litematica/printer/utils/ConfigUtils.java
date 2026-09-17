@@ -76,6 +76,22 @@ public class ConfigUtils {
         return Configs.Core.WORK_SWITCH.getBooleanValue();
     }
 
+    /**
+     * 打印机是否处于"打印模式"工作状态（总开关已开 + 当前模式就是打印）：
+     * 口径与 {@code PrintHandler.isConfigAllowed} 一致，供"只在打印时才该做的事"
+     * （乐魂脱困、扫描寻路）统一判断——总开关关掉后就不该再自作主张地动乐魂。
+     */
+    public static boolean isPrintModeActive() {
+        if (!isPrinterEnable()) {
+            return false;
+        }
+        WorkingModeType mode = (WorkingModeType) Configs.Core.WORK_MODE.getOptionListValue();
+        return switch (mode) {
+            case SINGLE -> Configs.Core.WORK_MODE_TYPE.getOptionListValue() == PrintModeType.PRINTER;
+            case MULTI -> Configs.Core.PRINT.getBooleanValue();
+        };
+    }
+
     public static boolean isMultiMode() {
         return Configs.Core.WORK_MODE.getOptionListValue().equals(WorkingModeType.MULTI);
     }

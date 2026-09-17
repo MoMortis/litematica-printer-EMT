@@ -15,6 +15,8 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
@@ -59,6 +61,10 @@ public final class GoManager {
     private static final int GHAST_OBSTACLE_PAD = 4;
     /** 乐魂飞行寻路：多目标（目标位置未知）时的障碍快照半径（格） */
     private static final int GHAST_OBSTACLE_RANGE = 16;
+    /** 乐魂飞行寻路：多目标时的障碍快照取样候选数——按直线距离取最近的这些候选求包围盒。
+     *  A* 的启发是"到最近候选的距离"，远处候选只有近处全不可达时才会被考虑，且成本上限
+     *  会先把它们排掉，故近处这批的包围盒就够覆盖实际会走的区域 */
+    private static final int GHAST_OBSTACLE_MULTI_CANDIDATES = 32;
     /** 乐魂飞行寻路：路点推进阈值（格）——须略大于控制律的水平到位阈值(1.6)，否则路点推不动、原地悬停 */
     private static final double GHAST_WAYPOINT_ARRIVE_SQ = 2.0 * 2.0;
     /** 乐魂飞行寻路：越过走廊半径（格）——沿路径方向已越过路点、且横向垂距在此范围内才算越过 */
@@ -89,10 +95,29 @@ public final class GoManager {
     /** 多目标模式（扫描寻路派发）的站立格→候选映射；null = 单目标腿 */
     @Nullable
     private volatile Long2ObjectOpenHashMap<BlockPos> multiGoalCells;
+    /** 多目标腿的候选集合包围盒（minX,minY,minZ,maxX,maxY,maxZ；派发时算好，供障碍快照定范围） */
+    @Nullable
+    private int[] multiGoalBounds;
+    /** 包围盒对应的候选集合指纹（障碍快照缓存的失效键：候选变了不能复用旧快照） */
+    private long multiGoalBoundsKey = Long.MIN_VALUE;
     /** 最近一次多目标腿到达的目标格（玩家脚格）：到达后置位，新会话/玩家失效时清空；
      *  stop 不清（供扫描器在腿结束后反查） */
     @Nullable
     private volatile BlockPos reachedGoalCell;
+
+    /**
+     * 当前多目标腿 A* <b>已定稿</b>的目标格对应的候选（诊断与描边用）：
+     * 供渲染把"本次选中的目标"标绿、供日志说明"到底选了谁"。A* 未定稿（部分路径/超时掐断）时为 null。
+     */
+    @Nullable
+    public BlockPos getMultiGoalCurrentTarget() {
+        Long2ObjectOpenHashMap<BlockPos> cells = multiGoalCells;
+        List<BlockPos> p = path;
+        if (cells == null || p.isEmpty()) {
+            return null;
+        }
+        return cells.get(p.get(p.size() - 1).asLong());
+    }
 
     // ===== 主线程专用状态 =====
     private int waypointIndex;
@@ -101,6 +126,7 @@ public final class GoManager {
     private int stuckRepaths;
     private long nextStuckCheckTick = -1L;
     private double stuckRefX;
+    private double stuckRefY;
     private double stuckRefZ;
     private long nextTargetCheckTick = -1L;
     private long nextDeviationCheckTick = -1L;
@@ -170,9 +196,28 @@ public final class GoManager {
      */
     private GoPathfinder.Goal goalFor(BlockPos target, boolean walkGoal) {
         if (isGhastFlying()) {
-            return GhastGoal.hoverGoal(target, ghastHoverRadius());
+            return GhastGoal.hoverGoal(target, ghastHoverRadius(), eyeOffset());
         }
         return walkGoal ? GoPathfinder.blockGoal(target) : GoPathfinder.adjacentGoal(target);
+    }
+
+    /**
+     * 玩家眼位相对"乐魂基准点"的偏移快照（主线程；未骑乘/无乐魂时 null）。
+     * 供飞行悬停位"够得着"过滤：玩家坐在乐魂背上，眼高约 +5 格，故"停在目标上方"的
+     * 悬停位多半够不着，只有下方/侧下方才在打印机交互距离内。
+     */
+    @Nullable
+    public GhastGoal.EyeOffset eyeOffset() {
+        LocalPlayer p = mc.player;
+        if (p == null) {
+            return null;
+        }
+        var ghast = GhastRideState.riddenGhast(p);
+        if (ghast == null) {
+            return null;
+        }
+        Vec3 eye = p.getEyePosition();
+        return new GhastGoal.EyeOffset(eye.x - ghast.getX(), eye.y - ghast.getY(), eye.z - ghast.getZ());
     }
 
     /** 自动模式的目标判定 */
@@ -181,7 +226,7 @@ public final class GoManager {
     }
 
     /**
-     * 多目标自动派发（扫描自动寻路·按路径最短选目标）：把全部候选的紧邻站立格作为
+     * 多目标自动派发（扫描自动寻路·最短路径优先）：把全部候选的紧邻站立格作为
      * 一个目标集合寻路，第一个定稿的目标即路径最短候选；到达时记下玩家脚格，
      * 供扫描器经 {@link #getReachedGoalCell()} 反查是哪个候选。
      */
@@ -191,7 +236,54 @@ public final class GoManager {
             return;
         }
         multiGoalCells = cellToTarget;
+        computeMultiGoalBounds(cellToTarget);
         begin(null, null, DriveMode.AUTO, goalSet, null);
+    }
+
+    /**
+     * 多目标腿的障碍快照范围依据：把候选<b>去重</b>后按离导航主体的直线距离排序，取最近
+     * {@link #GHAST_OBSTACLE_MULTI_CANDIDATES} 个求包围盒，并算一个候选集合指纹供缓存失效。
+     * 原来多目标退化用"起点 ±{@link #GHAST_OBSTACLE_RANGE} 格"——候选在 30+ 格外时那段
+     * 路程完全没有原理图约束，A* 会直接把路径穿过原理图的非空气方块。
+     */
+    private void computeMultiGoalBounds(Long2ObjectOpenHashMap<BlockPos> cells) {
+        if (cells == null || cells.isEmpty()) {
+            multiGoalBounds = null;
+            multiGoalBoundsKey = Long.MIN_VALUE;
+            return;
+        }
+        LongOpenHashSet seen = new LongOpenHashSet(256);
+        ArrayList<BlockPos> cands = new ArrayList<>(256);
+        for (BlockPos c : cells.values()) {
+            if (seen.add(c.asLong())) {
+                cands.add(c); // 悬停位远多于候选：先去重出候选方块本身
+            }
+        }
+        Entity nav = navEntity();
+        BlockPos from = nav != null ? nav.blockPosition() : (mc.player != null ? mc.player.blockPosition() : null);
+        if (from != null) {
+            cands.sort(Comparator.comparingDouble(c -> c.distSqr(from)));
+        }
+        int n = Math.min(cands.size(), GHAST_OBSTACLE_MULTI_CANDIDATES);
+        int minX = Integer.MAX_VALUE;
+        int minY = Integer.MAX_VALUE;
+        int minZ = Integer.MAX_VALUE;
+        int maxX = Integer.MIN_VALUE;
+        int maxY = Integer.MIN_VALUE;
+        int maxZ = Integer.MIN_VALUE;
+        long h = 1125899906842597L;
+        for (int i = 0; i < n; i++) {
+            BlockPos c = cands.get(i);
+            minX = Math.min(minX, c.getX());
+            minY = Math.min(minY, c.getY());
+            minZ = Math.min(minZ, c.getZ());
+            maxX = Math.max(maxX, c.getX());
+            maxY = Math.max(maxY, c.getY());
+            maxZ = Math.max(maxZ, c.getZ());
+            h = h * 31 + c.asLong();
+        }
+        multiGoalBounds = new int[]{minX, minY, minZ, maxX, maxY, maxZ};
+        multiGoalBoundsKey = h;
     }
 
     /** 最近一次多目标腿到达的目标格（未到达/单目标腿为 null） */
@@ -219,6 +311,8 @@ public final class GoManager {
         waypointIndex = 0;
         liveTargetId = null;
         multiGoalCells = null; // reachedGoalCell 保留：扫描器在腿结束后反查
+        multiGoalBounds = null;
+        multiGoalBoundsKey = Long.MIN_VALUE;
         if (wasActive && reason != null) {
             msg("§e[寻路] " + reason);
         }
@@ -368,14 +462,21 @@ public final class GoManager {
                 || me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler;
         if (detectionPaused) {
             stuckRefX = nav.getX();
+            stuckRefY = nav.getY();
             stuckRefZ = nav.getZ();
             nextStuckCheckTick = now + STUCK_CHECK_INTERVAL_TICKS;
         } else if (nextStuckCheckTick < 0L) {
             stuckRefX = nav.getX();
+            stuckRefY = nav.getY();
             stuckRefZ = nav.getZ();
             nextStuckCheckTick = now + STUCK_CHECK_INTERVAL_TICKS;
         } else if (now >= nextStuckCheckTick) {
             double movedSq = sq(nav.getX() - stuckRefX) + sq(nav.getZ() - stuckRefZ);
+            if (isGhastFlying()) {
+                // 飞行是三维移动：贴着墙往上飞脱困时水平位移几乎为 0，只用水平位移会把
+                // 上升脱困误判成"仍然卡住"，反复触发脱困直至放弃
+                movedSq += sq(nav.getY() - stuckRefY);
+            }
             if (movedSq > 2.0 * 2.0) {
                 stuckRepaths = 0; // 正常前进，累积卡住计数清零
             }
@@ -386,9 +487,15 @@ public final class GoManager {
                     stop(driveMode == DriveMode.AUTO ? null : "反复卡住，已停止寻路");
                     return;
                 }
-                requestPath(nav.blockPosition());
+                // 乐魂飞行：先朝"箱子放得下的方向"脱困，不急着重算——贴墙卡死时前进方向被
+                // 挡住，起点没变的重算只会得出同一条贴墙路线，先脱离阻塞点才有意义；
+                // 找不到可用方向（被完全围住）时才退回重算
+                if (!isGhastFlying() || !GhastFlyer.tryEscape(player)) {
+                    requestPath(nav.blockPosition());
+                }
             }
             stuckRefX = nav.getX();
+            stuckRefY = nav.getY();
             stuckRefZ = nav.getZ();
             nextStuckCheckTick = now + STUCK_CHECK_INTERVAL_TICKS;
         }
@@ -537,6 +644,7 @@ public final class GoManager {
         }
         long budgetMs = Configs.Go.GO_TIME_LIMIT.getIntegerValue();
         int maxFall = Configs.Go.GO_MAX_FALL.getIntegerValue();
+        int costLimitFactor = Configs.Go.GO_COST_LIMIT_FACTOR.getIntegerValue();
         // 乐魂寻路：骑乘可操控乐魂时改用三维飞行寻路。并集箱规格与「原理图非空气」障碍
         // 快照必须在主线程取好（后者会清缓存/改 revision），后台线程只做只读判定。
         GhastPathfinder.BoxSpec boxSpec = null;
@@ -554,10 +662,10 @@ public final class GoManager {
             try {
                 if (flyBox != null) {
                     calcResult = GhastPathfinder.findPath(level, from, goalEvaluator, flyBox, flyObstacles,
-                            budgetMs, () -> serial != calcSerial);
+                            budgetMs, costLimitFactor, () -> serial != calcSerial);
                 } else {
                     calcResult = GoPathfinder.findPath(level, from, goalEvaluator, budgetMs, maxFall,
-                            () -> serial != calcSerial);
+                            costLimitFactor, () -> serial != calcSerial);
                 }
             } catch (Throwable ignored) {
             }
@@ -607,9 +715,9 @@ public final class GoManager {
         return nav == null ? null : nav.position();
     }
 
-    /** 当前并集碰撞箱规格（乐魂 + 骑乘者实时 AABB）；不可用时返回 null */
+    /** 当前并集碰撞箱规格（乐魂 + 骑乘者实时 AABB）；不可用时返回 null。包内共享给候选预检 */
     @Nullable
-    private GhastPathfinder.BoxSpec currentBoxSpec() {
+    GhastPathfinder.BoxSpec currentBoxSpec() {
         LocalPlayer p = mc.player;
         if (p == null) {
             return null;
@@ -620,17 +728,25 @@ public final class GoManager {
 
     /**
      * 「原理图预测非空气」障碍快照（主线程构建）：飞行寻路的第二重约束。
-     * 范围 = 起点→目标的包围盒外扩 {@link #GHAST_OBSTACLE_PAD} 格（多目标时目标位置未知，
-     * 退化为起点周围 {@link #GHAST_OBSTACLE_RANGE} 格）；按 16³ 子区块推进，并先用
-     * {@code intersectsSchematic} 过滤——与原理图不相交的子区块整块跳过（其内必为图外）。
-     * 结果按「修订号 + 起止子区块」缓存，避免每次派发重复构建。
+     * 范围：单目标 = 起点→目标的包围盒外扩 {@link #GHAST_OBSTACLE_PAD} 格；
+     * <b>多目标 = 起点 ∪ 最近 {@link #GHAST_OBSTACLE_MULTI_CANDIDATES} 个候选的包围盒</b>
+     * （候选在起点 30+ 格外时，旧实现"起点周围 {@link #GHAST_OBSTACLE_RANGE} 格"覆盖不到，
+     * 那段路程没有约束、路径会直接穿过原理图的非空气方块）；两者都没有时退回起点周围若干格。
+     * 按 16³ 子区块推进，并先用 {@code intersectsSchematic} 过滤——与原理图不相交的子区块整块跳过。
+     * 结果按「修订号 + 起止子区块 + 候选集合指纹」缓存，避免每次派发重复构建。
      */
     private LongOpenHashSet ghastObstacles(BlockPos from) {
         BlockPos g = goal;
+        int[] bounds = multiGoalBounds;
         long fromKey = BlockPos.asLong(from.getX() >> 4, from.getY() >> 4, from.getZ() >> 4);
-        long toKey = g == null
-                ? Long.MIN_VALUE
-                : BlockPos.asLong(g.getX() >> 4, g.getY() >> 4, g.getZ() >> 4);
+        long toKey;
+        if (g != null) {
+            toKey = BlockPos.asLong(g.getX() >> 4, g.getY() >> 4, g.getZ() >> 4);
+        } else if (bounds != null) {
+            toKey = multiGoalBoundsKey;
+        } else {
+            toKey = Long.MIN_VALUE;
+        }
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
         long rev = SchematicStateCache.INSTANCE.getRevision();
         boolean sameTarget = ghastObstacleCache != null
@@ -656,6 +772,14 @@ public final class GoManager {
             maxY = Math.max(maxY, g.getY());
             minZ = Math.min(minZ, g.getZ());
             maxZ = Math.max(maxZ, g.getZ());
+        } else if (bounds != null) {
+            // 多目标：把"最近一批候选的包围盒"并进范围（起点已含在内）
+            minX = Math.min(minX, bounds[0]);
+            minY = Math.min(minY, bounds[1]);
+            minZ = Math.min(minZ, bounds[2]);
+            maxX = Math.max(maxX, bounds[3]);
+            maxY = Math.max(maxY, bounds[4]);
+            maxZ = Math.max(maxZ, bounds[5]);
         } else {
             minX -= GHAST_OBSTACLE_RANGE;
             maxX += GHAST_OBSTACLE_RANGE;
@@ -711,7 +835,7 @@ public final class GoManager {
     private void onPathResult(long serial, @Nullable GoPathfinder.Result result) {
         calculating = false;
         if (!active || serial != calcSerial) {
-            return; // 已停止或被更新的请求取代
+            return;
         }
         if (result == null) {
             stop(driveMode == DriveMode.AUTO ? null : "未找到可行路径");

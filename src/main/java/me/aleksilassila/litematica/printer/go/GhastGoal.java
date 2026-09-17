@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.go;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import net.minecraft.core.BlockPos;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -25,6 +26,18 @@ import java.util.Map;
 public final class GhastGoal {
     /** 垂直容差（格）：目标上下各允许 3 层 */
     public static final int VERT_TOLERANCE = 3;
+    /** 打印机交互距离（格）：玩家眼到目标方块中心（与原版生存放置射程一致）。
+     *  悬停位光"停得下"不够——还得"够得着"，否则腿走完也会被判"不在打印机交互距离内"而白白冷却 */
+    public static final double REACH = 4.5;
+    private static final double REACH_SQ = REACH * REACH;
+
+    /**
+     * 玩家眼位相对"乐魂基准点"（其位置的 x/z 为水平中心、y 为脚底）的偏移快照。
+     * 飞行时玩家坐在乐魂背上：竖直约 +5 格、水平约 ±1.7 格（随朝向旋转）。
+     * 因此"乐魂停在目标上方"的悬停位玩家多半够不着，而"下方/侧下方"往往刚好。
+     */
+    public record EyeOffset(double x, double y, double z) {
+    }
 
     private GhastGoal() {
     }
@@ -34,11 +47,21 @@ public final class GhastGoal {
         return Math.max(3, (int) Math.ceil(halfWidth + 0.5));
     }
 
-    /** 单目标悬停 Goal：恶魂基准格进入"目标周围 R 格"即到达 */
-    public static GoPathfinder.Goal hoverGoal(BlockPos target, int r) {
+    /** 悬停位 (x,y,z) 停下后，玩家眼位到目标方块中心是否在打印机交互距离内 */
+    private static boolean reachableFrom(int x, int y, int z, int tx, int ty, int tz, EyeOffset eye) {
+        double ex = x + 0.5 + eye.x() - (tx + 0.5);
+        double ey = y + eye.y() - (ty + 0.5);
+        double ez = z + 0.5 + eye.z() - (tz + 0.5);
+        return ex * ex + ey * ey + ez * ez <= REACH_SQ;
+    }
+
+    /** 单目标悬停 Goal：恶魂基准格进入"目标周围 R 格"即到达（眼位够不着的位置不算到达；
+     *  若整个范围都被"够不着"滤掉则退回不过滤，避免直接无解） */
+    public static GoPathfinder.Goal hoverGoal(BlockPos target, int r, @Nullable EyeOffset eye) {
         int tx = target.getX();
         int ty = target.getY();
         int tz = target.getZ();
+        final boolean useEye = eye != null && anyReachableHover(tx, ty, tz, r, eye);
         return new GoPathfinder.Goal() {
             @Override
             public boolean isInGoal(int x, int y, int z) {
@@ -46,8 +69,11 @@ public final class GhastGoal {
                 if (x == tx && y == ty && z == tz) {
                     return false;
                 }
-                return Math.max(Math.abs(x - tx), Math.abs(z - tz)) <= r
-                        && Math.abs(y - ty) <= VERT_TOLERANCE;
+                if (Math.max(Math.abs(x - tx), Math.abs(z - tz)) > r
+                        || Math.abs(y - ty) > VERT_TOLERANCE) {
+                    return false;
+                }
+                return !useEye || reachableFrom(x, y, z, tx, ty, tz, eye);
             }
 
             @Override
@@ -57,6 +83,12 @@ public final class GhastGoal {
                 double dy = Math.max(0, Math.abs(y - ty) - VERT_TOLERANCE);
                 double dz = Math.max(0, Math.abs(z - tz) - r);
                 return (float) Math.sqrt(dx * dx + dy * dy + dz * dz);
+            }
+
+            @Override
+            public float horizDistanceTo(int x, int z) {
+                // 到悬停圈的水平距离（切比雪夫，与到达判定同度量）：圈内为 0 = 改高度免费
+                return Math.max(0, Math.max(Math.abs(x - tx), Math.abs(z - tz)) - r);
             }
         };
     }
@@ -104,6 +136,24 @@ public final class GhastGoal {
             }
             return best;
         }
+
+        /**
+         * 到"最近候选悬停区"的水平距离（切比雪夫，与到达判定同度量）：取各分桶水平包围盒
+         * 距离的最小值。越远改高度越贵 → 升降被推到末端。
+         */
+        @Override
+        public float horizDistanceTo(int x, int z) {
+            float best = Float.MAX_VALUE;
+            for (Bucket b : buckets) {
+                float dx = Math.max(Math.max(b.loX - x, x - b.hiX), 0);
+                float dz = Math.max(Math.max(b.loZ - z, z - b.hiZ), 0);
+                float d = Math.max(dx, dz);
+                if (d < best) {
+                    best = d;
+                }
+            }
+            return best == Float.MAX_VALUE ? 0.0F : best;
+        }
     }
 
     /** 候选分桶包围盒（按 16³ 子区块分组，已外扩 R 格/上下 3 格） */
@@ -119,8 +169,13 @@ public final class GhastGoal {
     /**
      * 构造多目标悬停集合：候选按离 from 的直线距离预截 limit 个（直线距离只作预筛，
      * 最短目标仍由路径成本裁决），再展开为悬停位集合与分桶包围盒。
+     *
+     * <p><b>眼位过滤</b>：只收"停下后玩家眼够得着目标"的悬停位——否则腿走完也会被判
+     * "不在打印机交互距离内"、目标被白白冷却（日志里 11 次失败 vs 4 次成功就是这么来的）；
+     * 若整批悬停位都被滤掉则退回不过滤（宁可到达后够不着，也别直接无解）。
      */
-    public static HoverGoalSet hoverGoalSet(List<BlockPos> targets, int limit, BlockPos from, int r) {
+    public static HoverGoalSet hoverGoalSet(List<BlockPos> targets, int limit, BlockPos from, int r,
+                                            @Nullable EyeOffset eye) {
         ArrayList<BlockPos> list = new ArrayList<>(targets);
         if (list.size() > limit) {
             list.sort(Comparator.comparingDouble(p -> p.distSqr(from)));
@@ -129,19 +184,12 @@ public final class GhastGoal {
             }
         }
         Long2ObjectOpenHashMap<BlockPos> cellToTarget = new Long2ObjectOpenHashMap<>(list.size() * 352);
+        if (eye != null && fillHoverCells(list, r, eye, cellToTarget) == 0) {
+            cellToTarget.clear();
+            fillHoverCells(list, r, null, cellToTarget); // 全被"够不着"滤掉：退回不过滤
+        }
         Map<Long, Bucket> bucketMap = new HashMap<>();
         for (BlockPos t : list) {
-            for (int dx = -r; dx <= r; dx++) {
-                for (int dz = -r; dz <= r; dz++) {
-                    for (int dy = -VERT_TOLERANCE; dy <= VERT_TOLERANCE; dy++) {
-                        if (dx == 0 && dy == 0 && dz == 0) {
-                            continue; // 目标格本身不是悬停位（站进去会挡住打印机放置）
-                        }
-                        cellToTarget.putIfAbsent(
-                                BlockPos.asLong(t.getX() + dx, t.getY() + dy, t.getZ() + dz), t);
-                    }
-                }
-            }
             long sk = BlockPos.asLong(t.getX() >> 4, t.getY() >> 4, t.getZ() >> 4);
             Bucket b = bucketMap.computeIfAbsent(sk, k -> new Bucket());
             b.loX = Math.min(b.loX, t.getX() - r);
@@ -152,5 +200,54 @@ public final class GhastGoal {
             b.hiZ = Math.max(b.hiZ, t.getZ() + r);
         }
         return new HoverGoalSet(cellToTarget, bucketMap.values().toArray(new Bucket[0]));
+    }
+
+    /**
+     * 展开悬停位：{@code eye == null} 收全部（水平切比雪夫 r、竖直 ±{@link #VERT_TOLERANCE}、
+     * 排除目标格本身），否则只收"停下后玩家眼到目标方块中心 ≤ {@link #REACH}"的位置。
+     *
+     * @return 写入的悬停位个数
+     */
+    private static int fillHoverCells(List<BlockPos> targets, int r, @Nullable EyeOffset eye,
+                                      Long2ObjectOpenHashMap<BlockPos> out) {
+        int count = 0;
+        for (BlockPos t : targets) {
+            int tx = t.getX();
+            int ty = t.getY();
+            int tz = t.getZ();
+            for (int dx = -r; dx <= r; dx++) {
+                for (int dz = -r; dz <= r; dz++) {
+                    for (int dy = -VERT_TOLERANCE; dy <= VERT_TOLERANCE; dy++) {
+                        if (dx == 0 && dy == 0 && dz == 0) {
+                            continue; // 目标格本身不是悬停位（站进去会挡住打印机放置）
+                        }
+                        if (eye != null && !reachableFrom(tx + dx, ty + dy, tz + dz, tx, ty, tz, eye)) {
+                            continue; // 停下也够不着：不进目标集合
+                        }
+                        if (out.putIfAbsent(BlockPos.asLong(tx + dx, ty + dy, tz + dz), t) == null) {
+                            count++;
+                        }
+                    }
+                }
+            }
+        }
+        return count;
+    }
+
+    /** 目标周围是否存在至少一个"停下后眼够得着"的悬停位（单目标退回不过滤的判据） */
+    private static boolean anyReachableHover(int tx, int ty, int tz, int r, EyeOffset eye) {
+        for (int dx = -r; dx <= r; dx++) {
+            for (int dz = -r; dz <= r; dz++) {
+                for (int dy = -VERT_TOLERANCE; dy <= VERT_TOLERANCE; dy++) {
+                    if (dx == 0 && dy == 0 && dz == 0) {
+                        continue;
+                    }
+                    if (reachableFrom(tx + dx, ty + dy, tz + dz, tx, ty, tz, eye)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 }

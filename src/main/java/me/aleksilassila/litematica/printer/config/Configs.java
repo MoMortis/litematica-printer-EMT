@@ -677,7 +677,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 按路径最短选目标：派发时对全部候选做一次多目标寻路，选路径成本最短的目标
+        // 最短路径优先：派发时对全部候选做一次多目标寻路，选路径成本最短的目标
         //（关闭 = 维持直线距离最近 + 单目标寻路的旧行为）
         public static final ConfigBoolean PATH_NEAREST_TARGET = bool("pathNearestTarget")
                 .defaultValue(true)
@@ -731,6 +731,14 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(1, 10)
                 .build();
 
+        // 自动寻路：寻路成本上限倍数（0 = 不设上限）。以「起点到最近目标的距离下界」为基准，
+        // 当搜索中最小 f（已走代价 + 剩余距离下界）超过「下界 × 倍数」时立即判定不可达并返回，
+        // 不再把时长预算烧在"目标根本到不了"的探索上（乐魂飞行与走路共用）。
+        public static final ConfigInteger GO_COST_LIMIT_FACTOR = integer("goCostLimitFactor")
+                .defaultValue(8)
+                .range(0, 32)
+                .build();
+
         // 自动寻路 - 最大速度：寻路移动的速度上限（格/秒），超过疾跑全速的值等效不限速
         public static final ConfigDouble GO_MAX_SPEED = doubleValue("goMaxSpeed")
                 .defaultValue(5.7D)
@@ -781,6 +789,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_SCAN_Z_REVERSE,
                 GO_TIME_LIMIT,
                 GO_MAX_FALL,
+                GO_COST_LIMIT_FACTOR,
                 GO_MAX_SPEED,
                 GO_FORCE_SPRINT,
                 GO_TAKEOVER_VIEW,
