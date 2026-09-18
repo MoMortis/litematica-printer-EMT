@@ -382,6 +382,8 @@
   "litematica_printer.config.goTimeLimit.desc": "單次尋路計算的時長預算（毫秒）。尋路在背景執行緒執行，不影響幀率。\n指令：/go x y z、/go <玩家名>、/go stop。",
   "litematica_printer.config.goMaxFall": "自動尋路 - 最大下落",
   "litematica_printer.config.goMaxFall.desc": "尋路允許走下的最大下落高度（格）。尋路只移動，絕不破壞或放置方塊。",
+  "litematica_printer.config.goHeuristicWeight": "自動尋路 - 啟發值權重",
+  "litematica_printer.config.goHeuristicWeight.desc": "啟發值權重（1.0~10.0，預設 1.0 = 標準 A*）：搜尋按 f = 已走代價 + 權重 × 剩餘距離下界 排序。1.0 時啟發值可採納，得到設定成本模型下的最短路徑；調大＝加權 A*，更貪心，同樣預算內更快鎖定可用目標（預算被掐斷時結果最多約該倍數，搜尋跑完時仍是最短）。只影響「先搜哪條路」的排序：能不能到、成本上限、多目標之間的收工比較仍按未加權的距離下界判定，且只剪確實不可能更便宜的節點，不會把走得通的目標誤判為無解。樂魂飛行與走路共用。",
   "litematica_printer.config.goMaxSpeed": "自動尋路 - 最大速度",
   "litematica_printer.config.goMaxSpeed.desc": "自動尋路移動的速度上限（格/秒）。超過疾跑全速（約 5.612 格/秒）的值等效不限速。預設 5.7。",
   "litematica_printer.config.goForceSprint": "自動尋路 - 強制疾跑",

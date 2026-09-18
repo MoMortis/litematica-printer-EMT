@@ -717,6 +717,15 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 32)
                 .build();
 
+        // 自动寻路：启发值权重（1.0 = 标准 A*，保证配置成本模型下的最短路径；>1 = 加权 A*，
+        // 按 f = g + w×h 排序，更贪心——同样预算内更快锁定可用目标，预算被掐断时结果最多约 w 倍）。
+        // 只改"先搜哪条路"的排序：可达性/成本上限/多目标收工比较仍按未加权的距离下界判定，
+        // 剪枝也只剪"确实不可能更便宜"的节点，不会把走得通的目标误判为无解。
+        public static final ConfigDouble GO_HEURISTIC_WEIGHT = doubleValue("goHeuristicWeight")
+                .defaultValue(1.0D)
+                .range(1.0D, 10.0D)
+                .build();
+
         // ===== 乐魂寻路（飞行）代价 =====
         // 逐条对应「移动方式 → 路程代价」，单位＝几何格；寻路开始时快照一次。
         // 与下方的「行走寻路代价」完全独立，互不影响。
@@ -886,6 +895,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 // 通用寻路参数
                 GO_TIME_LIMIT,
                 GO_COST_LIMIT_FACTOR,
+                GO_HEURISTIC_WEIGHT,
                 GO_MAX_FALL,
 
                 // 乐魂寻路（飞行）代价

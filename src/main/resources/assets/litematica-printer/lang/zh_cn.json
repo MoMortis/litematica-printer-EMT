@@ -384,6 +384,8 @@
   "litematica_printer.config.goMaxFall.desc": "寻路允许走下的最大下落高度（格）。寻路只移动，绝不破坏或放置方块。",
   "litematica_printer.config.goCostLimitFactor": "自动寻路 - 成本上限倍数",
   "litematica_printer.config.goCostLimitFactor.desc": "成本上限倍数（0 = 不设上限，2~32，默认 8）：以「起点到最近目标的距离下界」为基准，搜索中最小 f（已走代价 + 剩余距离下界）超过「下界 × 倍数」时立即判定不可达并返回，不再把计算时长烧在目标根本到不了的探索上（乐魂飞行与走路共用）。调小＝放弃更快，但可能把必须绕远/大量升降的合法路线误判为不可达；调大＝允许更绕的路线。",
+  "litematica_printer.config.goHeuristicWeight": "自动寻路 - 启发值权重",
+  "litematica_printer.config.goHeuristicWeight.desc": "启发值权重（1.0~10.0，默认 1.0 = 标准 A*）：搜索按 f = 已走代价 + 权重 × 剩余距离下界 排序。1.0 时启发值可采纳，得到配置成本模型下的最短路径；调大＝加权 A*，更贪心，同样预算内更快锁定可用目标（预算被掐断时结果最多约该倍数，搜索跑完时仍是最短）。只影响「先搜哪条路」的排序：能不能到、成本上限、多目标之间的收工比较仍按未加权的距离下界判定，且只剪确实不可能更便宜的节点，不会把走得通的目标误判为无解。乐魂飞行与走路共用。",
   "litematica_printer.config.goMaxSpeed": "自动寻路 - 最大速度",
   "litematica_printer.config.goMaxSpeed.desc": "自动寻路移动的速度上限（格/秒）。超过疾跑全速（约 5.612 格/秒）的值等效不限速。默认 5.7。",
   "litematica_printer.config.goForceSprint": "自动寻路 - 强制疾跑",

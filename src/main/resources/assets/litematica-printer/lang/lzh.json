@@ -382,6 +382,8 @@
   "litematica_printer.config.goTimeLimit.desc": "一巡覓路之籌時（毫秒）。覓於幕後之緒，不礙幀率。\n令：/go x y z、/go <人名>、/go stop。",
   "litematica_printer.config.goMaxFall": "自走 - 限墜",
   "litematica_printer.config.goMaxFall.desc": "覓路可下墜之格數。惟行而已，不毀不築。",
+  "litematica_printer.config.goHeuristicWeight": "自走 - 量距之權",
+  "litematica_printer.config.goHeuristicWeight.desc": "量距之權（一點零至十，預設一點零，即舊法 A*）：擇路以「已行 + 權×餘距」為序。一點零則量距可採，得設權之下最短路；益之則貪，同限之內速得其標（限斷之時，所獲至多約權倍；算畢仍為最短）。惟易其序耳：可達、上限、眾標之收工相較，仍依未權之距；所剪惟確不可更廉者，故通途不致誤判為絕。樂魂之飛與步皆用此。",
   "litematica_printer.config.goMaxSpeed": "自走 - 限速",
   "litematica_printer.config.goMaxSpeed.desc": "自走之速限（格/秒）。逾馳之全速（約 5.612 格/秒）者，等於不限。預設 5.7。",
   "litematica_printer.config.goForceSprint": "自走 - 強馳",

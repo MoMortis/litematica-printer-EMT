@@ -31,6 +31,13 @@ import java.util.function.BooleanSupplier;
  * 实现"走到离目标最近的位置"语义。
  * 每次寻路新建实例，线程封闭（在后台计算线程上运行）。
  *
+ * <p>可选的<b>启发值权重</b>（{@code 配置 → 寻路 → 通用寻路参数 → 自动寻路 - 启发值权重}）：
+ * 1.0＝标准 A*，启发值可采纳、在配置成本模型下取到最短路径；&gt;1＝加权 A*，按
+ * f ＝ g ＋ 权重×h 排序，搜索更贪心——同样预算内更快锁定可用目标（预算被掐断时结果最多约该倍数，
+ * 搜索跑完时仍是配置成本模型下的最短）。权重只改<b>排序</b>：成本上限、多目标收工比较、
+ * best-so-far 的挑选一律用未加权的 h，剪枝也只剪"确实不可能更便宜"的节点，
+ * 不会把走得通的目标误判为无解。
+ *
  * <p>性能措施（均不改变搜索结果）：
  * <ul>
  * <li>地形探测记忆化——passable/walkableFloor/water/climbable 按坐标缓存，
@@ -331,21 +338,25 @@ public final class GoPathfinder {
         final int x;
         final int y;
         final int z;
+        /** 未加权的启发值（可采纳下界）：成本上限、多目标收工比较、best-so-far 一律用它 */
         final float h;
+        /** 加权启发值 = h × 启发值权重：只用于堆排序（f = g + hw） */
+        final float hw;
         float g;
         int heapIndex = -1;
 
-        Node(@Nullable Node parent, int x, int y, int z, float g, float h) {
+        Node(@Nullable Node parent, int x, int y, int z, float g, float h, float hw) {
             this.parent = parent;
             this.x = x;
             this.y = y;
             this.z = z;
             this.g = g;
             this.h = h;
+            this.hw = hw;
         }
 
         float f() {
-            return g + h;
+            return g + hw;
         }
     }
 
@@ -428,6 +439,8 @@ public final class GoPathfinder {
     private final float[] fallTicks;
     /** 成本上限倍数（0/1＝不设上限；主线程快照，搜索中不读配置） */
     private final int costLimitFactor;
+    /** 启发值权重（配置快照）：1.0＝标准 A*（可采纳），&gt;1＝加权 A*（更贪心） */
+    private final float heuristicWeight;
     /** 各移动方式的单价（tick）：构造时从配置快照一次，搜索中不读配置 */
     private final float walkCost;
     private final float diagonalCost;
@@ -449,6 +462,7 @@ public final class GoPathfinder {
         this.goal = goal;
         this.maxFall = maxFall;
         this.costLimitFactor = costLimitFactor;
+        this.heuristicWeight = (float) Configs.Go.GO_HEURISTIC_WEIGHT.getDoubleValue();
         this.fallTicks = buildFallTicks(maxFall + 4);
         this.probeCache.defaultReturnValue((byte) -1);
         this.walkCost = walkCost();
@@ -479,17 +493,22 @@ public final class GoPathfinder {
     private Result find(BlockPos start, long budgetNanos, BooleanSupplier cancelled) {
         long deadline = System.nanoTime() + budgetNanos;
         long nextCheck = System.nanoTime() + CHECK_INTERVAL_NANOS;
-        Node startNode = new Node(null, start.getX(), start.getY(), start.getZ(), 0.0F, goal.heuristic(start.getX(), start.getY(), start.getZ()));
+        float h0 = goal.heuristic(start.getX(), start.getY(), start.getZ());
+        Node startNode = new Node(null, start.getX(), start.getY(), start.getZ(), 0.0F, h0,
+                h0 * heuristicWeight);
         map.put(BlockPos.asLong(startNode.x, startNode.y, startNode.z), startNode);
         heap.push(startNode);
         Node best = startNode;
-        // 成本上限：起点到目标的距离下界 × 倍数（0/1＝不设上限）
+        // 成本上限：起点到目标的距离下界 × 倍数（0/1＝不设上限）。用未加权的 h，与启发值权重无关
         float limit = costLimit(startNode.h, costLimitFactor);
         // 已定稿的最优目标（多目标＝候选竞争；单目标＝目标区域里最便宜的那一格）。
         // 弹出目标格不再立即收工，而是继续搜索"下界仍可能更便宜"的分支，直到堆里最小
         // 的 f 都不小于它的成本为止——先算出来的必须真的比没算完的便宜，才认它。
         // 注意判定用 bestGoal.g 实时读取：同格可能被 decrease-key 换成更便宜的走法。
         Node bestGoal = null;
+        // 权重 > 1 时堆按「g + 权重×h」排序，弹出序不再等价于 g+h 序（下面的收工/上限判定
+        // 用的是可采纳下界 g+h），故这些判定只能作用于"当前节点"，不能当"后面只会更贵"用
+        boolean admissibleOrder = heuristicWeight <= 1.0F;
         while (!heap.isEmpty()) {
             Node cur = heap.pop();
             if (goal.isInGoal(cur.x, cur.y, cur.z)) {
@@ -499,17 +518,21 @@ public final class GoPathfinder {
                 }
                 continue; // 目标格不再扩展：穿过它只会更贵，stop 判定同样会拦下
             }
-            if (bestGoal != null && cur.f() >= bestGoal.g) {
+            if (bestGoal != null && cur.g + cur.h >= bestGoal.g) {
                 // 该节点及其所有后继的总代价下界已不低于已定稿目标 → 其余目标不可能更便宜，收工
-                break;
-            }
-            if (cur.f() > limit) {
-                // 堆按 f 有序：pop 出的 f 已超上限，后面的只会更贵 → 剩余目标按"不可达"处理。
-                // 已定稿的目标不被连坐（收工后返回它）；一个都没定稿时保持旧语义：整批判不可达
-                if (bestGoal == null) {
-                    return null;
+                if (admissibleOrder) {
+                    break;
                 }
-                break;
+                continue;
+            }
+            if (cur.g + cur.h > limit) {
+                // 成本上限（纯路程口径，不含软偏好与权重）：该节点及其后继按"不可达"处理。
+                // 标准 A* 的弹出序即 g+h 序，后面的只会更贵 → 直接收工；加权 A* 的弹出序是
+                // 加权 f，不能据此断言后面都超限，只剪本节点继续搜
+                if (admissibleOrder) {
+                    return bestGoal == null ? null : buildPath(bestGoal, true);
+                }
+                continue;
             }
             if (cur.h < best.h) {
                 best = cur;
@@ -751,7 +774,8 @@ public final class GoPathfinder {
         long key = BlockPos.asLong(x, y, z);
         Node n = map.get(key);
         if (n == null) {
-            n = new Node(parent, x, y, z, tentative, goal.heuristic(x, y, z));
+            float h = goal.heuristic(x, y, z);
+            n = new Node(parent, x, y, z, tentative, h, h * heuristicWeight);
             map.put(key, n);
             heap.push(n);
         } else if (tentative < n.g - MIN_IMPROVEMENT) {

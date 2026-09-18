@@ -34,6 +34,11 @@ import java.util.function.BooleanSupplier;
  * <p><b>代价全部可配置</b>（{@code 配置 → 寻路 → 乐魂寻路 ...}）：正交/面对角/体对角单价、
  * 上升倍率、下降倍率、贴墙惩罚、末端集中升降权重，均在新建实例时快照一次，搜索过程中不再读配置。
  *
+ * <p><b>启发值权重</b>（{@code 配置 → 寻路 → 通用寻路参数}，与走路版共用）：1.0＝标准 A*；
+ * &gt;1＝加权 A*，按 f ＝ g ＋ soft ＋ 权重×h 排序，同样预算内更快锁定可用目标（预算掐断时
+ * 结果最多约该倍数，搜索跑完时仍是配置成本模型下的最短）。权重只改排序，成本上限与
+ * 多目标收工比较一律用未加权的几何下界 {@code g + h}，剪枝也只剪"确实不可能更便宜"的格。
+ *
  * <p><b>合法性 = 双重判定</b>（沿位移按 0.5 格采样，防"跨格穿薄墙"）：
  * <ol>
  * <li>真实碰撞：{@code level.noCollision(box)} 为真（未加载区块一律视为不可通行）；</li>
@@ -162,19 +167,23 @@ public final class GhastPathfinder {
         final float g;
         /** 软偏好加价累积（离墙惩罚 + 末端集中升降）：只决定"选哪条路"，不参与"能不能到"的判定 */
         final float soft;
+        /** 未加权的启发值（几何路程下界，可采纳）：成本上限、多目标收工比较一律用它 */
         final float h;
+        /** 加权启发值 = h × 启发值权重：只用于堆排序（f = g + soft + hw） */
+        final float hw;
 
-        Node(@Nullable Node parent, BlockPos pos, float g, float soft, float h) {
+        Node(@Nullable Node parent, BlockPos pos, float g, float soft, float h, float hw) {
             this.parent = parent;
             this.pos = pos;
             this.g = g;
             this.soft = soft;
             this.h = h;
+            this.hw = hw;
         }
 
         /** 选路用的总代价（路程 + 软偏好），保证原"贴方块少走、末端集中升降"的路线偏好不变 */
         float f() {
-            return g + soft + h;
+            return g + soft + hw;
         }
 
         /** 路程 + 软偏好（不含启发值）：用于「该位置是否已有更优走法」的比较 */
@@ -198,6 +207,8 @@ public final class GhastPathfinder {
     private final PriorityQueue<Node> open = new PriorityQueue<>(Comparator.comparingDouble(Node::f));
     /** 成本上限倍数（0/1＝不设上限；主线程快照，搜索中不读配置） */
     private final int costLimitFactor;
+    /** 启发值权重（配置快照）：1.0＝标准 A*（可采纳），&gt;1＝加权 A*（更贪心） */
+    private final float heuristicWeight;
     /** 本次搜索要求的最小离墙余量（格）：严格档 {@link #MIN_CLEARANCE}，放宽档 1（只禁重叠） */
     private final int minClearance;
     /** 正交 1 格的路程单价（配置快照，见 {@code Configs.Go.GO_GHAST_COST_ORTHO}） */
@@ -222,6 +233,7 @@ public final class GhastPathfinder {
         this.box = box;
         this.schematicSolid = schematicSolid;
         this.costLimitFactor = costLimitFactor;
+        this.heuristicWeight = (float) Configs.Go.GO_HEURISTIC_WEIGHT.getDoubleValue();
         this.minClearance = minClearance;
         this.costOrtho = (float) Configs.Go.GO_GHAST_COST_ORTHO.getDoubleValue();
         this.costDiag2 = (float) Configs.Go.GO_GHAST_COST_DIAG2.getDoubleValue();
@@ -262,8 +274,8 @@ public final class GhastPathfinder {
     private GoPathfinder.Result search(BlockPos start, long budgetNanos, BooleanSupplier cancelled) {
         long deadline = System.nanoTime() + budgetNanos;
         long nextCheck = System.nanoTime() + CHECK_INTERVAL_NANOS;
-        Node startNode = new Node(null, start, 0.0F, 0.0F,
-                goal.heuristic(start.getX(), start.getY(), start.getZ()));
+        float startH = goal.heuristic(start.getX(), start.getY(), start.getZ());
+        Node startNode = new Node(null, start, 0.0F, 0.0F, startH, startH * heuristicWeight);
         bestG.put(start.asLong(), 0.0F);
         open.add(startNode);
         int expanded = 0;
@@ -277,6 +289,9 @@ public final class GhastPathfinder {
         // 弹出目标格不再立即收工，而是继续搜索"下界仍可能更便宜"的分支，直到堆里最小
         // 的 f 都不小于它的总代价为止——先算出来的必须真的比没算完的便宜，才认它
         Node bestGoal = null;
+        // 权重 > 1 时堆按「g + soft + 权重×h」排序，弹出序不再等价于 g+h 序（下面的收工判定
+        // 用的是可采纳下界 g+h），故它只能作用于"当前格"，不能当"后面只会更贵"用
+        boolean admissibleOrder = heuristicWeight <= 1.0F;
 
         while (!open.isEmpty()) {
             Node cur = open.poll();
@@ -291,9 +306,12 @@ public final class GhastPathfinder {
                 }
                 continue; // 目标格不再扩展：穿过它只会更贵，stop 判定同样会拦下
             }
-            if (bestGoal != null && cur.f() >= bestGoal.total()) {
+            if (bestGoal != null && cur.g + cur.h >= bestGoal.total()) {
                 // 该格及其所有后继的总代价下界已不低于已定稿目标 → 其余目标不可能更便宜，收工
-                break;
+                if (admissibleOrder) {
+                    break;
+                }
+                continue; // 加权 A*：弹出序是加权 f，不能据此断言后面都不行，只剪本格
             }
             if (cur.g + cur.h > limit) {
                 // 该格及其所有后继的路程都必然超上限 → 剪掉不扩展；已定稿的目标不受连坐，
@@ -335,8 +353,8 @@ public final class GhastPathfinder {
                 continue;
             }
             bestG.put(key, tentative);
-            open.add(new Node(cur, next, geo, soft,
-                    goal.heuristic(next.getX(), next.getY(), next.getZ())));
+            float h = goal.heuristic(next.getX(), next.getY(), next.getZ());
+            open.add(new Node(cur, next, geo, soft, h, h * heuristicWeight));
         }
     }
 
