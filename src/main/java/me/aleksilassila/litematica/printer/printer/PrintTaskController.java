@@ -31,7 +31,6 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * 放置顺序后置：新发起破冰放水前，必须等玩家交换范围（canInteracted）∩ 投影渲染层内的所有
  * "非水/非含水"普通方块都放置完毕，否则一直等待（不接管，让范围内的普通方块先被打印）。
- * 该检查与打印主循环共用迭代时长限制，超时分层截断、下 tick 续扫。
  * 流动水等液体方块不计入，避免误判。
  *
  * 破坏队列非空时打印循环会整体暂停（MixinLocalPlayer.tick），天然充当破冰期间的等待，
@@ -132,10 +131,9 @@ public class PrintTaskController {
             return null;
         }
 
-        // 优化放水逻辑（开启时）：放置顺序后置，玩家交换范围内还有待放置的
-        // 普通方块（不含水/含水）时，不发起破冰放水，返回 null 让打印循环先处理普通方块。
-        if (Configs.Print.PRINT_ICE_FOR_WATER_OPTIMIZED.getBooleanValue()
-                && hasPendingOrdinaryInRange(false)) {
+        // 放置顺序后置：玩家交换范围内还有待放置的普通方块（不含水/含水）时，
+        // 不发起破冰放水，返回 null 让打印循环先处理普通方块。
+        if (hasPendingOrdinaryInRange(false)) {
             return null;
         }
 

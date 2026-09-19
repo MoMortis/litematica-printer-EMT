@@ -18,17 +18,21 @@ import net.minecraft.core.Direction;
 import net.minecraft.core.NonNullList;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ServerboundContainerSlotStateChangedPacket;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.monster.Shulker;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.CrafterMenu;
 import net.minecraft.world.inventory.ClickType;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.ChestBlock;
 import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.ChestType;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.phys.BlockHitResult;
 import net.minecraft.world.phys.HitResult;
@@ -51,6 +55,14 @@ public class ZxyUtils {
 
     public static LinkedHashSet<BlockPos> syncPosList = new LinkedHashSet<>();
     public static ArrayList<ItemStack> targetBlockInv;
+    /** 源为合成器时记录其禁用槽位（9 格，isSlotDisabled 快照）；非合成器为 null */
+    public static boolean[] targetDisabledSlots;
+    /**
+     * case 1/3 挂起标记：两者都在「容器内容包」到达时被触发，而菜单的 dataSlots
+     * （合成器禁用位）随同一批包到达且排在内容包之后——立即读会拿到全 0 的禁用位。
+     * 挂起一 tick 由 {@link #tick()} 补跑，届时 dataSlots 已全部生效。
+     */
+    static boolean syncDeferred = false;
     public static int num = 0;
     static BlockPos blockPos = null;
     //同步失败的容器计数，连续失败达到上限后放弃该容器
@@ -62,7 +74,7 @@ public class ZxyUtils {
     static Map<ItemStack, Integer> playerItemsCount = new HashMap<>();
 
     private static void getReadyColor() {
-        HighlightBlockRenderer.createHighlightBlockList(syncInventoryId, Configs.Core.SYNC_INVENTORY_COLOR);
+        HighlightBlockRenderer.createHighlightBlockList(syncInventoryId, Configs.Special.SYNC_INVENTORY_COLOR);
         highlightPosList = HighlightBlockRenderer.getHighlightBlockPosList(syncInventoryId);
     }
 
@@ -155,20 +167,41 @@ public class ZxyUtils {
     public static void syncInv() {
         switch (num) {
             case 1 -> {
+                if (!syncDeferred) {
+                    syncDeferred = true; // 挂起一 tick 等 dataSlots 到齐，见 tick() 补跑
+                    return;
+                }
+                syncDeferred = false;
                 //按下热键后记录看向的容器 开始同步容器 只会触发一次
                 targetBlockInv = new ArrayList<>();
                 targetItemsCount = new HashMap<>();
+                targetDisabledSlots = null;
                 if (client.player != null && !client.player.containerMenu.equals(client.player.inventoryMenu)) {
+                    // 合成器：记录源禁用槽位。原版约束"只有空槽可禁用"→ 禁用槽必为空，目标端可复现；
+                    // dataSlots 已随上一批包生效，此刻读取即为服务端当前值。
+                    // 「同步合成器」关闭时不读禁用位（目标端也就不会做状态对齐）
+                    if (client.player.containerMenu instanceof CrafterMenu crafterMenu
+                            && Configs.Special.SYNC_INVENTORY_CRAFTER.getBooleanValue()) {
+                        boolean[] disabled = new boolean[9];
+                        for (int i = 0; i < disabled.length; i++) {
+                            disabled[i] = crafterMenu.isSlotDisabled(i);
+                        }
+                        targetDisabledSlots = disabled;
+                    }
                     for (int i = 0; i < client.player.containerMenu.slots.get(0).container.getContainerSize(); i++) {
                         ItemStack copy = client.player.containerMenu.slots.get(i).getItem().copy();
                         itemsCount(targetItemsCount, copy);
                         targetBlockInv.add(copy);
                     }
                     //上面如果不使用copy()在关闭容器后会使第一个元素号变该物品成总数 非常有趣...
-//                    System.out.println("???1 "+targetBlockInv.get(0).getCount());
                     client.player.closeContainer();
 //                    System.out.println("!!!1 "+targetBlockInv.get(0).getCount());
                     num = 2;
+                } else {
+                    // 源容器在挂起期间被关闭：放弃本次同步（避免 num 卡在 1）
+                    syncPosList.forEach(highlightPosList::remove);
+                    syncPosList = new LinkedHashSet<>();
+                    num = 0;
                 }
             }
             case 2 -> {
@@ -180,7 +213,7 @@ public class ZxyUtils {
                 NonNullList<Slot> slots = client.player.inventoryMenu.slots;
                 slots.forEach(slot -> itemsCount(playerItemsCount, slot.getItem()));
 
-                if (Configs.Hotkeys.SYNC_INVENTORY_CHECK.getBooleanValue() && !targetItemsCount.entrySet().stream()
+                if (Configs.Special.SYNC_INVENTORY_CHECK.getBooleanValue() && !targetItemsCount.entrySet().stream()
                         .allMatch(target -> playerItemsCount.entrySet().stream()
                                 .anyMatch(player ->
                                         ItemStack.isSameItemSameComponents(player.getKey(), target.getKey()) && target.getValue() <= player.getValue())))
@@ -223,10 +256,39 @@ public class ZxyUtils {
                 }
             }
             case 3 -> {
+                if (!syncDeferred) {
+                    syncDeferred = true; // 挂起一 tick：目标的合成器禁用位 dataSlots 尚未到齐
+                    return;
+                }
+                syncDeferred = false;
                 //开始同步 在打开容器后触发
                 AbstractContainerMenu sc = client.player.containerMenu;
                 if (sc.equals(client.player.inventoryMenu)) return;
                 int size = Math.min(targetBlockInv.size(), sc.slots.get(0).container.getContainerSize());
+
+                // 合成器：先同步禁用槽位状态，再同步物品。原版约束"只有空槽可切换状态"（禁用/启用皆是）：
+                // ① 快照要求启用的禁用槽 → 直接解禁（禁用槽必为空，恒合法）；
+                // ② 快照要求禁用的启用槽 → 槽内非空则先整组 THROW 清空（同步口径：对不上就扔），再禁用。
+                // 状态对齐后物品对齐才不会撞上 CrafterSlot.mayPlace（禁用槽拒绝放置）
+                CrafterMenu crafterMenu = sc instanceof CrafterMenu m && targetDisabledSlots != null ? m : null;
+                if (crafterMenu != null) {
+                    for (int i = 0; i < 9; i++) {
+                        boolean wantDisabled = targetDisabledSlots[i];
+                        if (!wantDisabled && crafterMenu.isSlotDisabled(i)) {
+                            setCrafterSlotState(crafterMenu, i, true); // 解禁（槽必空，恒合法）
+                        } else if (wantDisabled && !crafterMenu.isSlotDisabled(i)
+                                && !sc.slots.get(i).getItem().isEmpty()) {
+                            // 清空待禁用槽（整组扔出，与物品对齐的"不同直接扔出"同口径）
+                            client.gameMode.handleInventoryMouseClick(
+                                    sc.containerId, i, 1, ClickType.THROW, client.player);
+                        }
+                    }
+                    for (int i = 0; i < 9; i++) {
+                        if (targetDisabledSlots[i] && !crafterMenu.isSlotDisabled(i)) {
+                            setCrafterSlotState(crafterMenu, i, false); // 禁用（此槽此刻必为空）
+                        }
+                    }
+                }
 
                 int times = 0;
                 for (int i = 0; i < size; i++) {
@@ -297,7 +359,33 @@ public class ZxyUtils {
         }
     }
 
+    /**
+     * 合成器槽位禁用状态切换：本地预测（{@link CrafterMenu#setSlotState} 写客户端 dataSlots，
+     * 使后续 mayPlace/对齐逻辑立即看到新状态）+ 发送 ServerboundContainerSlotStateChangedPacket
+     * （服务端校验菜单是 CrafterMenu、方块实体是 CrafterBlockEntity，且仅空槽可禁用）。
+     * 注意包构造器参数序为 (slotId, containerId, newState)，slotId 在前——传反会被服务端
+     * 「containerId 不匹配当前打开菜单」静默丢弃。
+     */
+    private static void setCrafterSlotState(CrafterMenu menu, int slot, boolean enabled) {
+        if (client.player == null) return;
+        menu.setSlotState(slot, enabled);
+        client.player.connection.send(new ServerboundContainerSlotStateChangedPacket(
+                slot, menu.containerId, enabled));
+    }
+
     public static void tick() {
+        if (me.aleksilassila.litematica.printer.utils.EatUtils.isBusy()) {
+            return; // 暴饮暴食进食/取食中：容器同步状态机让路
+        }
+        // case 1/3 的挂起补跑：此刻菜单 dataSlots（合成器禁用位）已全部生效。
+        // 注意不能先清 syncDeferred 再调 syncInv——case 体靠它==true 放行，先清会无限重新挂起
+        if (syncDeferred) {
+            if (num == 1 || num == 3) {
+                syncInv(); // case 体检测到 syncDeferred==true 放行并自行清位
+            } else {
+                syncDeferred = false; // 状态已离开 1/3（如挂起期间取消同步）：丢弃挂起
+            }
+        }
         if (num == 2) {
             syncInv();
         }
@@ -368,9 +456,14 @@ public class ZxyUtils {
                     for (BlockPos pos : chunk.getBlockEntities().keySet()) {
                         if (!printerBox.contains(pos)) continue;
                         BlockState state = chunk.getBlockState(pos);
-                        if (PinYinSearchUtils.matchName(blockName, state)) {
-                            blocks.add(pos);
+                        if (!PinYinSearchUtils.matchName(blockName, state)) continue;
+                        // 双箱只保留左半：打开任意一半都是同一个 54 格容器菜单，右半是重复目标；
+                        // 点在右半上时左半不在选区内则列表为空，重新点左半即可
+                        if (state.getBlock() instanceof ChestBlock
+                                && state.getValue(ChestBlock.TYPE) == ChestType.RIGHT) {
+                            continue;
                         }
+                        blocks.add(pos);
                     }
                 }
             }

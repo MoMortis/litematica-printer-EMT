@@ -164,6 +164,13 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
             return;
         }
 
+        // 二档脱困进行中（乐魂正被有意开进"原理图预留空间"逃出结构内部腔体）：
+        // 暂停放置/破坏，避免对着正在逃离的乐魂堆方块
+        if (me.aleksilassila.litematica.printer.go.GhastFlyer.isEscapingTier2()) {
+            lastPos = null;
+            return;
+        }
+
         updateVariables();
         if (mc == null || level == null || player == null || connection == null || gameMode == null || gameType == null) {
             lastPos = null;

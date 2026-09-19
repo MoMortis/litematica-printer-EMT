@@ -3,6 +3,7 @@ package me.aleksilassila.litematica.printer.go;
 import com.google.common.collect.ArrayListMultimap;
 import fi.dy.masa.litematica.data.DataManager;
 import fi.dy.masa.litematica.schematic.placement.SchematicPlacement;
+import fi.dy.masa.malilib.util.LayerRange;
 import fi.dy.masa.litematica.schematic.verifier.SchematicVerifier;
 import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
@@ -12,6 +13,7 @@ import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.enums.SectionScanOrderType;
+import me.aleksilassila.litematica.printer.enums.SelectionType;
 import me.aleksilassila.litematica.printer.enums.WorkingModeType;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.mixin.printer.litematica.SchematicVerifierAccessor;
@@ -20,10 +22,12 @@ import me.aleksilassila.litematica.printer.printer.SchematicStateCache;
 import me.aleksilassila.litematica.printer.printer.verifier.VerifierDataView;
 import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
+import me.aleksilassila.litematica.printer.utils.PlayerUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.BlockPos;
+import net.minecraft.world.level.block.LiquidBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jetbrains.annotations.Nullable;
@@ -38,6 +42,9 @@ import java.util.concurrent.Executors;
 /**
  * 扫描自动寻路（"寻路 → 扫描自动寻路"开关；"寻路扫描白名单"未开启时全量扫描，
  * 开启且列表非空时只找列表内/验证器高亮的方块）。
+ * 目标受「打印-选取类型」约束（{@link PlayerUtils#isPositionInSelectionRange}，与打印动作侧
+ * 同一判定：渲染层/玩家下方/玩家上方）——打印机不会放置的位置，寻路不选不等；
+ * 约束范围变化（切渲染层等）时清掉已扫子区块标记触发重扫。
  *
  * <p>目标来源两级：<b>优先使用原理图验证器（Schematic Verifier）的缺失方块列表</b>
  * ——验证器已验证完成时，从缺失方块（经寻路扫描白名单过滤，白名单未开启则不过滤）中
@@ -111,6 +118,8 @@ public final class AutoWalkScanner {
     private final ArrayDeque<BlockPos> sectionQueue = new ArrayDeque<>();
     private final LongOpenHashSet visitedSections = new LongOpenHashSet();
     private final Long2LongOpenHashMap unreachableCooldown = new Long2LongOpenHashMap();
+    /** 「打印-选取类型」约束指纹（见 {@link #selectionSig()}）：变化＝已扫子区块的结论过期，需重扫 */
+    private long selectionSig;
 
     // ===== 子区块扫描：主线程只做"出计划 + 合并结果"，逐格重活在工作线程池里 =====
 
@@ -140,6 +149,8 @@ public final class AutoWalkScanner {
         final LongArrayList positions = new LongArrayList();
         /** 与 positions 一一对应的原理图期望方块 */
         final ArrayList<BlockState> expected = new ArrayList<>();
+        /** 命中"原理图此处为空气（subregion 盒内）、现实却有非液体方块"的多余方块格子 */
+        final LongArrayList extraPositions = new LongArrayList();
 
         SectionScanResult(int serial, BlockPos section, int layer) {
             this.serial = serial;
@@ -163,6 +174,16 @@ public final class AutoWalkScanner {
      * "凑够数量再比较"就失效了。
      */
     private final LongOpenHashSet reachableKeys = new LongOpenHashSet();
+    /**
+     * 多余方块候选池（「寻路多余方块」开启时收集）：long 编码坐标去重。
+     * 判定口径与打印机的「破坏多余方块」一致——subregion 盒内原理图为空气、
+     * 现实有非空气非液体方块。派发时<b>优先于</b>普通待放方块。
+     */
+    private final LongOpenHashSet areaExtraCandidates = new LongOpenHashSet();
+    /** 多余方块池内"可到达"候选计数（口径同 {@link #reachablePoolCount}） */
+    private int extraReachableCount;
+    /** 已被计入 {@link #extraReachableCount} 的多余方块候选（与计数严格同步） */
+    private final LongOpenHashSet extraReachableKeys = new LongOpenHashSet();
     /** 扫描中心子区块（曼哈顿层的原点）：{@link #sectionLayer} 以它计算层号 */
     @Nullable
     private BlockPos areaCenterSection;
@@ -238,6 +259,11 @@ public final class AutoWalkScanner {
         if (player == null) {
             return;
         }
+        // 二档脱困进行中：暂停扫描与派发（乐魂正被有意开进"原理图预留空间"），
+        // 状态机保留，脱困结束后从这里自动恢复
+        if (GhastFlyer.isEscapingTier2()) {
+            return;
+        }
         // 手动 /go 优先：暂停自动（停掉自动腿），手动任务结束后恢复并重新派发
         if (GoManager.INSTANCE.isManualActive()) {
             if (!suspendedByManual) {
@@ -296,6 +322,14 @@ public final class AutoWalkScanner {
         if (level == null) {
             state = State.IDLE;
             return;
+        }
+        // 「打印-选取类型」约束变化（切渲染层/改选取类型）：已扫子区块的结论过期——
+        // 队列穷尽回 FIND 也会被 visitedSections 挡住，不清标记的话玩家会停在待命
+        // 直到走远 32 格才重建。候选池保留：派发复核（poolDispatch）按最新范围过滤
+        long sig = selectionSig();
+        if (sig != selectionSig) {
+            selectionSig = sig;
+            visitedSections.clear();
         }
         // 乐魂寻路开启但当前不可飞行（未骑乘/非第一上鞍者/缺挽具/静默态）：不派发自动腿，
         // 否则会出现"任务已激活却永远不动"的僵局（HUD 已有对应提示，骑上后自动恢复）
@@ -439,6 +473,8 @@ public final class AutoWalkScanner {
             });
         }
         SectionScanResult result = new SectionScanResult(scanSerial, section, layer);
+        // 「寻路多余方块」投递时快照（工作线程不读配置）：两个开关都开才扫多余方块
+        final boolean scanExtras = extraScanEnabled();
         pendingScans++;
         try {
             scanPool.execute(() -> {
@@ -451,6 +487,17 @@ public final class AutoWalkScanner {
                                     // ① 原理图期望方块：空气永远不可能是"待放置候选"，先跳过（省掉后续全部昂贵判定）
                                     BlockState expected = entry.stateAt(x, y, z);
                                     if (expected == null || expected.isAir()) {
+                                        // ②「寻路多余方块」：subregion 盒内原理图为空气的格子，现实却有
+                                        //    非空气非液体方块 → 多余方块候选（口径同打印机「破坏多余方块」）。
+                                        //    只认 stateAt 非空的空气格（null = 不在该 subregion 容器内，不能算多余）
+                                        if (scanExtras && expected != null
+                                                && BlockStateUtils.isColumnLoaded(level, x >> 4, z >> 4)) {
+                                            BlockState current = level.getBlockState(pos.set(x, y, z));
+                                            if (!current.isAir()
+                                                    && !(current.getBlock() instanceof LiquidBlock)) {
+                                                result.extraPositions.add(BlockPos.asLong(x, y, z));
+                                            }
+                                        }
                                         continue;
                                     }
                                     if (!BlockStateUtils.isColumnLoaded(level, x >> 4, z >> 4)) {
@@ -459,7 +506,7 @@ public final class AutoWalkScanner {
                                         // 不能拿它当"已加载"判据；isColumnLoaded 走区块源，未加载返回 false
                                         continue;
                                     }
-                                    // ② 只问"是否已正确放置"：用 isCorrect 而不是 compare——compare 的覆盖打印
+                                    // ③ 只问"是否已正确放置"：用 isCorrect 而不是 compare——compare 的覆盖打印
                                     // 分支会写静态 IdentityHashMap（主线程专用缓存），工作线程并发写会损坏该表
                                     BlockState current = level.getBlockState(pos.set(x, y, z));
                                     if (me.aleksilassila.litematica.printer.enums.BlockMatchResult
@@ -512,6 +559,15 @@ public final class AutoWalkScanner {
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
         boolean multi = multiTargetMode();
         ArrayList<BlockPos> sectionCandidates = multi ? null : new ArrayList<>();
+        // 串行模式的多余方块候选（优先于本子区块的待放方块直接派发）
+        ArrayList<BlockPos> sectionExtras = !multi && !result.extraPositions.isEmpty() && extraScanEnabled()
+                ? new ArrayList<>() : null;
+        if (!extraScanEnabled() && !areaExtraCandidates.isEmpty()) {
+            // 开关已关：清掉多余方块池（含可到达计数）
+            areaExtraCandidates.clear();
+            extraReachableKeys.clear();
+            extraReachableCount = 0;
+        }
         for (int i = 0; i < result.positions.size(); i++) {
             BlockState expected = result.expected.get(i);
             if (!ScanWhitelistCache.WALK.isWhitelistedFast(expected)) {
@@ -528,6 +584,9 @@ public final class AutoWalkScanner {
             }
             // 原"扫描器路过即对账"：把与验证器记录不一致的差异提交复查管线（主线程）
             SchematicStateCache.INSTANCE.reconcileVerdict(pos, expected, level.getBlockState(pos));
+            if (!selectionAllows(pos)) {
+                continue; // 「打印-选取类型」之外（渲染层/玩家上下方）：打印机不会放，寻路不认领
+            }
             if (!multi) {
                 // 串行模式：本子区块内的未放置方块就是候选，只剔已完成/冷却中的；
                 // 不检查周围有没有落脚点（能否到达由寻路裁决），也不跨子区块累积
@@ -549,10 +608,41 @@ public final class AutoWalkScanner {
                 }
             }
         }
+        // 多余方块并入池（主线程复核：已被破坏的丢弃，冷却中留池，可到达计数同步）
+        if (!result.extraPositions.isEmpty() && extraScanEnabled()) {
+            for (int i = 0; i < result.extraPositions.size(); i++) {
+                long key = result.extraPositions.getLong(i);
+                if (!areaExtraCandidates.add(key)) {
+                    continue; // 已在池中
+                }
+                if (level.getBlockState(BlockPos.of(key)).isAir()) {
+                    areaExtraCandidates.remove(key);
+                    continue; // 已被破坏
+                }
+                if (unreachableCooldown.get(key) > now) {
+                    continue; // 不可达冷却中：留在池里
+                }
+                if (reachableAt(level, BlockPos.of(key), flying) && extraReachableKeys.add(key)) {
+                    extraReachableCount++;
+                }
+            }
+        }
+        if (sectionExtras != null) {
+            for (int i = 0; i < result.extraPositions.size(); i++) {
+                long key = result.extraPositions.getLong(i);
+                BlockPos pos = BlockPos.of(key);
+                if (level.getBlockState(pos).isAir() || unreachableCooldown.get(key) > now) {
+                    continue; // 已被破坏 / 冷却中
+                }
+                sectionExtras.add(pos);
+            }
+        }
         if (sectionCandidates != null) {
             // 本子区块整块扫完 → 在这一个子区块内选离玩家最近的 1 个直接派发；
-            // 空列表＝本子区块没有未放置方块，留在扫描态由 pumpScan 继续下一个子区块
-            dispatchSerialNearest(sectionCandidates);
+            // 空列表＝本子区块没有未放置方块，留在扫描态由 pumpScan 继续下一个子区块。
+            // 有多余方块候选时优先派多余方块（先清场再放置）
+            dispatchSerialNearest(sectionExtras != null && !sectionExtras.isEmpty()
+                    ? sectionExtras : sectionCandidates);
         }
     }
 
@@ -577,7 +667,9 @@ public final class AutoWalkScanner {
         // "渲染距离内已扫尽仍凑不够"的兜底不在这里判（要遍历 FIND 全表，太贵），
         // 而是由 FIND 枚举穷尽这个天然信号触发——见 findCenterStep 尾部的强制派发
         int required = Configs.Go.PATH_TARGET_CANDIDATE_LIMIT.getIntegerValue();
-        if (!force && reachablePoolCount < required) {
+        // 门禁：可到达候选凑够目标数量才比较；多余方块候选存在时不受数量门禁限制
+        //（优先清场，且多余方块通常不多，等凑数会让优先级落空）
+        if (!force && reachablePoolCount < required && extraReachableCount == 0) {
             return false;
         }
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
@@ -598,6 +690,9 @@ public final class AutoWalkScanner {
             if (reachableAt(level, pos, flying) && reachableKeys.add(key)) {
                 reachablePoolCount++;
             }
+            if (!selectionAllows(pos)) {
+                continue; // 入池后选取范围变了（切渲染层/玩家上下分界）：留池，不参与本轮比较
+            }
             candidates.add(pos);
         }
         areaCandidates.removeAll(completedKeys);
@@ -607,6 +702,20 @@ public final class AutoWalkScanner {
             }
         }
         filterStandSpot(level, candidates); // 落脚点预检：只保留周围有可站立足面的（当前地形下可到达）
+        // 多余方块优先：存在可派发的多余方块时，本轮只派多余方块（先清场再放置）——
+        // 走路与飞行共用同一套候选竞争/多目标寻路，「最短路径优先」在其中照常生效
+        ArrayList<BlockPos> extraList = collectExtraCandidates(level, now, flying);
+        if (extraList != null && !extraList.isEmpty()) {
+            filterStandSpot(level, extraList);
+            if (!extraList.isEmpty()) {
+                LocalPlayer playerExtra = mc.player;
+                if (playerExtra != null) {
+                    extraList.sort(Comparator.comparingDouble(p -> straightDist(p, playerExtra)));
+                }
+                dispatchCandidates(extraList);
+                return true;
+            }
+        }
         if (candidates.isEmpty()) {
             return false;
         }
@@ -616,6 +725,59 @@ public final class AutoWalkScanner {
         }
         dispatchCandidates(candidates);
         return true;
+    }
+
+    /**
+     * 收集本轮可派发的多余方块候选（池复核：已被破坏的出池、冷却跳过、选取范围外留池，
+     * 可到达计数同步）。「寻路多余方块」关闭时清池并返回 null。
+     *
+     * @return 本轮可派发的多余方块候选；空池/开关关闭返回 null（调用方回落普通候选）
+     */
+    @Nullable
+    private ArrayList<BlockPos> collectExtraCandidates(ClientLevel level, long now, boolean flying) {
+        if (areaExtraCandidates.isEmpty()) {
+            return null;
+        }
+        if (!extraScanEnabled()) {
+            areaExtraCandidates.clear();
+            extraReachableKeys.clear();
+            extraReachableCount = 0;
+            return null;
+        }
+        ArrayList<BlockPos> out = new ArrayList<>();
+        LongArrayList goneKeys = new LongArrayList();
+        for (long key : areaExtraCandidates) {
+            BlockPos pos = BlockPos.of(key);
+            if (level.getBlockState(pos).isAir()) {
+                goneKeys.add(key);
+                continue; // 已被破坏：出池
+            }
+            if (unreachableCooldown.get(key) > now) {
+                continue; // 冷却中：留池，冷却过了再参与比较
+            }
+            if (reachableAt(level, pos, flying) && extraReachableKeys.add(key)) {
+                extraReachableCount++;
+            }
+            if (!selectionAllows(pos)) {
+                continue; // 入池后选取范围变了（切渲染层/玩家上下分界）：留池，不参与本轮比较
+            }
+            out.add(pos);
+        }
+        if (!goneKeys.isEmpty()) {
+            areaExtraCandidates.removeAll(goneKeys);
+            for (int i = 0; i < goneKeys.size(); i++) {
+                if (extraReachableKeys.remove(goneKeys.getLong(i))) {
+                    extraReachableCount = Math.max(0, extraReachableCount - 1);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** 「寻路多余方块」是否生效：本开关 + 前置「破坏多余方块」同时开启 */
+    private static boolean extraScanEnabled() {
+        return Configs.Go.GO_SCAN_EXTRA_BLOCKS.getBooleanValue()
+                && Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue();
     }
 
     /**
@@ -789,6 +951,15 @@ public final class AutoWalkScanner {
         // 骑乘期间被判"需要 shift"而拉黑：本机无法放置该方块，立即放弃换下一个，
         // 避免在此无限等待（打印机只会一直暂缓）；黑名单在离开乐魂时清空
         if (GhastShiftBlacklist.contains(mc.player, t)) {
+            unreachableCooldown.put(t.asLong(),
+                    ClientPlayerTickManager.getCurrentHandlerTime() + UNREACHABLE_COOLDOWN_TICKS);
+            target = null;
+            enterScanning();
+            return;
+        }
+        // 走到半路选取范围变了（切渲染层/玩家上下分界被跨越）：打印机不会再放它，
+        // 与"需要 shift 拉黑"同口径冷却换目标，不无限等待
+        if (!selectionAllows(t)) {
             unreachableCooldown.put(t.asLong(),
                     ClientPlayerTickManager.getCurrentHandlerTime() + UNREACHABLE_COOLDOWN_TICKS);
             target = null;
@@ -990,6 +1161,9 @@ public final class AutoWalkScanner {
         areaCandidates.clear();
         reachableKeys.clear();
         reachablePoolCount = 0;
+        areaExtraCandidates.clear();
+        extraReachableKeys.clear();
+        extraReachableCount = 0;
         visitedSections.clear();
         sectionQueue.clear();
         areaCenterSection = null;
@@ -1125,7 +1299,33 @@ public final class AutoWalkScanner {
         if (GhastShiftBlacklist.contains(mc.player, pos)) {
             return false; // 骑乘时"需要 shift 的放置"已拉黑：不再派发（离开乐魂自动清空）
         }
+        if (!selectionAllows(pos)) {
+            return false; // 「打印-选取类型」之外（渲染层/玩家上下方）：打印机不会放
+        }
         return !targetCompleted(pos);
+    }
+
+    /**
+     * 目标是否落在「打印-选取类型」约束内——与打印动作侧
+     * （{@code ClientPlayerTickHandler} 的逐方块动作循环）同一判定、同一配置：
+     * 渲染层＝当前渲染层范围内；玩家下方/上方＝按 Y 分半；投影选择框＝无额外约束。
+     * 打印机不会放置的位置，寻路不选不等——否则会走到目标旁无限等待。
+     */
+    private boolean selectionAllows(BlockPos pos) {
+        return PlayerUtils.isPositionInSelectionRange(mc.player, pos, Configs.Print.PRINT_SELECTION_TYPE);
+    }
+
+    /**
+     * 「打印-选取类型」约束的指纹：选取类型选项 + 渲染层范围（轴/层下界/层上界）。
+     * 渲染层模式在 litematica「全部层」时范围为全世界高度（指纹恒定），
+     * 单层/层区间随层移动变化——变化即已扫子区块的结论过期，需清标记重扫。
+     */
+    private long selectionSig() {
+        long type = Configs.Print.PRINT_SELECTION_TYPE.getOptionListValue() instanceof SelectionType st
+                ? st.ordinal() : -1L;
+        LayerRange range = DataManager.getRenderLayerRange();
+        return (type & 0xF) << 56 | (long) (range.getAxis().ordinal() & 0xF) << 52
+                | ((long) range.getLayerMin() & 0xF_FFFF) << 20 | ((long) range.getLayerMax() & 0xF_FFFF);
     }
 
     // ==================== 目标完成与切换 ====================
@@ -1193,6 +1393,9 @@ public final class AutoWalkScanner {
         areaCandidates.clear();
         reachablePoolCount = 0;
         reachableKeys.clear();
+        areaExtraCandidates.clear();
+        extraReachableKeys.clear();
+        extraReachableCount = 0;
         areaCenterSection = null;
         layerScanning = -1;
         scanSerial++;               // 在飞扫描结果全部作废（扫描已停）

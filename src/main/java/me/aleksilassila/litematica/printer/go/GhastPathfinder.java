@@ -32,7 +32,7 @@ import java.util.function.BooleanSupplier;
  * <b>「乐魂 + 骑乘者」的并集碰撞箱</b>，而非单格可站立性。
  *
  * <p><b>代价全部可配置</b>（{@code 配置 → 寻路 → 乐魂寻路 ...}）：正交/面对角/体对角单价、
- * 上升倍率、下降倍率、贴墙惩罚、末端集中升降权重，均在新建实例时快照一次，搜索过程中不再读配置。
+ * 上升倍率、下降倍率、贴墙惩罚、末端集中升降权重、转向惩罚，均在新建实例时快照一次，搜索过程中不再读配置。
  *
  * <p><b>启发值权重</b>（{@code 配置 → 寻路 → 通用寻路参数}，与走路版共用）：1.0＝标准 A*；
  * &gt;1＝加权 A*，按 f ＝ g ＋ soft ＋ 权重×h 排序，同样预算内更快锁定可用目标（预算掐断时
@@ -165,7 +165,7 @@ public final class GhastPathfinder {
         /** 几何路程累积（正交 1 / 对角 √2 / 体对角 √3，上升加倍）：<b>成本上限的唯一判定口径</b>，
          *  不含任何软偏好加价，故 {@code g + h} 就是"这条走法至少还要飞多远" */
         final float g;
-        /** 软偏好加价累积（离墙惩罚 + 末端集中升降）：只决定"选哪条路"，不参与"能不能到"的判定 */
+        /** 软偏好加价累积（离墙惩罚 + 末端集中升降 + 转向惩罚）：只决定"选哪条路"，不参与"能不能到"的判定 */
         final float soft;
         /** 未加权的启发值（几何路程下界，可采纳）：成本上限、多目标收工比较一律用它 */
         final float h;
@@ -225,6 +225,8 @@ public final class GhastPathfinder {
     private final float wallPenalty;
     /** 末端集中升降的加价权重（配置快照，0＝不施加该机制） */
     private final float vertLateWeight;
+    /** 转向惩罚：与前一步方向不同的步的单次加价（配置快照，0＝不惩罚） */
+    private final float turnPenalty;
 
     private GhastPathfinder(ClientLevel level, GoPathfinder.Goal goal, BoxSpec box,
                             @Nullable LongOpenHashSet schematicSolid, int costLimitFactor, int minClearance) {
@@ -242,6 +244,7 @@ public final class GhastPathfinder {
         this.descendMult = Configs.Go.GO_GHAST_DESCEND_MULT.getIntegerValue();
         this.wallPenalty = (float) Configs.Go.GO_GHAST_WALL_PENALTY.getDoubleValue();
         this.vertLateWeight = (float) Configs.Go.GO_GHAST_VERT_LATE_WEIGHT.getDoubleValue();
+        this.turnPenalty = (float) Configs.Go.GO_GHAST_TURN_PENALTY.getDoubleValue();
         this.bestG.defaultReturnValue(Float.POSITIVE_INFINITY);
     }
 
@@ -346,7 +349,7 @@ public final class GhastPathfinder {
                 continue;
             }
             float geo = cur.g + geoCost(d);
-            float soft = cur.soft + softCost(d, next);
+            float soft = cur.soft + softCost(d, next) + turnCost(cur, d);
             float tentative = geo + soft;
             long key = next.asLong();
             if (tentative >= bestG.get(key) - EPS) {
@@ -356,6 +359,26 @@ public final class GhastPathfinder {
             float h = goal.heuristic(next.getX(), next.getY(), next.getZ());
             open.add(new Node(cur, next, geo, soft, h, h * heuristicWeight));
         }
+    }
+
+    /**
+     * 转向惩罚（配置快照）：与前一步方向不同的步单次加价，0＝不惩罚。
+     *
+     * <p>恶魂转向需要身体朝向平滑收敛（先转后飞，见 {@link GhastFlyer#TURN_ALIGN_DEGREES}），
+     * 每次折向都有真实的减速与绕行弧线成本，惩罚使路线更趋直线、减少折返。
+     * 与贴墙惩罚同属软偏好：不参与可达性判定，也不进成本上限（上限只看几何路程 g）。
+     *
+     * <p>已知近似：bestG 按每格单一最优值去重，而转向代价使"到该格的最优值"依赖来向
+     * （方向相关边成本的状态增广未做）——惩罚值远小于路程单价时误差可忽略。
+     */
+    private float turnCost(Node cur, int[] d) {
+        if (turnPenalty <= 0.0F || cur.parent == null) {
+            return 0.0F;
+        }
+        BlockPos pp = cur.parent.pos;
+        return d[0] != cur.pos.getX() - pp.getX()
+                || d[1] != cur.pos.getY() - pp.getY()
+                || d[2] != cur.pos.getZ() - pp.getZ() ? turnPenalty : 0.0F;
     }
 
     /** 几何路程代价（成本上限的判定口径）：正交 1 格、面对角、体对角三档单价均为配置项；

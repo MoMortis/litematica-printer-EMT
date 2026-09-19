@@ -324,14 +324,35 @@ public abstract class MixinGui {
             RenderUtils.drawString(String.join(", ", modeNames), centerX, centerY + 52, Color.WHITE, true, true);
         }
 
-        // 乐魂寻路：骑乘状态不满足时，在模式名下方给出绿色提示（避免静默失效）
-        if (Configs.Go.GHAST_PATHFIND.getBooleanValue()) {
+        // 乐魂寻路：骑乘状态不满足时改走动作栏提示（与「暴饮暴食」同一位置，快捷栏上方）。
+        // 仅在 打印机打印模式 + 扫描自动寻路 + 乐魂寻路 三者同时开启时提示；
+        // 动作栏约 2 秒淡出，每 ~1.9 秒重置一次使其近似常驻，文案变化时立即刷新
+        if (Configs.Go.GHAST_PATHFIND.getBooleanValue()
+                && Configs.Go.PRINT_SCAN_AUTOWALK.getBooleanValue()
+                && ConfigUtils.isPrintModeActive()) {
             String ghastHint = ghastHint();
-            if (ghastHint != null) {
-                RenderUtils.drawString(ghastHint, centerX, centerY + 64, new Color(85, 255, 85), true, true);
+            long nowMs = System.currentTimeMillis();
+            if (ghastHint != null
+                    && (!ghastHint.equals(lastGhastHint) || nowMs >= ghastHintRefreshAt)) {
+                lastGhastHint = ghastHint;
+                ghastHintRefreshAt = nowMs + GHAST_HINT_REFRESH_MS;
+                me.aleksilassila.litematica.printer.utils.MessageUtils.setOverlayMessage(
+                        net.minecraft.network.chat.Component.literal(ghastHint));
             }
+        } else {
+            lastGhastHint = null; // 条件不满足：清除记录，下次满足立即提示
         }
     }
+
+    /** 动作栏提示的重置间隔（毫秒）：略短于原版 2 秒淡出，防文字闪断 */
+    @Unique
+    private static final long GHAST_HINT_REFRESH_MS = 1900L;
+    /** 上一次设置的动作栏提示文案（变化即立即刷新） */
+    @Unique
+    private static String lastGhastHint;
+    /** 下一次动作栏提示重置时刻（毫秒，System.currentTimeMillis 基准） */
+    @Unique
+    private static long ghastHintRefreshAt;
 
     /**
      * 乐魂寻路的骑乘状态提示文案；可操控时返回 null。

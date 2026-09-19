@@ -21,6 +21,8 @@ public class RepeaterGuide extends Guide {
         if (!getProperty(requiredState, RepeaterBlock.DELAY).equals(getProperty(currentState, RepeaterBlock.DELAY))) {
             return Result.success(new ClickAction());
         }
-        return Result.PASS;
+        // DELAY 一致时剩下的只有 POWERED/LOCKED 差异：由红石输入信号决定，无法用物品修正，
+        // 挖掉重放后仍会随环境变回 → 必须跳过（同 ComparatorGuide）
+        return Result.SKIP;
     }
 }

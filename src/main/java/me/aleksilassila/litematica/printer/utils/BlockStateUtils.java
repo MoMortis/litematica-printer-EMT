@@ -13,6 +13,7 @@ import net.minecraft.world.phys.shapes.Shapes;
 import net.minecraft.world.phys.shapes.VoxelShape;
 
 import java.util.Optional;
+import java.util.Set;
 
 @SuppressWarnings("EnhancedSwitchMigration")
 public class BlockStateUtils extends BlockUtils {
@@ -64,6 +65,56 @@ public class BlockStateUtils extends BlockUtils {
             }
         }
         return true;
+    }
+
+    /**
+     * 环境动态属性（按属性名匹配，跨版本稳定）：取值由红石信号、随机刻、邻居更新等环境因素决定，
+     * 既无法通过放置固化，玩家也没有物品交互能直接设置（拉杆等少数例外由各自 Guide 的点击动作处理，
+     * 不会落到破坏判定）。这类属性的差异破坏重放后仍会随环境变回，只产生无限"破坏→放置"循环。
+     */
+    private static final Set<String> DYNAMIC_STATE_PROPERTIES = Set.of(
+            // 红石供能类：按钮/压力板/拉杆/标靶/避雷针/钟/讲台/绊线/红石火把/红石灯/篝火/蜡烛等
+            "powered", "lit",
+            // 供能衍生态：中继器锁定、活塞推拉、漏斗锁停、发射器脉冲、阳光传感器反转
+            "extended", "locked", "enabled", "triggered", "inverted",
+            // 信号强度类：红石线/阳光传感器/潜声传感器 0-15，以及容器类"level"（堆肥桶/炼药锅等）
+            "power", "level",
+            // 振动/瞬态：潜声传感器相位与嘶吼、大垂叶倾倒、TNT 点燃态、绊线连接与拆除态
+            "sculk_sensor_phase", "shrieking", "can_summon", "tilt", "unstable", "attached", "disarmed",
+            // 随机刻生长/环境衰退：作物/甘蔗/仙人掌/海带/紫颂花 AGE、竹子 STAGE/LEAVES、
+            // 蜂巢储蜜、重生锚充能、蛋糕被食用、耕地湿润、草方块积雪、霜冰融化
+            "age", "stage", "leaves", "honey_level", "charges", "bites", "moisture", "snowy",
+            // 邻居重算类：火苗蔓延方向、脚手架/树叶距离与底部标记、讲台有无书
+            "north", "east", "south", "west", "up", "down", "distance", "bottom", "has_book"
+    );
+
+    /**
+     * 与 {@link #statesEqualIgnoreProperties(BlockState, BlockState, Property[])} 同口径（忽略 WATERLOGGED），
+     * 再忽略 {@link #DYNAMIC_STATE_PROPERTIES} 中的环境动态属性。
+     *
+     * @return true 表示存在"非动态"的状态差异（如朝向/朝半/旋转等放置相关属性），
+     *         破坏重放才可能修正；false 表示差异全部来自环境动态属性，破坏无意义
+     */
+    public static boolean hasFixableStateDifference(BlockState state1, BlockState state2) {
+        if (state1.getBlock() != state2.getBlock()) {
+            return true;
+        }
+        for (Property<?> property : state1.getProperties()) {
+            if (property == BlockStateProperties.WATERLOGGED && !(state1.getBlock() instanceof CoralPlantBlock)) {
+                continue;
+            }
+            if (DYNAMIC_STATE_PROPERTIES.contains(property.getName())) {
+                continue;
+            }
+            try {
+                if (!state1.getValue(property).equals(state2.getValue(property))) {
+                    return true;
+                }
+            } catch (Exception e) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static <T extends Comparable<T>> Optional<T> getProperty(BlockState blockState, Property<T> property) {

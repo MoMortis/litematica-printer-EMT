@@ -292,6 +292,9 @@ public class InventoryUtils {
     }
 
     public static void tick() {
+        if (me.aleksilassila.litematica.printer.utils.EatUtils.isBusy()) {
+            return; // 暴饮暴食进食/取食中：手持与背包相关操作让路（冷却与超时清理延后无碍）
+        }
         if (client.player != null) {
             me.aleksilassila.litematica.printer.utils.HandRestockShulkerCompat.clientTick(client.player);
         }

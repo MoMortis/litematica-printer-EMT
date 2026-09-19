@@ -75,11 +75,14 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
         // 仅渲染方块：配置变化后全量重建原理图渲染网格（须在早退逻辑之前，保证必定执行）
         me.aleksilassila.litematica.printer.printer.RenderOnlyBlockCache.tickPendingReload();
         BlockPosCooldownManager.INSTANCE.tick();
+        // 暴饮暴食：自动进食（须在取货/容器同步 tick 之前更新自身状态，它们的让路判断才准确）
+        me.aleksilassila.litematica.printer.utils.EatUtils.tick(minecraft);
         InventoryUtils.tick();
         ZxyUtils.tick();
         CloudStoreUtils.tickArrivalCheck(minecraft.player);
         BreakUtils.INSTANCE.preprocess();
-        if (BreakUtils.INSTANCE.isNeedHandle()) {
+        // 进食期间挖掘也让路（与打印同等待遇），吃完自动继续
+        if (BreakUtils.INSTANCE.isNeedHandle() && !me.aleksilassila.litematica.printer.utils.EatUtils.isBusy()) {
             BreakUtils.INSTANCE.onTick();
         } else {
             ClientPlayerTickManager.tick();

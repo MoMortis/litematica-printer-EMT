@@ -21,6 +21,8 @@ public class ComparatorGuide extends Guide {
         if (!getProperty(requiredState, ComparatorBlock.MODE).equals(getProperty(currentState, ComparatorBlock.MODE))) {
             return Result.success(new ClickAction());
         }
-        return Result.PASS;
+        // MODE 一致时剩下的只有 POWERED 差异：激活状态由红石输入信号决定，玩家无法用物品修正，
+        // 挖掉重放后仍会随环境变回 → 必须跳过，否则 BREAK_WRONG_STATE_BLOCK 开启时会无限破坏重放
+        return Result.SKIP;
     }
 }

@@ -12,6 +12,7 @@ import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
 import net.minecraft.network.protocol.game.ServerboundContainerClosePacket;
 import net.minecraft.world.inventory.MenuType;
 import me.aleksilassila.litematica.printer.printer.zxy.utils.ZxyUtils;
+import net.minecraft.client.Minecraft;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -58,8 +59,15 @@ public abstract class MixinClientPacketListener {
         if (isOpenHandler) {
             InventoryUtils.switchInv();
         }
+        // 容器同步：只认「当前打开容器」的内容包。玩家背包(containerId=0)等无关内容包会在
+        // 界面刚打开、真正的容器内容包尚未到达时提前触发 case 1/3，读到全空快照/全 0 禁用位
         if (ZxyUtils.num == 1 || ZxyUtils.num == 3) {
-            ZxyUtils.syncInv();
+            Minecraft minecraft = Minecraft.getInstance();
+            if (minecraft.player != null
+                    && !minecraft.player.containerMenu.equals(minecraft.player.inventoryMenu)
+                    && packet.containerId() == minecraft.player.containerMenu.containerId) {
+                ZxyUtils.syncInv();
+            }
         }
     }
 }

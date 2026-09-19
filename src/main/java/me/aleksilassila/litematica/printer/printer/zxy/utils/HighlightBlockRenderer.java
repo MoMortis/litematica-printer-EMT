@@ -146,7 +146,7 @@ public class HighlightBlockRenderer implements IRenderer {
         //#endif
         //#if MC > 12104
         Vec3 camPos = RenderUtils.camPos();
-        int renderDistance = Configs.Core.SYNC_HIGHLIGHT_RENDER_DISTANCE.getIntegerValue();
+        int renderDistance = Configs.Special.SYNC_HIGHLIGHT_RENDER_DISTANCE.getIntegerValue();
         double maxDistSq = (double) renderDistance * renderDistance;
         //#endif
         for (BlockPos pos : posSet) {

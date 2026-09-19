@@ -80,6 +80,16 @@ public final class GoManager {
     private long ghastObstacleTo = Long.MIN_VALUE;
     private long ghastObstacleBuiltTick = Long.MIN_VALUE;
 
+    // ===== 节点超时（乐魂飞行，见 tickWaypointTimeout）=====
+    /** 当前路点的锚定键（路点坐标 ⊕ 所引）：变化＝推进到新节点/换了路径，重置计时基准 */
+    private long waypointKey = Long.MIN_VALUE;
+    /** 当前路点开始计时的 tick */
+    private long waypointStartTick = -1L;
+    /** 锚定时刻的导航主体位置（≈上一节点处；A→B 距离按它到当前路点算） */
+    private double waypointAnchorX;
+    private double waypointAnchorY;
+    private double waypointAnchorZ;
+
     private final Minecraft mc = Minecraft.getInstance();
 
     private volatile boolean active;
@@ -121,6 +131,9 @@ public final class GoManager {
 
     // ===== 主线程专用状态 =====
     private int waypointIndex;
+    /** 最近一次 onPathResult 的路径是否真正到达目标：部分路径的尾节点也可能贴近起点，
+     *  "贴近终点也算到达"兜底只对到过目标的路径生效，否则被困腔内时部分路径会误判到达 */
+    private boolean pathReachedGoal;
     private float bestDistToGoal = Float.MAX_VALUE;
     private int repaths;
     private int stuckRepaths;
@@ -372,7 +385,7 @@ public final class GoManager {
         // 乐魂飞行：A* 的终点就是悬停位，而实际停点受控制律松手阈值影响会有 1~2 格误差，
         // 且"距悬停格 ≤2 格"的格坐标可能落在悬停圈之外 → 贴近终点同样算到达，
         // 否则会出现"路点跑完却判不到达"的静止死循环。
-        if (!arrived && isGhastFlying() && !path.isEmpty()) {
+        if (!arrived && isGhastFlying() && pathReachedGoal && !path.isEmpty()) {
             BlockPos tail = path.get(path.size() - 1);
             double tx = tail.getX() + 0.5 - nav.getX();
             double ty = tail.getY() + 0.5 - nav.getY();
@@ -397,6 +410,11 @@ public final class GoManager {
 
         // 路点推进
         advanceWaypoints(nav);
+
+        // 节点超时（乐魂飞行）：卡在某个节点超过限时 → 弃线重规划
+        if (isGhastFlying()) {
+            tickWaypointTimeout(nav, now);
+        }
 
         // 偏离检测：每 tick 采样，到剩余路径（含上一路点，见下）的最小距离超过阈值
         // 立即停止任务（即使玩家还在试图跳/被拉回路径）。采样分态：着地/入水比三维
@@ -481,7 +499,8 @@ public final class GoManager {
                 stuckRepaths = 0; // 正常前进，累积卡住计数清零
             }
             // 乐魂飞行悬空，onGround 恒为假；飞行时不以此门控（否则卡住检测永不触发）
-            if (movedSq < STUCK_MIN_MOVE_SQ && (isGhastFlying() || player.onGround()) && !calculating) {
+            if (movedSq < STUCK_MIN_MOVE_SQ && (isGhastFlying() || player.onGround())
+                    && !calculating && !GhastFlyer.isEscaping()) {
                 stuckRepaths++;
                 if (stuckRepaths >= MAX_STUCK_REPATHS) {
                     stop(driveMode == DriveMode.AUTO ? null : "反复卡住，已停止寻路");
@@ -599,6 +618,46 @@ public final class GoManager {
         return Math.abs(relX * dirZ - relZ * dirX) / dirLen <= 0.9;
     }
 
+    /**
+     * 节点超时（乐魂飞行）：从当前节点 A 前往下一节点 B，超过「A→B 距离 × 『节点超时』倍率」
+     * 仍未推进到 B（含最后一个节点一直进不了"贴近即到达"圈）→ 放弃当前路线：
+     * 自动腿静默结束换目标重派，手动腿从当前位置重算（与脱困成功后的弃线同路径）。
+     *
+     * <p>重算在飞（calculating，本就要换路线）与脱困进行中
+     *（{@link GhastFlyer#isEscaping}，乐魂正被有意开离路径）不计时；路点推进或换路径即重锚。
+     * A→B 距离按"锚定时刻导航主体位置 → 当前路点"算（锚定时刚离开上一节点，偏差 ≤ 推进半径）。
+     */
+    private void tickWaypointTimeout(Entity nav, long now) {
+        List<BlockPos> p = path;
+        if (p.isEmpty() || waypointIndex >= p.size() || calculating || GhastFlyer.isEscaping()) {
+            waypointKey = Long.MIN_VALUE;
+            return;
+        }
+        BlockPos wp = p.get(waypointIndex);
+        long key = wp.asLong() * 31L + waypointIndex;
+        if (key != waypointKey) {
+            // 换了当前节点（推进/新路径）：重新锚定计时基准
+            waypointKey = key;
+            waypointStartTick = now;
+            waypointAnchorX = nav.getX();
+            waypointAnchorY = nav.getY();
+            waypointAnchorZ = nav.getZ();
+            return;
+        }
+        double mult = Configs.Go.GO_GHAST_WAYPOINT_TIMEOUT.getDoubleValue();
+        if (mult <= 0.0D) {
+            return; // 0 = 不限制
+        }
+        double dx = wp.getX() + 0.5 - waypointAnchorX;
+        double dy = wp.getY() + 0.5 - waypointAnchorY;
+        double dz = wp.getZ() + 0.5 - waypointAnchorZ;
+        double dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        long limitTicks = (long) Math.ceil(Math.max(dist, 1.0D) * mult);
+        if (now - waypointStartTick > limitTicks) {
+            abandonRoute();
+        }
+    }
+
     private void begin(@Nullable BlockPos target, @Nullable UUID liveId, DriveMode mode, GoPathfinder.Goal goalEvaluator, @Nullable String startMessage) {
         active = true;
         calcSerial++;
@@ -610,6 +669,8 @@ public final class GoManager {
         path = List.of();
         reachedGoalCell = null; // 新会话清掉上一条腿的到达记录
         waypointIndex = 0;
+        pathReachedGoal = false;
+        waypointKey = Long.MIN_VALUE; // 节点超时计时作废（新路径由 onPathResult 重锚）
         bestDistToGoal = Float.MAX_VALUE;
         repaths = 0;
         stuckRepaths = 0;
@@ -628,6 +689,40 @@ public final class GoManager {
     /** 静默停止（无聊天提示）：自动模式到达时使用 */
     private void stopInternal() {
         stop(null);
+    }
+
+    /**
+     * 脱困成功回调（{@link GhastFlyer} 在主线程调用）：抛弃原路线。
+     * 脱困成功意味着箱体已挪位 ≥1 格，原路径的剩余路点全是按脱困前的起点算的，继续沿用
+     * 会朝"身后"的旧路点飞；且脱困本身常由"路径被现实几何/原理图排布卡死"触发，
+     * 原路线已不可信。
+     */
+    public void onEscapeSucceeded() {
+        if (!active) {
+            return; // 待命期脱困（无任务腿）：没有路线可抛，扫描器自行调度
+        }
+        abandonRoute();
+    }
+
+    /** 弃线重规划：自动腿静默结束（扫描器重扫选新目标、派新腿），手动腿从当前位置重算到原目标 */
+    private void abandonRoute() {
+        if (driveMode == DriveMode.AUTO) {
+            stopInternal();
+            return;
+        }
+        // 手动腿：作废在飞的旧计算（起点是弃线前的位置，结果已过期），从当前位置重算；
+        // 旧路点立即清空——重算期间不再按旧路线推进（控制律收不到路点会自然悬停）
+        calcSerial++;
+        calculating = false;
+        bestDistToGoal = Float.MAX_VALUE;
+        repaths = 0;
+        path = List.of();
+        waypointIndex = 0;
+        pathReachedGoal = false;
+        Entity nav = navEntity();
+        if (nav != null) {
+            requestPath(nav.blockPosition());
+        }
     }
 
     private void requestPath(BlockPos from) {
@@ -846,6 +941,8 @@ public final class GoManager {
             stuckRepaths = 0;
             path = result.positions;
             waypointIndex = 0;
+            waypointKey = Long.MIN_VALUE; // 新路径：节点超时重新锚定
+            pathReachedGoal = true;
             return;
         }
         // 部分路径：必须比上一次更接近目标，否则判定已到最近可达位置
@@ -858,6 +955,12 @@ public final class GoManager {
         repaths++;
         path = result.positions;
         waypointIndex = 0;
+        waypointKey = Long.MIN_VALUE; // 新路径：节点超时重新锚定
+        // 距目标 <6.0 的"部分路径"＝节点已接近悬停包围盒、只是不在多目标的精确悬停格集合里
+        // （眼位过滤/相邻候选映射所致）：视同到过目标，让"贴近终点也算到达"兜底生效——
+        // 阈值取小了（实测 0.5、2.0 都出过）会在距 A* 终点一段距离处悬停到节点超时；
+        // 误判到达也无碍：扫描器侧还有"玩家是否真在交互距离内"的二次校验兜底
+        pathReachedGoal = result.distanceToGoal < 6.0F;
     }
 
     @Nullable

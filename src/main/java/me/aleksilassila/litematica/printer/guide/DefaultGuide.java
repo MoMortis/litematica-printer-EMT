@@ -4,6 +4,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
+import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import net.minecraft.world.level.block.LiquidBlock;
 
@@ -45,6 +46,9 @@ public class DefaultGuide extends Guide {
     protected Result onBuildActionWrongState(BlockMatchResult state) {
         if (Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue()
                 && Configs.Print.BREAK_WRONG_STATE_BLOCK.getBooleanValue()
+                // 环境动态属性（POWERED/LIT/AGE 等由红石信号、随机刻等决定）造成的差异不破坏：
+                // 重放后仍会随环境变回，只会形成无限"破坏→放置"循环
+                && BlockStateUtils.hasFixableStateDifference(requiredState, currentState)
                 && BreakUtils.canBreakBlock(blockPos)
                 && BreakUtils.breakRestriction(level, blockPos, currentState)) {
             BreakUtils.INSTANCE.add(context);

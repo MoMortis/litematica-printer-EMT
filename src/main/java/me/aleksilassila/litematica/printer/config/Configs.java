@@ -239,17 +239,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 20)
                 .build();
 
-        // 容器同步 - 高亮颜色
-        public static final ConfigColor SYNC_INVENTORY_COLOR = color("syncInventoryColor")
-                .defaultValue("#4CFF4CE6")
-                .build();
-
-        // 容器同步 - 高亮渲染距离（0 为不限制）
-        public static final ConfigInteger SYNC_HIGHLIGHT_RENDER_DISTANCE = integer("syncHighlightRenderDistance")
-                .defaultValue(64)
-                .range(0, 256)
-                .build();
-
         // 通用配置项列表（按功能分类排序）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 WORK_SWITCH,
@@ -280,9 +269,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 HAND_RESTOCK_SHULKER_COMPAT,
                 QUICK_SHULKER,
                 QUICK_SHULKER_MAX_STACKS,
-                QUICK_SHULKER_COOLDOWN,
-                SYNC_INVENTORY_COLOR,
-                SYNC_HIGHLIGHT_RENDER_DISTANCE
+                QUICK_SHULKER_COOLDOWN
         );
     }
 
@@ -415,8 +402,9 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 优化放水逻辑：开启后破冰放水放置顺序后置（先放完交换范围∩渲染层内的普通方块再破冰放水）
-        public static final ConfigBoolean PRINT_ICE_FOR_WATER_OPTIMIZED = bool("printIceForWaterOptimized")
+        // 装填炼药锅：开启后用空桶/水桶/熔岩桶/细雪桶右键处理炼药锅（填充与舀出）；
+        // 炼药锅（含装水/熔岩/细雪）任何时候都不会被打印机当作错误方块破坏
+        public static final ConfigBoolean FILL_CAULDRON = bool("printFillCauldron")
                 .defaultValue(false)
                 .build();
 
@@ -533,7 +521,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_REPLACE,
                 REPLACEABLE_LIST,
                 PRINT_ICE_FOR_WATER,
-                PRINT_ICE_FOR_WATER_OPTIMIZED,
+                FILL_CAULDRON,
                 SAFELY_OBSERVER,
                 STRIP_LOGS,
                 NOTE_BLOCK_TUNING,
@@ -620,7 +608,71 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(isLoadCloudStoreLoaded) // 仅云仓库 Mod 加载时显示
                 .build();
 
-        // 特殊配置项列表（按功能分组排序：原版限制放宽 → 原理图渲染 → 云仓库补货）
+        // 暴饮！暴食！：饥饿值降到阈值以下时自动选食物吃掉（快捷栏 → 背包 → 快捷潜影盒）
+        public static final ConfigBoolean EAT = bool("eat")
+                .defaultValue(false)
+                .build();
+
+        // 饥饿度阈值：饥饿值 ≤ 该值时开吃
+        public static final ConfigInteger EAT_HUNGER_THRESHOLD = integer("eatHungerThreshold")
+                .defaultValue(14)
+                .range(1, 19)
+                .build();
+
+        // 进食黑名单：严格匹配注册路径 / 完整ID / 精确译名，列表内的食物永远不会被自动吃掉
+        public static final ConfigStringList EAT_BLACKLIST = stringList("eatBlacklist")
+                .defaultValue(
+                        "minecraft:rotten_flesh",
+                        "minecraft:golden_apple",
+                        "minecraft:enchanted_golden_apple",
+                        "minecraft:beef",
+                        "minecraft:porkchop",
+                        "minecraft:chicken",
+                        "minecraft:mutton",
+                        "minecraft:rabbit",
+                        "minecraft:cod",
+                        "minecraft:salmon",
+                        "minecraft:tropical_fish",
+                        "minecraft:potato",
+                        "minecraft:pufferfish",
+                        "minecraft:suspicious_stew",
+                        "minecraft:chorus_fruit",
+                        "minecraft:poisonous_potato",
+                        "minecraft:spider_eye"
+                )
+                .build();
+
+        // 受伤打断-进食冷却（秒）：进食中受伤立即停止并在该秒数内不再触发；0 = 受伤不打断
+        public static final ConfigInteger EAT_HURT_CANCEL_COOLDOWN = integer("eatHurtCancelCooldown")
+                .defaultValue(7)
+                .range(0, 60)
+                .build();
+
+        // ===== 容器同步 =====
+
+        // 容器同步 - 开关：开启后同步前先校验玩家背包材料是否齐全，不足则暂不同步
+        public static final ConfigBoolean SYNC_INVENTORY_CHECK = bool("syncInventoryCheck")
+                .defaultValue(false)
+                .build();
+
+        // 容器同步 - 同步合成器：同步时一并同步合成器的槽位禁用状态（先禁用位后物品）；
+        // 关闭后只同步物品，不读写禁用位
+        public static final ConfigBoolean SYNC_INVENTORY_CRAFTER = bool("syncInventoryCrafter")
+                .defaultValue(true)
+                .build();
+
+        // 容器同步 - 高亮颜色
+        public static final ConfigColor SYNC_INVENTORY_COLOR = color("syncInventoryColor")
+                .defaultValue("#4CFF4CE6")
+                .build();
+
+        // 容器同步 - 高亮渲染距离（0 为不限制）
+        public static final ConfigInteger SYNC_HIGHLIGHT_RENDER_DISTANCE = integer("syncHighlightRenderDistance")
+                .defaultValue(64)
+                .range(0, 256)
+                .build();
+
+        // 特殊配置项列表（按功能分组排序：原版限制放宽 → 原理图渲染 → 云仓库补货 → 容器同步 → 暴饮暴食）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 // 原版/他模组限制放宽
                 UNLOCK_BEACON_EFFECTS,
@@ -636,7 +688,19 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 PRINT_CLOUD_STORE_MIDDLE_CLICK_FORCE,
                 PRINT_CLOUD_STORE_REFILL_COOLDOWN,
                 PRINT_CLOUD_STORE_REFILL_AMOUNT,
-                REFILL_SCROLL_REVERSE
+                REFILL_SCROLL_REVERSE,
+
+                // 容器同步
+                SYNC_INVENTORY_CHECK,
+                SYNC_INVENTORY_CRAFTER,
+                SYNC_INVENTORY_COLOR,
+                SYNC_HIGHLIGHT_RENDER_DISTANCE,
+
+                // 暴饮暴食（自动进食）
+                EAT,
+                EAT_HUNGER_THRESHOLD,
+                EAT_BLACKLIST,
+                EAT_HURT_CANCEL_COOLDOWN
         );
     }
 
@@ -659,6 +723,14 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         //（关闭 = 维持直线距离最近 + 单目标寻路的旧行为）
         public static final ConfigBoolean PATH_NEAREST_TARGET = bool("pathNearestTarget")
                 .defaultValue(true)
+                .build();
+
+        // 寻路多余方块：扫描自动寻路把"多余方块"（原理图此处为空气、现实却有方块）
+        // 作为优先目标——存在多余方块候选时优先前往并等打印机破坏，多个之间按路径最短竞争。
+        // 前置：开启「破坏多余方块」（否则打印机不会破坏，寻路过去只会干等）。
+        // 注意「扫描白名单」（打印机目录）开启时空气格不在白名单内，多余方块不会被打印机破坏
+        public static final ConfigBoolean GO_SCAN_EXTRA_BLOCKS = bool("goScanExtraBlocks")
+                .defaultValue(false)
                 .build();
 
         // 多目标候选上限：进入目标集合的候选数上限，超限按直线距离预截（直线距离只作预筛）
@@ -778,6 +850,22 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0.0D, 2.0D)
                 .build();
 
+        // 乐魂寻路 - 节点超时：从当前路径节点前往下一节点的限时＝两节点距离 × 此倍率（tick/格）。
+        // 超时仍未推进到下一节点（或一直进不了终点的"贴近即到达"圈）→ 放弃当前路线：
+        // 自动寻路换目标重新派发，手动寻路从当前位置重算。0 = 不限制
+        public static final ConfigDouble GO_GHAST_WAYPOINT_TIMEOUT = doubleValue("goGhastWaypointTimeout")
+                .defaultValue(30.0D)
+                .range(0.0D, 600.0D)
+                .build();
+
+        // 乐魂寻路 - 转向惩罚：路径每折向一次（当前步方向与前一步不同）叠加的软性代价。
+        // 恶魂转向要身体朝向平滑收敛（先转后飞），每次折向都有真实的减速与弧线成本；
+        // 调高使路线更趋直线、减少折返（默认 0，0 = 不惩罚）
+        public static final ConfigDouble GO_GHAST_TURN_PENALTY = doubleValue("goGhastTurnPenalty")
+                .defaultValue(0.0D)
+                .range(0.0D, 10.0D)
+                .build();
+
         // ===== 行走寻路代价 =====
         // 逐条对应「移动方式 → 代价」，单位＝tick（按原版实测速度折算）；寻路开始时快照一次。
         // 与上方的「乐魂寻路代价」完全独立，互不影响。
@@ -880,6 +968,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
                 // 目标选择
                 PATH_NEAREST_TARGET,
+                GO_SCAN_EXTRA_BLOCKS,
                 PATH_TARGET_CANDIDATE_LIMIT,
 
                 // 扫描白名单
@@ -906,6 +995,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 GO_GHAST_DESCEND_MULT,
                 GO_GHAST_WALL_PENALTY,
                 GO_GHAST_VERT_LATE_WEIGHT,
+                GO_GHAST_WAYPOINT_TIMEOUT,
+                GO_GHAST_TURN_PENALTY,
 
                 // 行走寻路代价
                 GO_WALK_COST,
@@ -1218,11 +1309,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         public static final ConfigHotkey SYNC_INVENTORY = hotkey("syncInventory")
                 .build();
 
-        // 同步容器开关热键
-        public static final ConfigBooleanHotkeyed SYNC_INVENTORY_CHECK = booleanHotkey("syncInventoryCheck")
-                .defaultValue(false)
-                .build();
-
         // 快捷键列表（按功能分组排序：基础操作 → 多模开关 → 打印相关 → 容器同步 → 云仓库）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
                 // 基础操作
@@ -1244,7 +1330,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
 
                 // 容器同步
                 SYNC_INVENTORY,               // 同步容器热键
-                SYNC_INVENTORY_CHECK,         // 同步容器开关热键
 
                 // 云仓库（需云仓库 Mod）
                 REFILL_AMOUNT_ADJUST          // 取货数量调整（按住+滚轮）

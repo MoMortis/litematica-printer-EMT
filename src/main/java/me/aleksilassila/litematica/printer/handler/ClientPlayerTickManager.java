@@ -37,7 +37,9 @@ public class ClientPlayerTickManager {
         // 扫描自动寻路：派发/监控自动目标（依赖 GoManager 的驱动状态，须在其后）
         me.aleksilassila.litematica.printer.go.AutoWalkScanner.INSTANCE.tick();
 
-        if (InventoryUtils.isOpenHandler || InventoryUtils.switchItem() || BreakUtils.INSTANCE.isNeedHandle()) {
+        // 暴饮暴食进食中：打印/挖掘等 handler 全部让路（switchItem 仍照常驱动快捷潜影盒取食）
+        if (InventoryUtils.isOpenHandler || InventoryUtils.switchItem() || BreakUtils.INSTANCE.isNeedHandle()
+                || me.aleksilassila.litematica.printer.utils.EatUtils.isBusy()) {
             return;
         }
         
