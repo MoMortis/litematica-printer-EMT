@@ -65,8 +65,12 @@ public final class GoManager {
      *  A* 的启发是"到最近候选的距离"，远处候选只有近处全不可达时才会被考虑，且成本上限
      *  会先把它们排掉，故近处这批的包围盒就够覆盖实际会走的区域 */
     private static final int GHAST_OBSTACLE_MULTI_CANDIDATES = 32;
-    /** 乐魂飞行寻路：路点推进阈值（格）——须略大于控制律的水平到位阈值(1.6)，否则路点推不动、原地悬停 */
-    private static final double GHAST_WAYPOINT_ARRIVE_SQ = 2.0 * 2.0;
+    /** 乐魂飞行寻路：中途路点推进阈值（格）——须大于控制律的减速触发距离(2.0)，
+     *  否则路点推不动、原地悬停 */
+    private static final double GHAST_WAYPOINT_ARRIVE_SQ = 2.5 * 2.5;
+    /** 乐魂飞行寻路：终点到达兜底阈值（格）——已到过目标时，距 A* 终点（悬停位）这么近
+     *  即视同到达（主判定仍是 A* 悬停格集合 isInGoal） */
+    private static final double GHAST_GOAL_ARRIVE_SQ = 1.0 * 1.0;
     /** 乐魂飞行寻路：越过走廊半径（格）——沿路径方向已越过路点、且横向垂距在此范围内才算越过 */
     private static final double GHAST_CORRIDOR_RADIUS = 3.0;
     /** 乐魂飞行寻路：障碍快照最短重建间隔（tick）——revision 在打印期几乎每刻递增，必须节流 */
@@ -382,15 +386,15 @@ public final class GoManager {
         // 到达判定（MANUAL=站在目标方块，AUTO=走到目标附近）
         GoPathfinder.Goal ag = activeGoal;
         boolean arrived = ag != null && ag.isInGoal(nav.getBlockX(), nav.getBlockY(), nav.getBlockZ());
-        // 乐魂飞行：A* 的终点就是悬停位，而实际停点受控制律松手阈值影响会有 1~2 格误差，
-        // 且"距悬停格 ≤2 格"的格坐标可能落在悬停圈之外 → 贴近终点同样算到达，
-        // 否则会出现"路点跑完却判不到达"的静止死循环。
+        // 乐魂飞行：A* 的终点就是悬停位，而实际停点受控制律松手阈值影响会有误差，
+        // 且"距悬停格 ≤N 格"的格坐标可能落在悬停圈之外 → 贴近终点同样算到达，
+        // 否则会出现"路点跑完却判不到达"的静止死循环。乐魂放宽到 1 格内
         if (!arrived && isGhastFlying() && pathReachedGoal && !path.isEmpty()) {
             BlockPos tail = path.get(path.size() - 1);
             double tx = tail.getX() + 0.5 - nav.getX();
             double ty = tail.getY() + 0.5 - nav.getY();
             double tz = tail.getZ() + 0.5 - nav.getZ();
-            arrived = tx * tx + ty * ty + tz * tz <= GHAST_WAYPOINT_ARRIVE_SQ;
+            arrived = tx * tx + ty * ty + tz * tz <= GHAST_GOAL_ARRIVE_SQ;
         }
         if (arrived) {
             if (driveMode == DriveMode.AUTO) {

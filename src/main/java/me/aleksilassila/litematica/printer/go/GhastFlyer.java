@@ -13,23 +13,21 @@ import net.minecraft.world.entity.Entity;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
 
-import java.util.List;
-
 /**
- * 「乐魂寻路」的飞行控制律（视角只允许 6 个正方向，其余靠 WASD+空格组合完成）。
+ * 「乐魂寻路」的飞行控制律（水平视线精确指向目标，只有纯升降段才仰/低头到底）。
  *
- * <p>恶魂的移动方向由骑乘者视线决定（{@code HappyGhast.getRiddenInput}：
- * {@code forward = cos(xRot)}、{@code up = -sin(xRot)}、空格 up += 0.5）：
+ * <p>恶魂的移动方向由骑乘者视线决定（{@code HappyGhast.getRiddenInput} 取玩家的
+ * {@code xxa/zza} 模拟输入，即模组写入的 {@code Input.moveVector}，故侧移/后退是连续量）：
  * <ul>
- * <li><b>视角只取六个正方向</b>：水平朝向就近吸附到 4 个正方向（0°/90°/180°/270°），
- *     纯升降段才仰/低头到 ±90°，俯仰不取中间值；</li>
- * <li><b>水平段</b>：方位角偏差（≤45°）折算成侧移键（|偏差| ≤22.5° 只按 W，否则 W 叠加
- *     一个侧移键，原版归一化后斜向组合与单键同速）；目标更高时叠加空格斜升；</li>
+ * <li><b>水平段</b>：视线指向目标方位角；位移方向由身体朝向决定（身体每 tick 只收敛 8%），
+ *     故用 <b>W+A/D 连续补偿</b>——{@code strafe = −sin δ}、{@code forward = cos δ}
+ *     （δ = 目标方位角 − 身体朝向），合成位移方向精确等于目标方向，身体还在转也照飞；</li>
  * <li><b>纯上升段</b>：仰视到底 + W——垂直分量 1.0 全推力，终速是空格的两倍，
  *     与下降完全对称；空格只用于水平移动时的斜升组合；</li>
  * <li><b>纯下降段</b>：低头到底 + W，水平分量为 0，只在水平到位后下降；</li>
- * <li><b>每 gt 速度闭环</b>：末端刹车区按"朝目标分速度"收放油门（高速反推 S 刹车、
- *     滑行中松手、停稳未到位恢复正推蠕进），垂直段按下落/升速收油门防冲过头；</li>
+ * <li><b>每 gt 速度闭环</b>：动态减速——"滑行距离（≈10.1×v）将超过剩余距离"就反推制动，
+ *     否则保持正推（触发距离随速度浮动，不设固定门槛）。垂直段同样用反推（升过头就低头推、
+ *     降过头就仰头推），并在切入垂直段时先清掉水平残余速度，避免到位又飘走；</li>
  * <li><b>到位</b>：松开输入（推力归零，靠 0.91/tick 阻尼自然停稳）。</li>
  * </ul>
  *
@@ -50,20 +48,9 @@ public final class GhastFlyer {
     /** 上升仰角：仰到底 + W，垂直分量 = −sin(−90°) = 1.0 全推力——终速是空格（+0.5）
      *  的两倍，与下降完全对称；空格只留给"水平移动同时斜升"的组合场景 */
     private static final float ASCEND_PITCH = -90.0F;
-    /**
-     * 朝向对准阈值（度）：|目标朝向 − 恶魂身体朝向| 超过该值就先只转不飞。
-     * 身体朝向按 0.08/tick 平滑跟随视线，边飞边转实际轨迹是弧线（追点振荡）；
-     * 吸附后误差最多 45°，收敛到该门限只需 1~2 tick，停顿代价极小。
-     */
-    private static final float TURN_ALIGN_DEGREES = 40.0F;
-    /**
-     * 末端刹车区（格）：瞄准点已是最后路点、且水平距离进入该范围后，按"当前速度滑行距离
-     * 是否超过剩余距离"动态判定要不要反向刹车（S）。固定阈值版会在低速形成极限环。
-     */
-    private static final double BRAKE_ZONE = 3.0;
-    /** 垂直滑行判定：剩余高度 < 当前升降速度 × 该系数 + 垂直死区时松手滑行
-     *  （0.91 阻尼下纯滑行距离 ≈ 10.1 × 速度，取 9 留余量），防升降冲过头 */
-    private static final double VERT_COAST_FACTOR = 9.0;
+    /** 滑行系数：速度 v 在 0.91/tick 阻尼下的滑行总距离 = v×0.91/0.09 ≈ 10.1×v。
+     *  水平与垂直的减速判定都用它估"不刹会冲多远"：估算值超过剩余距离即反推制动 */
+    private static final double COAST_FACTOR = 10.1;
     /** 脱困飞行的持续 tick：够先转过身（身体朝向平滑跟随视线，约 10 tick）再飞出一个箱位
      *  并让惯性稳定下来。24 tick 时转身吃掉近半，推力段只剩约 1.5 格，挪不到 1 格就判失败 */
     private static final int ESCAPE_TICKS = 30;
@@ -226,68 +213,77 @@ public final class GhastFlyer {
 
         // 每 gt 的速度闭环：位置决定推哪个方向，速度决定收放油门/是否刹车
         Vec3 vel = nav.getDeltaMovement();
-        List<BlockPos> pathList = GoManager.INSTANCE.getPath();
-        boolean finalLeg = !pathList.isEmpty()
-                && GoManager.INSTANCE.getWaypointIndex() >= pathList.size() - 1;
 
         float yaw = player.getYRot();
-        // 六向视角：水平朝向只允许 4 个正方向（俯仰两端由纯升降段设置）
-        yaw = Mth.wrapDegrees(Math.round(yaw / 90.0F) * 90.0F);
         float pitch = 0.0F;
         float forward = 0.0F;
         float strafe = 0.0F;
         boolean jump = false;
 
-        boolean aligned = true;
         if (horiz > HORIZ_ARRIVE) {
-            // 水平接近：视角就近吸附到 4 个水平正方向，与目标方位角的偏差（≤45°）折算成侧移键——
-            // |偏差| ≤22.5° 只按 W，否则 W 叠加一个侧移键（原版归一化后斜向组合与单键同速）；
-            // 目标更高时叠加空格斜升（W+跳组合被归一化，水平推力 ×0.894，仍优于先平后升）。
+            // 水平接近：视线精确指向目标方位角（身体朝向据此收敛）
             float bearing = (float) Math.toDegrees(Math.atan2(-dx, dz));
-            yaw = Mth.wrapDegrees(Math.round(bearing / 90.0F) * 90.0F);
+            yaw = bearing;
             pitch = 0.0F;
-            // 朝向未对准（身体朝向 0.08/tick 平滑跟随视线）先只转不飞：
-            // 侧移键的方向以身体朝向为基准，对准前推键方向误差过大；
-            // 吸附后误差最多 45°，收敛到门限只需 1~2 tick，停顿代价极小
-            aligned = Math.abs(Mth.wrapDegrees(yaw - nav.getYRot())) <= TURN_ALIGN_DEGREES;
-            if (aligned) {
-                forward = 1.0F;
-                float rel = Mth.wrapDegrees(bearing - yaw); // ∈ [-45°, 45°]
-                if (rel > 22.5F) {
-                    strafe = -1.0F; // 目标偏右 → 右移键（strafe 正＝左，见 writeInput）
-                } else if (rel < -22.5F) {
-                    strafe = 1.0F;  // 目标偏左 → 左移键
-                }
-                if (dy > VERT_DEADZONE) {
-                    jump = true;
-                }
-                // 末端刹车：瞄准点已是最后路点、进入刹车区后按"会不会冲过头"动态判定——
-                // 当前速度的滑行距离（≈10×v）超过剩余距离+0.5 格余量才反向刹车（S）；
-                // 其余情况一律正推。旧的固定阈值+松手滑行会在 ~0.02 格/tick 处形成
-                // "推→滑→推"极限环（日志实测原地抖 44 tick 直到节点超时）
-                if (finalLeg && horiz < BRAKE_ZONE) {
-                    double vAlong = (vel.x * dx + vel.z * dz) / horiz;
-                    if (vAlong > (horiz + 0.5) / VERT_COAST_FACTOR) {
-                        forward = -1.0F;
-                        strafe = 0.0F;
-                        jump = false;
-                    }
-                    // 未达刹车线：保持正推+侧移+斜升（低速永不停推，无死锁）
-                }
+            // 位移方向由乐魂身体朝向决定（视线只负责让它转过来），而身体每 tick 只收敛 8%——
+            // 故用 W+A/D 的连续组合把"身体朝向与目标方向的偏差 δ"补掉：
+            //   strafe = −sin δ、forward = cos δ（模长恒为 1，不会超速）
+            // 合成后的位移方向精确等于 bearing，身体还在转也照飞，不必等转向完成
+            float rad = Mth.wrapDegrees(bearing - nav.getYRot()) * 0.017453292F;
+            strafe = -Mth.sin(rad);
+            forward = Mth.cos(rad);
+            if (dy > VERT_DEADZONE) {
+                jump = true; // 目标更高：空格斜升（与视线解耦，可与水平移动同时生效）
             }
-        } else if (dy > VERT_DEADZONE) {
-            // 水平已到位 → 纯上升（6 正方向中的"上"）：仰视到底 + W 全推力；
-            // 剩余高度小于"当前升速的滑行距离 + 死区"时松手滑行，防冲过头
-            if (!(vel.y > 0.0 && dy < vel.y * VERT_COAST_FACTOR + VERT_DEADZONE)) {
-                pitch = ASCEND_PITCH;
-                forward = 1.0F;
+            // 减速阶段（动态判定，不设距离门槛）：把速度投影到"朝目标"方向，若按 0.91/tick
+            // 阻尼滑行的距离（≈10.1×v）会冲过节点，就把输入反向（沿目标方向反推，即 S 键为主，
+            // W 随之松开）；速度已不足以冲过则恢复正推低速蠕进，不会形成"推→滑→推"抖动。
+            // 触发距离 = 10.1×v − 0.5 随速度浮动（原版 4 m/s ≈ 1.5 格、7.6 m/s ≈ 3.2 格），
+            // 远处 v 相对 horiz 天然满足不了该不等式，不会误刹
+            double vAlong = (vel.x * dx + vel.z * dz) / horiz;
+            if (vAlong > (horiz + 0.5) / COAST_FACTOR) {
+                strafe = Mth.sin(rad);
+                forward = -Mth.cos(rad);
+                jump = false;
             }
-        } else if (dy < -VERT_DEADZONE) {
-            // 水平已到位 → 纯下降（6 正方向中的"下"）：低头到底 + W；
-            // 同理按下落速度收油门
-            if (!(vel.y < 0.0 && -dy < -vel.y * VERT_COAST_FACTOR + VERT_DEADZONE)) {
-                pitch = DESCEND_PITCH;
-                forward = 1.0F;
+        } else if (dy > VERT_DEADZONE || dy < -VERT_DEADZONE) {
+            // 垂直段：水平距离已到位，但水平速度未必收干净。切垂直后水平只剩 0.91/tick 阻尼，
+            // 若切入时水平速度还大到会飘出 HORIZ_ARRIVE，就会"到位又飘走"→ 水平距离重新超标
+            // → 掉头飞回来，表现为到位前卡一下（高速平飞 7.6 m/s 时最明显）。故先保持水平视线
+            // 沿速度反方向反推一脚，把水平速度压下去再转垂直处理
+            double horizSpeed = Math.sqrt(vel.x * vel.x + vel.z * vel.z);
+            if (horizSpeed > (horiz + 0.5) / COAST_FACTOR) {
+                float vBearing = (float) Math.toDegrees(Math.atan2(-vel.x, vel.z));
+                yaw = vBearing;
+                pitch = 0.0F;
+                float rad = Mth.wrapDegrees(vBearing - nav.getYRot()) * 0.017453292F;
+                strafe = -Mth.sin(rad); // 视线朝速度方向、输入取负＝沿速度反方向制动
+                forward = -Mth.cos(rad);
+            } else if (dy > VERT_DEADZONE) {
+                // 纯上升（6 正方向中的"上"）：仰视到底 + W 全推力。收油门同样用反推而不是松手——
+                // 松手只能靠阻尼，估算稍偏就冲过目标高度、再掉头追回来；反推（低头 + W ＝ 向下
+                // 推力）能直接把升速压住。速度已反向说明刹过头，松手让阻尼收敛，免得反向加速来回抖
+                if (vel.y > 0.0 && dy < vel.y * COAST_FACTOR + VERT_DEADZONE) {
+                    pitch = DESCEND_PITCH;
+                    forward = 1.0F;
+                } else if (vel.y < 0.0) {
+                    // 已刹过头：松手等阻尼收敛
+                } else {
+                    pitch = ASCEND_PITCH;
+                    forward = 1.0F;
+                }
+            } else {
+                // 纯下降（6 正方向中的"下"）：低头到底 + W 全推力；同理反推（仰视到底 + W ＝
+                // 向上推力）压制落速——从上方往下飞时下降全压在最后一段，落速最快、最容易冲过
+                if (vel.y < 0.0 && -dy < -vel.y * COAST_FACTOR + VERT_DEADZONE) {
+                    pitch = ASCEND_PITCH;
+                    forward = 1.0F;
+                } else if (vel.y > 0.0) {
+                    // 已刹过头：松手等阻尼收敛
+                } else {
+                    pitch = DESCEND_PITCH;
+                    forward = 1.0F;
+                }
             }
         }
         // 其余情况＝到位：forward/jump 保持 0，松开后靠阻尼停稳
