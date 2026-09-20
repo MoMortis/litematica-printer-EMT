@@ -608,9 +608,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .setVisible(isLoadCloudStoreLoaded) // 仅云仓库 Mod 加载时显示
                 .build();
 
-        // 暴饮！暴食！：饥饿值降到阈值以下时自动选食物吃掉（快捷栏 → 背包 → 快捷潜影盒）
-        public static final ConfigBoolean EAT = bool("eat")
-                .defaultValue(false)
+        // 暴饮！暴食！触发模式：关闭 / 仅打印机工作时（总开关开启）/ 任何时候
+        // 取食链：副手 → 快捷栏 → 背包 →（开启快捷潜影盒时）快捷潜影盒
+        public static final ConfigOptionList EAT = optionList("eat")
+                .defaultValue(EatMode.OFF)
                 .build();
 
         // 饥饿度阈值：饥饿值 ≤ 该值时开吃
