@@ -26,8 +26,8 @@ import org.jetbrains.annotations.Nullable;
  *     与下降完全对称；空格只用于水平移动时的斜升组合；</li>
  * <li><b>纯下降段</b>：低头到底 + W，水平分量为 0，只在水平到位后下降；</li>
  * <li><b>每 gt 速度闭环</b>：动态减速——"滑行距离（≈10.1×v）将超过剩余距离"就反推制动，
- *     否则保持正推（触发距离随速度浮动，不设固定门槛）。垂直段同样用反推（升过头就低头推、
- *     降过头就仰头推），并在切入垂直段时先清掉水平残余速度，避免到位又飘走；</li>
+ *     否则保持正推（触发距离随速度浮动，不设固定门槛）。垂直段的反推保持视线不动、改用
+ *     S 键反向推（视角不在 ±90 之间来回翻），并在切入垂直段时先清掉水平残余速度，避免到位又飘走；</li>
  * <li><b>到位</b>：松开输入（推力归零，靠 0.91/tick 阻尼自然停稳）。</li>
  * </ul>
  *
@@ -129,6 +129,23 @@ public final class GhastFlyer {
     /** 是否正处于<b>二档</b>脱困（终点允许压原理图方块的逃生飞行）：打印机与扫描器据此暂停 */
     public static boolean isEscapingTier2() {
         return escapeTicks > 0 && escapeTier == 2;
+    }
+
+    /**
+     * 控制律的「到位」判定（与 {@link #drive} 的三段分支同口径）：水平 ≤ {@link #HORIZ_ARRIVE}
+     * 且 |dy| ≤ {@link #VERT_DEADZONE}。
+     *
+     * <p><b>为什么寻路侧要用它</b>：落进这个区域后 {@code drive} 不再写任何输入，乐魂只会靠
+     * 0.91/tick 阻尼漂停——位置不会再变。此时若寻路的到达判定仍为 false（停点格落在悬停集合外、
+     * 或该格过不了眼位复查），就会出现"控制律已无事可做、寻路却还在等"的僵局，表现为原地悬停
+     * 直到节点超时（实测「下降到达目标时停住不动」）。故寻路侧以同一区域收尾，把僵局变成正常到达。
+     */
+    public static boolean isSettledAt(Entity nav, BlockPos wp) {
+        double dx = wp.getX() + 0.5 - nav.getX();
+        double dz = wp.getZ() + 0.5 - nav.getZ();
+        double dy = wp.getY() + 0.5 - nav.getY();
+        return dx * dx + dz * dz <= HORIZ_ARRIVE * HORIZ_ARRIVE
+                && Math.abs(dy) <= VERT_DEADZONE;
     }
 
     /**
@@ -261,27 +278,26 @@ public final class GhastFlyer {
                 forward = -Mth.cos(rad);
             } else if (dy > VERT_DEADZONE) {
                 // 纯上升（6 正方向中的"上"）：仰视到底 + W 全推力。收油门同样用反推而不是松手——
-                // 松手只能靠阻尼，估算稍偏就冲过目标高度、再掉头追回来；反推（低头 + W ＝ 向下
-                // 推力）能直接把升速压住。速度已反向说明刹过头，松手让阻尼收敛，免得反向加速来回抖
+                // 松手只能靠阻尼，估算稍偏就冲过目标高度、再掉头追回来。反推保持视线不动（仍仰视），
+                // 改用 S 键＝沿视线反方向（向下）推，视角不会在 ±90 之间来回翻。
+                // 速度已反向说明刹过头，松手让阻尼收敛，免得反向加速来回抖
+                pitch = ASCEND_PITCH;
                 if (vel.y > 0.0 && dy < vel.y * COAST_FACTOR + VERT_DEADZONE) {
-                    pitch = DESCEND_PITCH;
-                    forward = 1.0F;
+                    forward = -1.0F; // 反推：S 键向下
                 } else if (vel.y < 0.0) {
-                    // 已刹过头：松手等阻尼收敛
+                    forward = 0.0F; // 已刹过头：松手等阻尼收敛
                 } else {
-                    pitch = ASCEND_PITCH;
                     forward = 1.0F;
                 }
             } else {
-                // 纯下降（6 正方向中的"下"）：低头到底 + W 全推力；同理反推（仰视到底 + W ＝
-                // 向上推力）压制落速——从上方往下飞时下降全压在最后一段，落速最快、最容易冲过
+                // 纯下降（6 正方向中的"下"）：低头到底 + W 全推力；同理保持视线用 S 键（向上）压制
+                // 落速——从上方往下飞时下降全压在最后一段，落速最快、最容易冲过
+                pitch = DESCEND_PITCH;
                 if (vel.y < 0.0 && -dy < -vel.y * COAST_FACTOR + VERT_DEADZONE) {
-                    pitch = ASCEND_PITCH;
-                    forward = 1.0F;
+                    forward = -1.0F; // 反推：S 键向上
                 } else if (vel.y > 0.0) {
-                    // 已刹过头：松手等阻尼收敛
+                    forward = 0.0F; // 已刹过头：松手等阻尼收敛
                 } else {
-                    pitch = DESCEND_PITCH;
                     forward = 1.0F;
                 }
             }

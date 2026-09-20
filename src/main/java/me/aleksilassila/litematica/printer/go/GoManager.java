@@ -68,9 +68,6 @@ public final class GoManager {
     /** 乐魂飞行寻路：中途路点推进阈值（格）——须大于控制律的减速触发距离(2.0)，
      *  否则路点推不动、原地悬停 */
     private static final double GHAST_WAYPOINT_ARRIVE_SQ = 2.5 * 2.5;
-    /** 乐魂飞行寻路：终点到达兜底阈值（格）——已到过目标时，距 A* 终点（悬停位）这么近
-     *  即视同到达（主判定仍是 A* 悬停格集合 isInGoal） */
-    private static final double GHAST_GOAL_ARRIVE_SQ = 1.0 * 1.0;
     /** 乐魂飞行寻路：越过走廊半径（格）——沿路径方向已越过路点、且横向垂距在此范围内才算越过 */
     private static final double GHAST_CORRIDOR_RADIUS = 3.0;
     /** 乐魂飞行寻路：障碍快照最短重建间隔（tick）——revision 在打印期几乎每刻递增，必须节流 */
@@ -387,14 +384,12 @@ public final class GoManager {
         GoPathfinder.Goal ag = activeGoal;
         boolean arrived = ag != null && ag.isInGoal(nav.getBlockX(), nav.getBlockY(), nav.getBlockZ());
         // 乐魂飞行：A* 的终点就是悬停位，而实际停点受控制律松手阈值影响会有误差，
-        // 且"距悬停格 ≤N 格"的格坐标可能落在悬停圈之外 → 贴近终点同样算到达，
-        // 否则会出现"路点跑完却判不到达"的静止死循环。乐魂放宽到 1 格内
+        // 且"距悬停格 ≤N 格"的格坐标可能落在悬停圈之外（多目标是精确格集合，单目标还有眼位
+        // 复查）→ 控制律一旦进入"到位"死区（不再写任何输入、位置不会再变）就同样算到达，
+        // 否则会形成"控制律已无事可做、寻路却还在等"的僵局：原地悬停到节点超时
+        //（实测「下降到达目标时停住不动」）。只对"真到过目标"的路径生效（见 pathReachedGoal）
         if (!arrived && isGhastFlying() && pathReachedGoal && !path.isEmpty()) {
-            BlockPos tail = path.get(path.size() - 1);
-            double tx = tail.getX() + 0.5 - nav.getX();
-            double ty = tail.getY() + 0.5 - nav.getY();
-            double tz = tail.getZ() + 0.5 - nav.getZ();
-            arrived = tx * tx + ty * ty + tz * tz <= GHAST_GOAL_ARRIVE_SQ;
+            arrived = GhastFlyer.isSettledAt(nav, path.get(path.size() - 1));
         }
         if (arrived) {
             if (driveMode == DriveMode.AUTO) {
