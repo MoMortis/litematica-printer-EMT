@@ -7,7 +7,7 @@
 
 为 [Litematica](https://modrinth.com/mod/litematica) 投影添加自动建造功能的 Minecraft Fabric 模组。
 
-本分支（1.4-EMT）基于 [BiliXWhite 二改版](https://github.com/BiliXWhite/litematica-printer)修改，支持 **1.21.11 与 26.1.2 双版本单 jar**。
+本分支（EMT）基于 [BiliXWhite 二改版](https://github.com/BiliXWhite/litematica-printer)修改，支持 **1.21.11 与 26.1.2 双版本单 jar**。
 
 > [!IMPORTANT]
 > 🤖 **AI 深度参与开发**：本分支的全部功能实现与性能优化均由 AI 协作完成——**GPT · DeepSeek · GLM**

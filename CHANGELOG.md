@@ -2,7 +2,7 @@
 所有显著的变更都会记录在这个文件中，遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.0.0/) 规范。
 本项目的版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)（主版本.次版本.补丁版本，如 1.2.3）。
 
-### v1.4-EMT
+### EMT
 
 本分支基于二改版继续开发，支持 Minecraft 1.21.11 / 26.1.2 双版本单 jar（versionpack）。
 
