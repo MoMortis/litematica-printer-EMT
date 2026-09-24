@@ -5,6 +5,9 @@ import me.aleksilassila.litematica.printer.enums.EatMode;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.printer.zxy.utils.ZxyUtils;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.gui.screens.ChatScreen;
+import net.minecraft.client.gui.screens.PauseScreen;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
@@ -35,6 +38,9 @@ import net.minecraft.world.level.GameType;
  * 检测到即打断进食。
  * <p>打断：受伤（生命+吸收下降，冷却见 {@code EAT_HURT_CANCEL_COOLDOWN}，0=不打断）、
  * 玩家攻击/切槽/开界面（短冷却）。tick 入口在 {@code MixinLocalPlayer.tick}。
+ * <p><b>聊天栏 / ESC 菜单例外</b>：这两个界面不算"玩家在忙"，开着也照常进食（多人游戏下游戏照跑；
+ * 单人 ESC 会暂停游戏，玩家 tick 停摆，属于原版限制）。界面打开的瞬间 vanilla 会松开使用状态，
+ * 所以"使用状态没了"不等于"吃完了"——只有食物真的被消耗才收尾，否则重新建立使用状态接着吃。
  */
 public final class EatUtils {
     /** 进食换入用的快捷栏槽位（末位，吃完换回） */
@@ -45,6 +51,8 @@ public final class EatUtils {
     private static final long SCAN_RETRY_TICKS = 10;
     /** 使用状态建立失败的重试上限 */
     private static final int START_MAX_RETRIES = 5;
+    /** 使用状态被释放（如开界面时 vanilla 松键）后重建的上限，超过则放弃这一餐 */
+    private static final int RESUME_MAX_RETRIES = 40;
 
     private enum State { IDLE, FETCH, EATING, RESTORE }
 
@@ -66,13 +74,17 @@ public final class EatUtils {
     /** 食物从背包槽换入 8 号位时记录原背包槽（inv 索引 9..35），吃完换回；-1=本就在快捷栏 */
     private static int swappedInvSlot = -1;
     private static int preEatStackCount;
+    /** 进食前手上那件食物（判断"吃掉了"：吃了会成为别的物品，如蜂蜜瓶→玻璃瓶） */
+    private static Item preEatItem;
     private static int preEatHunger;
     private static float lastHealth;
     private static float lastAbsorption;
-    /** 使用状态已建立（true 后 !isUsingItem 即"吃完"） */
+    /** 使用状态已建立（此后"食物被吃掉"才算吃完） */
     private static boolean usingStarted;
     private static boolean keyUseWasDown;
     private static int startRetries;
+    /** 使用状态被释放后重建的次数（本餐内累计） */
+    private static int resumeRetries;
 
     private EatUtils() {
     }
@@ -109,7 +121,8 @@ public final class EatUtils {
         if (eatMode == EatMode.PRINTER_ONLY && !ConfigUtils.isPrinterEnable()) {
             return;
         }
-        if (mc.screen != null || !player.isAlive() || !player.containerMenu.equals(player.inventoryMenu)) {
+        if (!screenAllowsAutoEat(mc.screen) || !player.isAlive()
+                || !player.containerMenu.equals(player.inventoryMenu)) {
             return;
         }
         GameType mode = mc.gameMode.getPlayerMode();
@@ -192,12 +205,14 @@ public final class EatUtils {
         foodHotbarSlot = hand == InteractionHand.MAIN_HAND ? hotbarSlot : -1;
         swappedInvSlot = hand == InteractionHand.MAIN_HAND ? swappedFrom : -1;
         preEatStackCount = player.getItemInHand(hand).getCount();
+        preEatItem = player.getItemInHand(hand).getItem();
         preEatHunger = player.getFoodData().getFoodLevel();
         lastHealth = player.getHealth();
         lastAbsorption = player.getAbsorptionAmount();
         keyUseWasDown = client.options.keyUse.isDown();
         usingStarted = false;
         startRetries = 0;
+        resumeRetries = 0;
         if (hand == InteractionHand.MAIN_HAND) {
             InventoryUtils.setHotbarSlot(hotbarSlot, player.getInventory());
         }
@@ -215,7 +230,8 @@ public final class EatUtils {
         lastAbsorption = player.getAbsorptionAmount();
         // 打断检测：玩家手动操作（开界面/攻击/滚轮切槽/出现容器界面）
         // 副手进食不吃选中槽依赖，切槽不影响进食，故不视为打断
-        boolean playerActed = mc.screen != null
+        // 聊天栏/ESC 菜单开着不算打断（玩家一边打字一边自动吃东西是预期行为）
+        boolean playerActed = !screenAllowsAutoEat(mc.screen)
                 || mc.options.keyAttack.isDown()
                 || !player.containerMenu.equals(player.inventoryMenu)
                 || (eatHand == InteractionHand.MAIN_HAND
@@ -238,9 +254,16 @@ public final class EatUtils {
                 } else if (++startRetries >= START_MAX_RETRIES) {
                     cancel(player, 60L);
                 }
-            } else {
-                // 使用结束：吃完（食物已消耗或饥饿值回升）
+            } else if (foodConsumed(player)) {
+                // 使用结束且食物确实被吃掉：收尾
                 restore(player);
+            } else if (++resumeRetries <= RESUME_MAX_RETRIES) {
+                // 使用状态被释放但食物没被吃掉（多为开界面时 vanilla 松键）：重建使用状态，接着吃这一餐
+                client.gameMode.useItem(player, eatHand);
+                client.options.keyUse.setDown(true);
+            } else {
+                // 屡建屡失（界面持续拦截等）：放弃这一餐，冷却后再试，避免一直把打印机挡在"进食中"
+                cancel(player, 60L);
             }
         } else {
             usingStarted = true;
@@ -289,6 +312,27 @@ public final class EatUtils {
         swappedInvSlot = -1;
         usingStarted = false;
         startRetries = 0;
+    }
+
+    // ==================== 判定 ====================
+
+    /**
+     * 界面对自动进食是否"无害"：无界面、聊天栏、ESC 菜单可以照常吃；
+     * 其它界面（背包/箱子/合成等）依旧让路——玩家多半正在手动操作，且选中槽/容器菜单会互相干扰。
+     */
+    private static boolean screenAllowsAutoEat(Screen screen) {
+        return screen == null || screen instanceof ChatScreen || screen instanceof PauseScreen;
+    }
+
+    /**
+     * 食物是否真的被吃掉（区分"吃完了"与"使用状态被释放"）：手持数量减少、
+     * 手持物变成别的物品（蜂蜜瓶→玻璃瓶）、饥饿值回升，任一成立即算吃到嘴。
+     */
+    private static boolean foodConsumed(LocalPlayer player) {
+        ItemStack hand = player.getItemInHand(eatHand);
+        return hand.getCount() < preEatStackCount
+                || hand.getItem() != preEatItem
+                || player.getFoodData().getFoodLevel() > preEatHunger;
     }
 
     // ==================== 选食物 ====================
