@@ -136,10 +136,10 @@ public final class GoExecutor {
             // 寻路已停止：跳跃临时转向还没恢复的话把视角还回去
             restorePreJumpYaw(player, false);
             // 先清残留输入，再交给"待命期飞行维护"——
-            // 压住原理图方块时的蹭出去与寻路是否在跑无关，寻路一停就撒手会把脱困掐断
+            // 压住原理图方块时的蹭出去与寻路是否在跑无关，寻路一停就撒手会把脱困掐断；
+            // 但乐魂寻路可用（canGhastFly）是前提：扫描自动寻路关闭且无手动 /go 行程时不接管
             clearStaleInput(player);
-            if (Configs.Go.GHAST_PATHFIND.getBooleanValue() && GhastRideState.canFly(player)
-                    && !isContainerUiOpen(player)) {
+            if (GoManager.canGhastFly(player, false) && !isContainerUiOpen(player)) {
                 GhastFlyer.driveStandby(player); // 无脱困需求时不写输入，玩家手动骑乘不受影响
             } else {
                 GhastFlyer.releasePitch(player); // 不接管飞行：pitch 回正（同时作废脱困状态）
@@ -150,11 +150,10 @@ public final class GoExecutor {
         if (mc.player != player) {
             return;
         }
-        // 骑乘：乐魂寻路开启且骑乘"可操控"的乐魂时，走三维飞行驱动；
-        // 其余骑乘情形保持原行为（走路寻路不接管骑乘输入）
+        // 骑乘：乐魂寻路可用（乐魂寻路 + 扫描自动寻路开启，或手动 /go 行程）且骑乘"可操控"的乐魂时，
+        // 走三维飞行驱动；其余骑乘情形保持原行为（走路寻路不接管骑乘输入）
         if (player.isPassenger()) {
-            if (Configs.Go.GHAST_PATHFIND.getBooleanValue() && GhastRideState.canFly(player)
-                    && !isContainerUiOpen(player)) {
+            if (GoManager.INSTANCE.isGhastFlying() && !isContainerUiOpen(player)) {
                 GhastFlyer.drive(player);
             }
             return;

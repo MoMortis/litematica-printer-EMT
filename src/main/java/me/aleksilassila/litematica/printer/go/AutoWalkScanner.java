@@ -11,6 +11,7 @@ import it.unimi.dsi.fastutil.longs.LongArrayList;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
 import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.config.Configs;
+import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.enums.PrintModeType;
 import me.aleksilassila.litematica.printer.enums.SectionScanOrderType;
 import me.aleksilassila.litematica.printer.enums.SelectionType;
@@ -145,7 +146,7 @@ public final class AutoWalkScanner {
         final int serial;
         final BlockPos section;
         final int layer;
-        /** 命中"原理图非空气且世界未放置"的格子 */
+        /** 命中"原理图非空气且世界未正确放置"的格子（= 待放 ∪ 错误方块 ∪ 放错状态，CORRECT 已过滤） */
         final LongArrayList positions = new LongArrayList();
         /** 与 positions 一一对应的原理图期望方块 */
         final ArrayList<BlockState> expected = new ArrayList<>();
@@ -552,6 +553,8 @@ public final class AutoWalkScanner {
      * 落脚点预检，新增候选进<b>池</b>并累计"可到达"计数。
      * <p>串行模式（关闭）：<b>不进池、不做落脚点预检</b>（只剔除已完成与冷却中的），
      * 本子区块扫完即在此处选离玩家最近的 1 个直接派发——扫完没有候选才继续下一个子区块。
+     * <p>进池前先按类别分类（见方法内注释）：待放方块过「寻路目标白名单」，
+     * 错误方块由「寻路错误方块」单独放行（不受白名单约束），放错状态不认领。
      */
     private void mergeScanResult(ClientLevel level, SectionScanResult result) {
         ScanWhitelistCache.WALK.beginScanBatch(); // 配置变更检测与验证器高亮刷新：每批一次，不是每格
@@ -568,11 +571,9 @@ public final class AutoWalkScanner {
             extraReachableKeys.clear();
             extraReachableCount = 0;
         }
+        boolean wrongBlocks = wrongBlockScanEnabled();
         for (int i = 0; i < result.positions.size(); i++) {
             BlockState expected = result.expected.get(i);
-            if (!ScanWhitelistCache.WALK.isWhitelistedFast(expected)) {
-                continue;
-            }
             long key = result.positions.getLong(i);
             BlockPos pos = BlockPos.of(key);
             // 计划陈旧复核：扫描期间原理图被移动/旋转/停用/卸载时，工作线程按旧计划推出的位置或
@@ -582,8 +583,25 @@ public final class AutoWalkScanner {
             if (live == null || live.isAir() || !live.equals(expected)) {
                 continue;
             }
+            // 分类：本清单含全部"与原理图不符"的格子（工作线程只过滤了 CORRECT），按类别分派目标——
+            //  · 待放方块（缺失/覆盖打印）→ 受「寻路目标白名单」筛选（白名单未生效＝全量）
+            //  · 错误方块（方块类型不符，需先破坏再重放）→ 由「寻路错误方块」单独控制，不受白名单约束
+            //  · 放错状态（同类方块、仅状态不符）与扫描后已被改正的格子 → 寻路不认领
+            BlockState current = level.getBlockState(pos);
+            if (expected.getBlock().equals(current.getBlock())) {
+                continue; // 同类方块：CORRECT/WRONG_STATE 都不是寻路目标（状态由打印机路过时纠正）
+            }
+            BlockMatchResult match = BlockMatchResult.compare(expected, current);
+            if (match == BlockMatchResult.WRONG_BLOCK) {
+                if (!wrongBlocks) {
+                    continue;
+                }
+            } else if (match != BlockMatchResult.MISSING
+                    || !ScanWhitelistCache.WALK.isWhitelistedFast(expected)) {
+                continue;
+            }
             // 原"扫描器路过即对账"：把与验证器记录不一致的差异提交复查管线（主线程）
-            SchematicStateCache.INSTANCE.reconcileVerdict(pos, expected, level.getBlockState(pos));
+            SchematicStateCache.INSTANCE.reconcileVerdict(pos, expected, current);
             if (!selectionAllows(pos)) {
                 continue; // 「打印-选取类型」之外（渲染层/玩家上下方）：打印机不会放，寻路不认领
             }
@@ -778,6 +796,15 @@ public final class AutoWalkScanner {
     private static boolean extraScanEnabled() {
         return Configs.Go.GO_SCAN_EXTRA_BLOCKS.getBooleanValue()
                 && Configs.Print.BREAK_EXTRA_BLOCK.getBooleanValue();
+    }
+
+    /**
+     * 「寻路错误方块」是否生效：本开关 + 前置「破坏错误方块」同时开启。
+     * 破坏开关未开时不给目标：打印机不会破坏重放，寻路过去只会卡在"到达后无限等待"。
+     */
+    private static boolean wrongBlockScanEnabled() {
+        return Configs.Go.GO_SCAN_WRONG_BLOCKS.getBooleanValue()
+                && Configs.Print.BREAK_WRONG_BLOCK.getBooleanValue();
     }
 
     /**

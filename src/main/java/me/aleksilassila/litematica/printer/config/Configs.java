@@ -716,6 +716,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         // 乐魂寻路：开启后不再走路移动，改为骑乘快乐恶魂做三维飞行移动
         //（需骑乘"可操控"的乐魂：本人为第一乘客、已装备挽具、非静默态；
         //  飞行空间须完全落在原理图预测的空气格内，详见设计方案）
+        // 前置总开关：「扫描自动寻路」关闭时本功能整体停用（悬停目标、三维寻路、飞行驱动、
+        //  待命期脱困全部关闭），只有手动 /go 行程例外
         public static final ConfigBoolean GHAST_PATHFIND = bool("ghastPathfind")
                 .defaultValue(false)
                 .build();
@@ -734,19 +736,31 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
+        // 寻路错误方块：扫描自动寻路把"错误方块"（原理图此处有方块、现实却是另一种方块，
+        // 需先破坏再重放）也作为目标。与寻路多余方块不同，它不参与优先派发，
+        // 与待放方块在同一候选池里按路径最短竞争。
+        // 前置：开启「破坏错误方块」（否则打印机不会破坏重放，寻路过去只会干等）。
+        // 不受「寻路目标白名单」约束（白名单只筛待放方块）；
+        // 放错状态（同类方块、仅状态不符）不进入目标，交给打印机路过时自行纠正
+        public static final ConfigBoolean GO_SCAN_WRONG_BLOCKS = bool("goScanWrongBlocks")
+                .defaultValue(false)
+                .build();
+
         // 多目标候选上限：进入目标集合的候选数上限，超限按直线距离预截（直线距离只作预筛）
         public static final ConfigInteger PATH_TARGET_CANDIDATE_LIMIT = integer("pathTargetCandidateLimit")
                 .defaultValue(256)
                 .range(16, 1024)
                 .build();
 
-        // 寻路扫描白名单：开启且列表非空时，扫描自动寻路只寻找列表内/验证器高亮的待放方块
-        // （与打印的"扫描白名单"完全独立，互不影响）
+        // 寻路目标白名单：开启且列表非空时，扫描自动寻路的<b>待放方块</b>目标只取列表内/
+        // 验证器高亮的方块（与打印的"扫描白名单"完全独立，互不影响）。
+        // 只筛目标、不影响扫描本身：扫描始终枚举全部方块；「寻路错误方块」「寻路多余方块」
+        // 各自有开关，不受本白名单约束
         public static final ConfigBoolean WALK_SCAN_WHITELIST = bool("walkScanWhitelist")
                 .defaultValue(false)
                 .build();
 
-        // 寻路扫描白名单列表（匹配格式同跳过放置名单；判定为"列表命中 ∪ 验证器高亮的缺失方块"）
+        // 寻路目标白名单列表（匹配格式同跳过放置名单；判定为"列表命中 ∪ 验证器高亮的缺失方块"）
         public static final ConfigStringList WALK_SCAN_WHITELIST_LIST = stringList("walkScanWhitelistList")
                 .build();
 
@@ -960,6 +974,16 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(1, 16)
                 .build();
 
+        // 自动寻路 - 节点超时（行走）：从当前路径节点前往下一节点的限时＝两节点距离 × 此倍率
+        //（tick/格）。超时仍未推进到下一节点 → 放弃当前路线：自动寻路换目标重新派发，
+        // 手动寻路从当前位置重算。0 = 不限制。
+        // 容器的换料/补货暂停不计时（界面关闭后重新获得完整限时）。
+        // 与「自动寻路 - 最大速度」相关：调低最大速度会成比例拉长每格所需 tick，倍率偏小会误判超时
+        public static final ConfigDouble GO_WAYPOINT_TIMEOUT = doubleValue("goWaypointTimeout")
+                .defaultValue(30.0D)
+                .range(0.0D, 600.0D)
+                .build();
+
         // 寻路配置项列表（按功能分组排序：总开关与移动方式 → 目标选择 → 扫描白名单 → 子区块扫描顺序 →
         // 通用参数 → 乐魂寻路代价 → 行走寻路代价 → 行走控制）
         public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
@@ -970,9 +994,10 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 // 目标选择
                 PATH_NEAREST_TARGET,
                 GO_SCAN_EXTRA_BLOCKS,
+                GO_SCAN_WRONG_BLOCKS,
                 PATH_TARGET_CANDIDATE_LIMIT,
 
-                // 扫描白名单
+                // 寻路目标白名单
                 WALK_SCAN_WHITELIST,
                 WALK_SCAN_WHITELIST_LIST,
 
@@ -1015,7 +1040,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 GO_TAKEOVER_VIEW,
                 GO_VIEW_OFFSET,
                 GO_DEVIATION_STOP,
-                GO_DEVIATION_DISTANCE
+                GO_DEVIATION_DISTANCE,
+                GO_WAYPOINT_TIMEOUT
         );
     }
 

@@ -81,7 +81,7 @@ public final class GoManager {
     private long ghastObstacleTo = Long.MIN_VALUE;
     private long ghastObstacleBuiltTick = Long.MIN_VALUE;
 
-    // ===== 节点超时（乐魂飞行，见 tickWaypointTimeout）=====
+    // ===== 节点超时（乐魂飞行 / 行走共用计时，见 tickWaypointTimeout）=====
     /** 当前路点的锚定键（路点坐标 ⊕ 所引）：变化＝推进到新节点/换了路径，重置计时基准 */
     private long waypointKey = Long.MIN_VALUE;
     /** 当前路点开始计时的 tick */
@@ -177,7 +177,7 @@ public final class GoManager {
         if (mc.player == null || mc.level == null) {
             return;
         }
-        begin(target, null, DriveMode.MANUAL, goalFor(target, true),
+        begin(target, null, DriveMode.MANUAL, goalFor(target, true, true),
                 "§a[寻路] 目标: " + target.getX() + " " + target.getY() + " " + target.getZ());
     }
 
@@ -187,7 +187,7 @@ public final class GoManager {
             return;
         }
         BlockPos tpos = target.blockPosition();
-        begin(tpos, target.getUUID(), DriveMode.MANUAL, goalFor(tpos, true),
+        begin(tpos, target.getUUID(), DriveMode.MANUAL, goalFor(tpos, true, true),
                 "§a[寻路] 跟随玩家: " + target.getName().getString());
     }
 
@@ -207,9 +207,13 @@ public final class GoManager {
     /**
      * 目标判定分派：乐魂飞行一律用"悬停位"（切比雪夫半径随并集箱尺寸动态推导），
      * 否则用走路版语义（{@code walkGoal=true} 为"站在目标方块"，false 为"走到紧邻格"）。
+     *
+     * <p>{@code manual}＝手动 /go 行程：乐魂飞行不受"扫描自动寻路"开关约束
+     * （见 {@link #canGhastFly}）。本方法在 {@code begin} 置位 {@code driveMode} 之前调用，
+     * 读不到行程来源，故由调用方显式传入。
      */
-    private GoPathfinder.Goal goalFor(BlockPos target, boolean walkGoal) {
-        if (isGhastFlying()) {
+    private GoPathfinder.Goal goalFor(BlockPos target, boolean walkGoal, boolean manual) {
+        if (canGhastFly(mc.player, manual)) {
             return GhastGoal.hoverGoal(target, ghastHoverRadius(), eyeOffset());
         }
         return walkGoal ? GoPathfinder.blockGoal(target) : GoPathfinder.adjacentGoal(target);
@@ -234,9 +238,9 @@ public final class GoManager {
         return new GhastGoal.EyeOffset(eye.x - ghast.getX(), eye.y - ghast.getY(), eye.z - ghast.getZ());
     }
 
-    /** 自动模式的目标判定 */
+    /** 自动模式的目标判定（自动派发，乐魂飞行要求"扫描自动寻路"同时开启） */
     private GoPathfinder.Goal autoGoal(BlockPos target) {
-        return goalFor(target, false);
+        return goalFor(target, false, false);
     }
 
     /**
@@ -365,7 +369,7 @@ public final class GoManager {
             BlockPos g = goal;
             if (!tpos.equals(g)) {
                 goal = tpos;
-                activeGoal = goalFor(tpos, true);
+                activeGoal = goalFor(tpos, true, true);
                 double dx = tpos.getX() + 0.5 - player.getX();
                 double dz = tpos.getZ() + 0.5 - player.getZ();
                 if (!calculating && dx * dx + dz * dz > TARGET_REROUTE_DISTANCE_SQ) {
@@ -410,10 +414,8 @@ public final class GoManager {
         // 路点推进
         advanceWaypoints(nav);
 
-        // 节点超时（乐魂飞行）：卡在某个节点超过限时 → 弃线重规划
-        if (isGhastFlying()) {
-            tickWaypointTimeout(nav, now);
-        }
+        // 节点超时（乐魂飞行与行走共用计时，各用各的倍率）：卡在某个节点超过限时 → 弃线重规划
+        tickWaypointTimeout(nav, now);
 
         // 偏离检测：每 tick 采样，到剩余路径（含上一路点，见下）的最小距离超过阈值
         // 立即停止任务（即使玩家还在试图跳/被拉回路径）。采样分态：着地/入水比三维
@@ -475,8 +477,7 @@ public final class GoManager {
         // 打印开容器换料/补货（容器屏幕或 isOpenHandler 流程）期间寻路主动停手属正常静止，
         // 冻结检测（只刷新基准点，不累计、不重算），避免把打印的正常流程误判为卡住；
         // 聊天等普通界面下寻路照常驱动，不冻结
-        boolean detectionPaused = GoExecutor.isContainerUiOpen(player)
-                || me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler;
+        boolean detectionPaused = pausedByContainerUi(player);
         if (detectionPaused) {
             stuckRefX = nav.getX();
             stuckRefY = nav.getY();
@@ -618,34 +619,41 @@ public final class GoManager {
     }
 
     /**
-     * 节点超时（乐魂飞行）：从当前节点 A 前往下一节点 B，超过「A→B 距离 × 『节点超时』倍率」
-     * 仍未推进到 B（含最后一个节点一直进不了"贴近即到达"圈）→ 放弃当前路线：
-     * 自动腿静默结束换目标重派，手动腿从当前位置重算（与脱困成功后的弃线同路径）。
+     * 节点超时（乐魂飞行与行走共用计时，倍率各用各的配置）：从当前节点 A 前往下一节点 B，
+     * 超过「A→B 距离 × 『节点超时』倍率」仍未推进到 B（乐魂还含"最后一个节点一直进不了
+     * 『贴近即到达』圈"）→ 放弃当前路线：自动腿静默结束换目标重派，手动腿从当前位置重算
+     *（与脱困成功后的弃线同路径）。
      *
-     * <p>重算在飞（calculating，本就要换路线）与脱困进行中
-     *（{@link GhastFlyer#isEscaping}，乐魂正被有意开离路径）不计时；路点推进或换路径即重锚。
+     * <p>重算在飞（calculating，本就要换路线）、乐魂脱困进行中
+     *（{@link GhastFlyer#isEscaping}，乐魂正被有意开离路径）与容器界面暂停
+     *（见 {@link #pausedByContainerUi}，寻路主动停手属正常静止）不计时；路点推进或换路径即重锚。
      * A→B 距离按"锚定时刻导航主体位置 → 当前路点"算（锚定时刚离开上一节点，偏差 ≤ 推进半径）。
      */
     private void tickWaypointTimeout(Entity nav, long now) {
+        boolean flying = isGhastFlying();
         List<BlockPos> p = path;
-        if (p.isEmpty() || waypointIndex >= p.size() || calculating || GhastFlyer.isEscaping()) {
+        if (p.isEmpty() || waypointIndex >= p.size() || calculating
+                || (flying && GhastFlyer.isEscaping())) {
             waypointKey = Long.MIN_VALUE;
             return;
         }
         BlockPos wp = p.get(waypointIndex);
         long key = wp.asLong() * 31L + waypointIndex;
-        if (key != waypointKey) {
-            // 换了当前节点（推进/新路径）：重新锚定计时基准
+        double mult = flying
+                ? Configs.Go.GO_GHAST_WAYPOINT_TIMEOUT.getDoubleValue()
+                : Configs.Go.GO_WAYPOINT_TIMEOUT.getDoubleValue();
+        LocalPlayer player = mc.player;
+        // 以下情况重锚计时基准（本 tick 不计入超时）：
+        // 换了当前节点（推进/新路径）；寻路被容器界面暂停（见 pausedByContainerUi，主动停手属正常静止，
+        // 且不把界面期间的位移算进后续限时）；倍率为 0（不限制，避免中途重新启用时把停用期间的时长算成超时）
+        if (key != waypointKey || mult <= 0.0D
+                || (player != null && pausedByContainerUi(player))) {
             waypointKey = key;
             waypointStartTick = now;
             waypointAnchorX = nav.getX();
             waypointAnchorY = nav.getY();
             waypointAnchorZ = nav.getZ();
             return;
-        }
-        double mult = Configs.Go.GO_GHAST_WAYPOINT_TIMEOUT.getDoubleValue();
-        if (mult <= 0.0D) {
-            return; // 0 = 不限制
         }
         double dx = wp.getX() + 0.5 - waypointAnchorX;
         double dy = wp.getY() + 0.5 - waypointAnchorY;
@@ -655,6 +663,12 @@ public final class GoManager {
         if (now - waypointStartTick > limitTicks) {
             abandonRoute();
         }
+    }
+
+    /** 寻路被容器界面/快捷潜影盒流程暂停（打印换料/补货）：{@link GoExecutor} 主动不写输入，属正常静止 */
+    private static boolean pausedByContainerUi(LocalPlayer player) {
+        return GoExecutor.isContainerUiOpen(player)
+                || me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils.isOpenHandler;
     }
 
     private void begin(@Nullable BlockPos target, @Nullable UUID liveId, DriveMode mode, GoPathfinder.Goal goalEvaluator, @Nullable String startMessage) {
@@ -743,7 +757,7 @@ public final class GoManager {
         // 快照必须在主线程取好（后者会清缓存/改 revision），后台线程只做只读判定。
         GhastPathfinder.BoxSpec boxSpec = null;
         LongOpenHashSet obstacles = null;
-        if (Configs.Go.GHAST_PATHFIND.getBooleanValue() && GhastRideState.canFly(mc.player)) {
+        if (isGhastFlying()) {
             boxSpec = currentBoxSpec();
             if (boxSpec != null) {
                 obstacles = ghastObstacles(from);
@@ -768,9 +782,22 @@ public final class GoManager {
         });
     }
 
-    /** 是否处于"乐魂飞行"模式（开关开 + 骑乘可操控乐魂） */
-    private boolean isGhastFlying() {
-        return Configs.Go.GHAST_PATHFIND.getBooleanValue() && GhastRideState.canFly(mc.player);
+    /**
+     * 乐魂飞行是否可用：乐魂寻路开关 + 骑乘可操控乐魂 + 扫描自动寻路开关。
+     *
+     * <p>"扫描自动寻路"是乐魂寻路的<b>前置总开关</b>：关闭时悬停目标、三维寻路、
+     * 飞行驱动与待命期脱困一律停用；唯一例外是手动 /go 行程（{@code manual}=true）。
+     */
+    static boolean canGhastFly(@Nullable LocalPlayer player, boolean manual) {
+        return player != null
+                && Configs.Go.GHAST_PATHFIND.getBooleanValue()
+                && (manual || Configs.Go.PRINT_SCAN_AUTOWALK.getBooleanValue())
+                && GhastRideState.canFly(player);
+    }
+
+    /** 是否处于"乐魂飞行"模式：全局允许，或正在执行手动 /go 行程（不受扫描自动寻路开关约束） */
+    boolean isGhastFlying() {
+        return canGhastFly(mc.player, isManualActive());
     }
 
     /**
@@ -787,7 +814,7 @@ public final class GoManager {
         if (p == null) {
             return null;
         }
-        if (Configs.Go.GHAST_PATHFIND.getBooleanValue()) {
+        if (isGhastFlying()) {
             var ghast = GhastRideState.riddenGhast(p);
             if (ghast != null) {
                 return ghast;
