@@ -3,14 +3,12 @@ package me.aleksilassila.litematica.printer.mixin.printer.mc;
 import com.mojang.authlib.GameProfile;
 import fi.dy.masa.litematica.world.SchematicWorldHandler;
 import fi.dy.masa.litematica.world.WorldSchematic;
-import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.printer.BlockPosCooldownManager;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import me.aleksilassila.litematica.printer.utils.CloudStoreUtils;
 import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
-import me.aleksilassila.litematica.printer.utils.ModUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -29,11 +27,6 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
-
-//#if MC >= 12001 
-import me.aleksilassila.litematica.printer.utils.ModUtils;
-//#endif
 
 @Mixin(LocalPlayer.class)
 public class MixinLocalPlayer extends AbstractClientPlayer {
@@ -44,9 +37,6 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
     @Final
     @Shadow
     protected Minecraft minecraft;
-
-    @Unique
-    private boolean updateChecked;
 
     //#if MC == 11902
     //$$ public MixinLocalPlayer(ClientLevel world, GameProfile profile, @Nullable PlayerPublicKey publicKey) {
@@ -60,10 +50,6 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
 
     @Inject(at = @At("HEAD"), method = "resetPos")
     public void init(CallbackInfo ci) {
-        if (Configs.Core.UPDATE_CHECK.getBooleanValue() && !updateChecked) {
-            CompletableFuture.runAsync(ModUtils::checkForUpdates);
-        }
-        updateChecked = true;
         // 进入服务器自启动：启动"重试开启打印机"会话（死亡重生不重复启动会话）
         me.aleksilassila.litematica.printer.utils.ConfigUtils.startAutoEnableSession();
     }

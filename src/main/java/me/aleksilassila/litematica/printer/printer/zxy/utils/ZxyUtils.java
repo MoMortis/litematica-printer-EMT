@@ -69,6 +69,14 @@ public class ZxyUtils {
     static final Map<BlockPos, Integer> syncFailCount = new HashMap<>();
     //num==3 等待容器内容超时计数（游戏刻）
     static int syncFailNumTime = 0;
+    /**
+     * 本游戏刻剩余的点击包预算，见 {@link Configs.Special#SYNC_PACKET_LIMIT}。
+     * 原版「一次点击 = 一个包」且不做节流，整箱同步会在一刻内集中发出上百个包，
+     * 每个包还带全槽位快照，集中发出既卡客户端又可能触发服务端全量重发。
+     */
+    static int packetBudget = 0;
+    /** packetBudget 所属的游戏刻号：网络包回调可能早于/晚于玩家 tick，用刻号判定才能保证每刻只发一份额度 */
+    static long packetBudgetTick = Long.MIN_VALUE;
     static Set<BlockPos> highlightPosList = new LinkedHashSet<>();
     static Map<ItemStack, Integer> targetItemsCount = new HashMap<>();
     static Map<ItemStack, Integer> playerItemsCount = new HashMap<>();
@@ -165,6 +173,7 @@ public class ZxyUtils {
     }
 
     public static void syncInv() {
+        ensurePacketBudget();
         switch (num) {
             case 1 -> {
                 if (!syncDeferred) {
@@ -271,6 +280,11 @@ public class ZxyUtils {
                 // ② 快照要求禁用的启用槽 → 槽内非空则先整组 THROW 清空（同步口径：对不上就扔），再禁用。
                 // 状态对齐后物品对齐才不会撞上 CrafterSlot.mayPlace（禁用槽拒绝放置）
                 CrafterMenu crafterMenu = sc instanceof CrafterMenu m && targetDisabledSlots != null ? m : null;
+                // 预算用尽：合成器阶段整段留到下一刻重跑（该阶段靠 isSlotDisabled/槽内容重判，幂等）
+                if (crafterMenu != null && packetBudget <= 0) {
+                    deferRestOfPass();
+                    return;
+                }
                 if (crafterMenu != null) {
                     for (int i = 0; i < 9; i++) {
                         boolean wantDisabled = targetDisabledSlots[i];
@@ -279,8 +293,7 @@ public class ZxyUtils {
                         } else if (wantDisabled && !crafterMenu.isSlotDisabled(i)
                                 && !sc.slots.get(i).getItem().isEmpty()) {
                             // 清空待禁用槽（整组扔出，与物品对齐的"不同直接扔出"同口径）
-                            client.gameMode.handleInventoryMouseClick(
-                                    sc.containerId, i, 1, ClickType.THROW, client.player);
+                            syncClick(sc.containerId, i, 1, ClickType.THROW);
                         }
                     }
                     for (int i = 0; i < 9; i++) {
@@ -292,6 +305,12 @@ public class ZxyUtils {
 
                 int times = 0;
                 for (int i = 0; i < size; i++) {
+                    // 预算用尽：本刻到此为止，下一刻从头重跑本趟。已对齐的槽位走下面的 continue 免费跳过，
+                    // 所以重跑不会重复发包、也不会漏同步
+                    if (packetBudget <= 0) {
+                        deferRestOfPass();
+                        return;
+                    }
                     ItemStack item1 = sc.slots.get(i).getItem();
                     ItemStack item2 = targetBlockInv.get(i).copy();
                     int currNum = item1.getCount();
@@ -302,12 +321,20 @@ public class ZxyUtils {
                     if (same) {
                         //有多
                         while (currNum > tarNum) {
-                            client.gameMode.handleInventoryMouseClick(sc.containerId, i, 0, ClickType.THROW, client.player);
+                            if (packetBudget <= 0) {
+                                deferRestOfPass();
+                                return;
+                            }
+                            syncClick(sc.containerId, i, 0, ClickType.THROW);
                             currNum--;
                         }
                     } else {
                         //不同直接扔出
-                        client.gameMode.handleInventoryMouseClick(sc.containerId, i, 1, ClickType.THROW, client.player);
+                        if (packetBudget <= 0) {
+                            deferRestOfPass();
+                            return;
+                        }
+                        syncClick(sc.containerId, i, 1, ClickType.THROW);
                         times++;
                     }
                     boolean thereAreItems = false;
@@ -318,13 +345,20 @@ public class ZxyUtils {
                         currNum = currStack.getCount();
                         boolean same2 = thereAreItems = ItemStack.isSameItemSameComponents(item2, stack);
                         if (same2 && !stack.isEmpty()) {
+                            //「取一叠 → 逐格放入 → 还余」是一段原子序列，中途停下会把物品留在鼠标上，
+                            // 而原版 THROW 要求手持为空（否则后续扔出全部静默失效），
+                            // 所以只在段首查预算，段内照发并逐包记账，允许单次轻微超出预算
+                            if (packetBudget <= 0) {
+                                deferRestOfPass();
+                                return;
+                            }
                             int i2 = stack.getCount();
-                            client.gameMode.handleInventoryMouseClick(sc.containerId, i1, 0, ClickType.PICKUP, client.player);
+                            syncClick(sc.containerId, i1, 0, ClickType.PICKUP);
                             for (; currNum < tarNum && i2 > 0; i2--) {
-                                client.gameMode.handleInventoryMouseClick(sc.containerId, i, 1, ClickType.PICKUP, client.player);
+                                syncClick(sc.containerId, i, 1, ClickType.PICKUP);
                                 currNum++;
                             }
-                            client.gameMode.handleInventoryMouseClick(sc.containerId, i1, 0, ClickType.PICKUP, client.player);
+                            syncClick(sc.containerId, i1, 0, ClickType.PICKUP);
                         }
                         //这里判断没啥用，因为一个游戏刻操作背包太多次.getStack().getCount()获取的数量不准确 下次一定优化，
                         if (currNum != tarNum) times++;
@@ -371,6 +405,40 @@ public class ZxyUtils {
         menu.setSlotState(slot, enabled);
         client.player.connection.send(new ServerboundContainerSlotStateChangedPacket(
                 slot, menu.containerId, enabled));
+    }
+
+    /**
+     * 按需重置本刻发包预算。{@link #syncInv()} 是唯一的发包路径，故在它入口处调用即可全覆盖。
+     * 用游戏刻号而非「tick 里重置」是因为网络包回调（容器内容包 → syncInv）与玩家 tick
+     * 在同一刻内的先后顺序不固定，只有刻号能保证每刻只发一份额度。
+     */
+    private static void ensurePacketBudget() {
+        long tick = client.level == null ? 0L : client.level.getGameTime();
+        if (tick != packetBudgetTick) {
+            packetBudgetTick = tick;
+            // 配置被手改成 0/负数时退化到 1，而不是变成「不限流」
+            packetBudget = Math.max(1, Configs.Special.SYNC_PACKET_LIMIT.getIntegerValue());
+        }
+    }
+
+    /**
+     * 容器同步点击发包：发一个包并记 1 个预算（调用方须先确认 {@link #packetBudget} > 0）。
+     * 走原版 {@code handleInventoryMouseClick}——即玩家 Ctrl+Q / 鼠标点击的同一条路径，
+     * 每个包都带全槽位快照，所以才有必要按刻限流。
+     */
+    private static void syncClick(int containerId, int slot, int button, ClickType type) {
+        client.gameMode.handleInventoryMouseClick(containerId, slot, button, type, client.player);
+        packetBudget--;
+    }
+
+    /**
+     * 本刻预算用尽：挂起本趟剩余工作交给下一游戏刻继续（不关容器、不推进状态机、不结算成败）。
+     * 借 {@code syncDeferred} 让 {@link #tick()} 下一刻补跑 case 3；同时清掉打开超时计数——
+     * 此刻是「有进展但额度用完」，不是「等不到容器内容」。
+     */
+    private static void deferRestOfPass() {
+        syncDeferred = true;
+        syncFailNumTime = 0;
     }
 
     public static void tick() {

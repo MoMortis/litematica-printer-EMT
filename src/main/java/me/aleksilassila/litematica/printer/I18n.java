@@ -34,13 +34,6 @@ public class I18n {
     public static final I18n BLOCK_NO_SUPPORT = of("block.no_support");
     public static final I18n BLOCK_MISMATCH = of("block.mismatch");
 
-    public static final I18n UPDATE_AVAILABLE = of("update.available");
-    public static final I18n UPDATE_DOWNLOAD = of("update.download");
-    public static final I18n UPDATE_FAILED = of("update.failed");
-    public static final I18n UPDATE_PASSWORD = of("update.password");
-    public static final I18n UPDATE_RECOMMENDATION = of("update.recommendation");
-    public static final I18n UPDATE_REPOSITORY = of("update.repository");
-
     private static final String PREFIX_CONFIG = "config";
     private static final String PREFIX_COMMENT = "desc";
 

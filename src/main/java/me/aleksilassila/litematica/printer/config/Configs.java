@@ -23,8 +23,10 @@ import net.minecraft.world.level.block.Blocks;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.BooleanSupplier;
 
 //#if MC >= 12111
@@ -207,11 +209,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(false)
                 .build();
 
-        // 核心 - 检查更新
-        public static final ConfigBoolean UPDATE_CHECK = bool("updateCheck")
-                .defaultValue(true)
-                .build();
-
         // 核心 - 调试输出
         public static final ConfigBoolean DEBUG_OUTPUT = bool("debugOutput")
                 .defaultValue(false)
@@ -264,7 +261,6 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 MOTION_AHEAD,
                 AUTO_DISABLE_PRINTER,
                 AUTO_ENABLE_PRINTER,
-                UPDATE_CHECK,
                 DEBUG_OUTPUT,
                 HAND_RESTOCK_SHULKER_COMPAT,
                 QUICK_SHULKER,
@@ -662,6 +658,13 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .defaultValue(true)
                 .build();
 
+        // 容器同步 - 发包限制：每游戏刻最多发出的点击包数，超出的部分挂起到下一游戏刻继续；
+        // 原版一次点击就发一个包且不做节流，整箱同步会在一刻内集中发出上百个包（并可能触发服务端全量重发）
+        public static final ConfigInteger SYNC_PACKET_LIMIT = integer("syncPacketLimit")
+                .defaultValue(16)
+                .range(1, 1024)
+                .build();
+
         // 容器同步 - 高亮颜色
         public static final ConfigColor SYNC_INVENTORY_COLOR = color("syncInventoryColor")
                 .defaultValue("#4CFF4CE6")
@@ -694,6 +697,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 // 容器同步
                 SYNC_INVENTORY_CHECK,
                 SYNC_INVENTORY_CRAFTER,
+                SYNC_PACKET_LIMIT,
                 SYNC_INVENTORY_COLOR,
                 SYNC_HIGHLIGHT_RENDER_DISTANCE,
 
@@ -1376,8 +1380,45 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 JsonObject obj = jsonElement.getAsJsonObject();
                 migrateSplitHotkeyBooleans(obj);
                 ConfigUtils.readConfigBase(obj, Reference.MOD_ID, OPTIONS);
+                // 启动清理：配置项被移除后其键会残留在文件里，发现遗留键则重写一次配置
+                if (hasUnknownConfigKeys(obj)) {
+                    save();
+                }
             }
         }
+    }
+
+    /**
+     * 当前已注册配置项在配置文件中占用的键名集合。
+     * 复用配置的序列化逻辑反推，避免手工维护键名清单导致误删。
+     */
+    private static Set<String> registeredConfigKeys() {
+        JsonObject tempRoot = new JsonObject();
+        ConfigUtils.writeConfigBase(tempRoot, Reference.MOD_ID, OPTIONS);
+        if (!(tempRoot.get(Reference.MOD_ID) instanceof JsonObject tempMod)) {
+            return Set.of();
+        }
+        return new HashSet<>(tempMod.keySet());
+    }
+
+    /**
+     * 配置文件中是否存在已被移除的配置项遗留的无用键。
+     * 已注册键集合为空时返回 false，避免异常情况下清空用户配置。
+     */
+    private static boolean hasUnknownConfigKeys(JsonObject configRoot) {
+        if (!(configRoot.get(Reference.MOD_ID) instanceof JsonObject modObject)) {
+            return false;
+        }
+        Set<String> registeredKeys = registeredConfigKeys();
+        if (registeredKeys.isEmpty()) {
+            return false;
+        }
+        for (String key : modObject.keySet()) {
+            if (!registeredKeys.contains(key)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @Override
