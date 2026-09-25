@@ -452,5 +452,16 @@
   "litematica_printer.config.eatHurtCancelCooldown": "Hurt-cancel eat cooldown",
   "litematica_printer.config.eatHurtCancelCooldown.desc": "Taking damage while eating stops eating and blocks re-triggering for this many seconds (0 = keep eating through damage).",
   "litematica_printer.config.category.go": "Pathfinding",
-  "litematica_printer.config.category.go.desc": "Scan auto-walk and /go pathfinding: whitelists, movement style and speed, camera and safety stops"
+  "litematica_printer.config.category.go.desc": "Scan auto-walk and /go pathfinding: whitelists, movement style and speed, camera and safety stops",
+  "litematica_printer.config.category.danger": "§cDO NOT CLICK",
+  "litematica_printer.config.category.danger.desc": "§cSeriously, do NOT open this tab. You were warned.",
+  "litematica_printer.config.simiao": "§cXd, dead meow",
+  "litematica_printer.config.simiao.desc": "§cOne click, instant crash",
+  "litematica_printer.config.simiao.button": "§cWhat are you mumbling about? Just crash already!",
+  "litematica_printer.config.donotclickA": "§cA-DO NOT CLICK!",
+  "litematica_printer.config.donotclickA.desc": "§cSERIOUSLY, DO NOT CLICK!!!",
+  "litematica_printer.config.donotclickA.button": "§cDO NOT CLICK IT!",
+  "litematica_printer.config.donotclickA.hover": "§cSERIOUSLY, DO NOT CLICK!!!",
+  "litematica_printer.config.donotclickB": "§cB-DO NOT CLICK!",
+  "litematica_printer.config.donotclickB.desc": "§cSERIOUSLY, DO NOT CLICK!!!"
 }

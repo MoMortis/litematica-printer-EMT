@@ -77,18 +77,26 @@ dependencies {
     implementation("net.fabricmc.fabric-api:fabric-api:$fabricApiVersion")
     implementation("com.belerweb:pinyin4j:${prop("pinyin_version")}")?.let { include(it) }
     implementation("com.terraformersmc:modmenu:${prop("modmenu")}")
-    implementation("dev.isxander:yet-another-config-lib:${prop("yacl")}")
-    implementation("com.blamejared.searchables:${prop("searchables")}")
 
     // Masa
-    implementation("fi.dy.masa.malilib:${prop("malilib")}")
-    implementation("fi.dy.masa.litematica:${prop("litematica")}")
-    implementation("fi.dy.masa.tweakeroo:${prop("tweakeroo")}")
+    if (mcVersionInt >= 260200) {   // 26.2 起 sakura-ryoko 的源不可达，改走 Modrinth 源
+        implementation("maven.modrinth:malilib:${prop("malilib_dependency")}")
+        implementation("maven.modrinth:litematica:${prop("litematica_dependency")}")
+        implementation("maven.modrinth:tweakeroo:${prop("tweakeroo_dependency")}")
+    } else {
+        implementation("fi.dy.masa.malilib:${prop("malilib")}")
+        implementation("fi.dy.masa.litematica:${prop("litematica")}")
+        implementation("fi.dy.masa.tweakeroo:${prop("tweakeroo")}")
+    }
 
-    // 箱子追踪相关
-    implementation("red.jackf.jackfredlib:jackfredlib:${prop("jackfredlib")}")
-    implementation("red.jackf:chesttracker:${prop("chesttracker")}")
-    implementation("red.jackf:whereisit:${prop("whereisit")}")
+    // 箱子追踪相关（源码未引用，26.2 子工程不再声明，避免依赖拉取失败）
+    if (mcVersionInt < 260200) {
+        implementation("dev.isxander:yet-another-config-lib:${prop("yacl")}")
+        implementation("com.blamejared.searchables:${prop("searchables")}")
+        implementation("red.jackf.jackfredlib:jackfredlib:${prop("jackfredlib")}")
+        implementation("red.jackf:chesttracker:${prop("chesttracker")}")
+        implementation("red.jackf:whereisit:${prop("whereisit")}")
+    }
 }
 
 loom {

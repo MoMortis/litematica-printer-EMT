@@ -47,10 +47,17 @@ public abstract class MixinWidgetStringListEditEntry extends WidgetConfigOptionB
         ButtonGeneric button = new ButtonGeneric(this.x + this.width - 158, this.y + 4,
                 MaLiLibIcons.ARROW_DOWN, "NBT");
         button.setHoverStrings("NBT");
+        //#if MC >= 260200
+        //$$ addButton(button, (ignored, mouseButton) -> Minecraft.getInstance().setScreenAndShow(
+        //$$         new BlockNbtRuleScreen(config, index,
+        //$$                 index < config.getStrings().size() ? config.getStrings().get(index) : entry,
+        //$$                 Minecraft.getInstance().gui.screen())));
+        //#else
         addButton(button, (ignored, mouseButton) -> Minecraft.getInstance().setScreen(
                 new BlockNbtRuleScreen(config, index,
                         index < config.getStrings().size() ? config.getStrings().get(index) : entry,
                         Minecraft.getInstance().screen)));
+        //#endif
     }
 
     @Inject(method = "applyNewValueToConfig", at = @At("HEAD"))

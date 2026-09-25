@@ -582,7 +582,11 @@ public final class GoExecutor {
      */
     public static boolean isContainerUiOpen(LocalPlayer player) {
         Minecraft mc = Minecraft.getInstance();
+        //#if MC >= 260200
+        //$$ return mc.gui.screen() instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+        //#else
         return mc.screen instanceof net.minecraft.client.gui.screens.inventory.AbstractContainerScreen
+        //#endif
                 || player.containerMenu != player.inventoryMenu;
     }
 

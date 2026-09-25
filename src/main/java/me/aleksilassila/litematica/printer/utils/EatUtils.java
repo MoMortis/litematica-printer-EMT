@@ -30,8 +30,13 @@ import net.minecraft.world.level.GameType;
  * 黑名单（注册路径 / 完整ID / 精确译名）内的食物永远不碰。
  * <p><b>建立使用状态</b>：直接调 {@code gameMode.useItem}（原版"对空气使用物品"的公开入口，
  * 主手/副手按食物所在处指定）绕过准星——对着门/箱子/实体也不会误开，不需要探测准星占用；
- * 随后 {@code keyUse.setDown(true)} 保持（vanilla 会在按键未按下时释放使用状态），
- * vanilla 自己的 startUseItem 因 isUsingItem 早退，无副作用。
+ * 随后 {@code keyUse.setDown(true)} 保持（vanilla 会在按键未按下时释放使用状态）。
+ * <p><b>必须拦下 vanilla 的 startUseItem</b>（见
+ * {@link me.aleksilassila.litematica.printer.mixin.MixinMinecraftManualUse}）：进食期间
+ * vanilla 的 {@code startUseItem} 因 {@code isUsingItem()} 为 true 而早退，但<b>食物被吃掉的那一 tick
+ * 使用状态刚好消失、keyUse 还是按下的</b>，vanilla 会立刻走 {@code startUseItem}——它先做方块交互
+ * 再做物品使用、按主手→副手遍历，于是"吃完顺手开了瞄准的箱子""吃完把副手物品用了一次"。
+ * 故 {@link #isEating()} 为真时在 HEAD 取消该方法。
  * <p><b>互斥</b>（与快捷潜影盒取货同款让路模式）：进食期间打印/挖掘/取货/容器同步全部
  * 暂缓（ClientPlayerTickManager 与 InventoryUtils/ZxyUtils 入口检查 {@link #isBusy()}）；
  * 反向门禁保证它们忙时不启动进食。玩家手动操作（攻击/切槽/开界面）永远优先，
@@ -94,6 +99,15 @@ public final class EatUtils {
         return state != State.IDLE;
     }
 
+    /**
+     * 是否正处于"进食中"会话：仅此阶段模拟按住了 keyUse，需要拦下 vanilla 的
+     * {@code Minecraft.startUseItem}（否则食物吃完的瞬间会误触方块交互/副手用物）。
+     * FETCH/RESTORE 不涉及模拟按键，不用拦。
+     */
+    public static boolean isEating() {
+        return state == State.EATING;
+    }
+
     public static void tick(Minecraft mc) {
         LocalPlayer player = mc.player;
         if (player == null || mc.level == null || mc.gameMode == null) {
@@ -121,7 +135,11 @@ public final class EatUtils {
         if (eatMode == EatMode.PRINTER_ONLY && !ConfigUtils.isPrinterEnable()) {
             return;
         }
+        //#if MC >= 260200
+        //$$ if (!screenAllowsAutoEat(mc.gui.screen()) || !player.isAlive()
+        //#else
         if (!screenAllowsAutoEat(mc.screen) || !player.isAlive()
+        //#endif
                 || !player.containerMenu.equals(player.inventoryMenu)) {
             return;
         }
@@ -231,7 +249,11 @@ public final class EatUtils {
         // 打断检测：玩家手动操作（开界面/攻击/滚轮切槽/出现容器界面）
         // 副手进食不吃选中槽依赖，切槽不影响进食，故不视为打断
         // 聊天栏/ESC 菜单开着不算打断（玩家一边打字一边自动吃东西是预期行为）
+        //#if MC >= 260200
+        //$$ boolean playerActed = !screenAllowsAutoEat(mc.gui.screen())
+        //#else
         boolean playerActed = !screenAllowsAutoEat(mc.screen)
+        //#endif
                 || mc.options.keyAttack.isDown()
                 || !player.containerMenu.equals(player.inventoryMenu)
                 || (eatHand == InteractionHand.MAIN_HAND

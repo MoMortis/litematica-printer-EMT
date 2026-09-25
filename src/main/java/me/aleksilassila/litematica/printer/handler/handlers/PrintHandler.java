@@ -289,6 +289,22 @@ public class PrintHandler extends ClientPlayerTickHandler {
             }
             return false;
         }
+        // 无物品形态方块（活塞头/移动活塞等）：getRequiredItems 退化为 {AIR}，
+        // switchToItems 会把 AIR 匹配到背包空槽位，导致快捷栏反复切到空气槽并无限重试放置。
+        // 这类方块无法手持放置，直接跳过并冷却（ClickAction 空手交互不受影响）
+        if (!(action instanceof ClickAction)) {
+            boolean allAir = true;
+            for (Item reqItem : action.getRequiredItems(ctx.requiredState.getBlock())) {
+                if (reqItem != null && reqItem != Items.AIR) {
+                    allAir = false;
+                    break;
+                }
+            }
+            if (allAir) {
+                setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
+                return false;
+            }
+        }
         Item placementItem = getPlacementItem(action);
         if (placementItem != null && !canPlaceItemNow(placementItem)) return false;
         this.action = action;

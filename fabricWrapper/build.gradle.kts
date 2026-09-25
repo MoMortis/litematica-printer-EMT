@@ -20,7 +20,7 @@ base {
     archivesName.set("$modArchivesBaseName-versionpack")
 }
 
-val targetVersions = setOf("1.21.11", "26.1.2")
+val targetVersions = setOf("1.21.11", "26.1.2", "26.2")
 val fabricSubprojects = rootProject.subprojects.filter { it.name in targetVersions }
 
 fabricSubprojects.forEach {

@@ -24,6 +24,7 @@ import net.minecraft.world.level.block.entity.BlockEntity;
 import net.minecraft.world.level.block.entity.ShulkerBoxBlockEntity;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.BlockStateProperties;
+import net.minecraft.world.phys.Vec3;
 
 import java.util.HashSet;
 
@@ -54,7 +55,7 @@ public class InventoryUtils {
                 if ((isInventory && blockState.getMenuProvider(client.level, pos) == null) ||
                         (blockEntity instanceof ShulkerBoxBlockEntity entity &&
                                 //#if MC > 12103
-                                !client.level.noCollision(Shulker.getProgressDeltaAabb(1.0F, blockState.getValue(BlockStateProperties.FACING), 0.0F, 0.5F, pos.getBottomCenter()).move(pos).deflate(1.0E-6)) &&
+                                !client.level.noCollision(Shulker.getProgressDeltaAabb(1.0F, blockState.getValue(BlockStateProperties.FACING), 0.0F, 0.5F, Vec3.atBottomCenterOf(pos)).move(pos).deflate(1.0E-6)) &&
                                 //#elseif MC <= 12103 && MC > 12004
                                 //$$ !client.level.noCollision(Shulker.getProgressDeltaAabb(1.0F, blockState.getValue(BlockStateProperties.FACING), 0.0F, 0.5F).move(pos).deflate(1.0E-6)) &&
                                 //#elseif MC <= 12004
@@ -97,7 +98,11 @@ public class InventoryUtils {
         automatedQuickShulkerOpened = false;
         automatedQuickShulkerScreenProtectionTimeout = AUTOMATED_QUICK_SHULKER_SCREEN_PROTECTION_TIMEOUT_TICKS;
         preserveAutomatedQuickShulkerScreenOnClose = false;
+        //#if MC >= 260200
+        //$$ protectedScreen = client.gui.screen();
+        //#else
         protectedScreen = client.screen;
+        //#endif
     }
 
     public static boolean shouldPreserveAutomatedQuickShulkerScreenOnClose(Screen screen) {

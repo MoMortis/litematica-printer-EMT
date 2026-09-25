@@ -22,7 +22,9 @@ import org.joml.Matrix4f;
 import java.util.*;
 
 import com.mojang.blaze3d.vertex.BufferBuilder;
-import com.mojang.blaze3d.vertex.Tesselator;
+//#if MC < 260200
+//$$ import com.mojang.blaze3d.vertex.Tesselator;   // 26.2 起该旧版顶点缓冲入口已移除
+//#endif
 
 
 //#if MC <= 12104
@@ -126,14 +128,20 @@ public class HighlightBlockRenderer implements IRenderer {
         //#else
         //$$ RenderSystem.setShader(GameRenderer::getPositionColorShader);
         //#endif
+        //#if MC < 260200
         Tesselator tesselator = Tesselator.getInstance();
+        //#endif
 
         //#if MC > 12006
             //#if MC > 12104
                 //#if MC == 12105
                 //$$ RenderContext ctx = new RenderContext(MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT, BufferUsage.STATIC_WRITE);
                 //#else
+                //#if MC >= 260200
+                //$$ RenderContext ctx = new RenderContext(() -> threadName, MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT, 0);
+                //#else
                 RenderContext ctx = new RenderContext(() -> threadName, MaLiLibPipelines.POSITION_COLOR_TRANSLUCENT);
+                //#endif
                 //#endif
             BufferBuilder buffer = ctx.getBuilder();
             //#else

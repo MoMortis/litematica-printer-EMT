@@ -450,5 +450,16 @@
   "litematica_printer.config.eatHurtCancelCooldown": "受創輟食之息",
   "litematica_printer.config.eatHurtCancelCooldown.desc": "方噉而受創，即刻輟之，息此秒數而後復（零則創而不輟，食之如故）。",
   "litematica_printer.config.category.go": "尋路",
-  "litematica_printer.config.category.go.desc": "巡自走與手令自走：白冊、行法與速、目向與安止"
+  "litematica_printer.config.category.go.desc": "巡自走與手令自走：白冊、行法與速、目向與安止",
+  "litematica_printer.config.category.danger": "§c慎莫按",
+  "litematica_printer.config.category.danger.desc": "§c誡汝慎按此目，言之不預也",
+  "litematica_printer.config.simiao": "§c卒喵",
+  "litematica_printer.config.simiao.desc": "§c一按即崩",
+  "litematica_printer.config.simiao.button": "§c叽里咕噜，所言何耶？径崩可也！",
+  "litematica_printer.config.donotclickA": "§cA-慎莫按！",
+  "litematica_printer.config.donotclickA.desc": "§c萬勿按之！！！",
+  "litematica_printer.config.donotclickA.button": "§c慎莫按哉！",
+  "litematica_printer.config.donotclickA.hover": "§c萬勿按之！！！",
+  "litematica_printer.config.donotclickB": "§cB-慎莫按！",
+  "litematica_printer.config.donotclickB.desc": "§c萬勿按之！！！"
 }

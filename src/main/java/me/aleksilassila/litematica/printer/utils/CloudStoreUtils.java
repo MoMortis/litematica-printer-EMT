@@ -79,7 +79,11 @@ public class CloudStoreUtils {
             return false;
         }
         Minecraft client = Minecraft.getInstance();
+        //#if MC >= 260200
+        //$$ if (client.gui.screen() != null || client.player == null) {
+        //#else
         if (client.screen != null || client.player == null) {
+        //#endif
             return false;
         }
         if (!ModUtils.isCloudStoreLoaded()) {

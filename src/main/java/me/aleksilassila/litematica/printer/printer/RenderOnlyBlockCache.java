@@ -26,18 +26,24 @@ import java.util.Set;
  * 或精确本地化译名（如"石头"）才有效，不做模糊/拼音搜索；命中多个方块视为歧义作废。
  *
  * <p>注册表静态，仅在开关或列表内容变化时重新解析（渲染线程调用，解析只在变化时发生一次），
- * 热路径为一次 HashSet 查询。
+ * 热路径为一次不可变集合查询。
+ *
+ * <p>线程安全：查询发生在区块构建线程，重建可能由任意一条区块构建线程触发，
+ * 而重建后又要让主线程的下一次全量重建生效。因此所有跨线程可见的状态都声明为 volatile，
+ * 方块集合先构建完整快照再一次性发布（不在原位清空/填充），
+ * 任何时刻读到的都是"完整旧快照"或"完整新快照"，不会读到半成品。
  */
 public final class RenderOnlyBlockCache {
-    private static boolean enabled;
-    private static List<String> source = List.of();
-    private static final Set<Block> blocks = new HashSet<>();
+    private static volatile boolean enabled;
+    private static volatile List<String> source = List.of();
+    /** 不可变快照，重建时整体替换 */
+    private static volatile Set<Block> blocks = Set.of();
 
     /** 配置变化计数：apply 时自增（首次初始化不计），驱动自动重建 */
-    private static int changeCounter;
-    /** 自动重建已处理到的变化计数 */
+    private static volatile int changeCounter;
+    /** 自动重建已处理到的变化计数（仅主线程读写） */
     private static int lastSeenCounter;
-    private static boolean initialized;
+    private static volatile boolean initialized;
 
     private RenderOnlyBlockCache() {
     }
@@ -82,10 +88,7 @@ public final class RenderOnlyBlockCache {
 
     private static void apply(boolean en, List<String> cur) {
         boolean first = !initialized;
-        initialized = true;
-        enabled = en;
-        source = List.copyOf(cur);
-        blocks.clear();
+        Set<Block> snapshot = new HashSet<>();
         if (en) {
             for (String line : cur) {
                 if (line == null || line.isBlank()) {
@@ -96,11 +99,16 @@ public final class RenderOnlyBlockCache {
                 for (String token : normalized.split("[,;]")) {
                     Block block = resolveStrict(token.trim());
                     if (block != null && block != Blocks.AIR) {
-                        blocks.add(block);
+                        snapshot.add(block);
                     }
                 }
             }
         }
+        // 先发布完整快照，再发布开关：开关变为 true 时集合一定已就绪
+        source = List.copyOf(cur);
+        blocks = Set.copyOf(snapshot);
+        enabled = en;
+        initialized = true;
         if (!first) {
             changeCounter++;
         }

@@ -6,7 +6,11 @@ import fi.dy.masa.litematica.selection.Box;
 import fi.dy.masa.litematica.selection.SelectionMode;
 import fi.dy.masa.litematica.util.EasyPlaceProtocol;
 import fi.dy.masa.litematica.util.PlacementHandler;
+//#if MC >= 260200
+//$$ import fi.dy.masa.litematica.util.EasyPlaceUtils;
+//#else
 import fi.dy.masa.litematica.util.WorldUtils;
+//#endif
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.printer.PrinterBox;
 import me.aleksilassila.litematica.printer.printer.SchematicStateCache;
@@ -41,10 +45,18 @@ public class LitematicaUtils {
             EasyPlaceProtocol protocol = PlacementHandler.getEffectiveProtocolVersion();
             Vec3 hitPos = Vec3.atLowerCornerOf(pos);
             if (protocol == EasyPlaceProtocol.V3) {
+                //#if MC >= 260200
+                //$$ return EasyPlaceUtils.applyPlacementProtocolV3(pos, stateSchematic, hitPos);
+                //#else
                 return WorldUtils.applyPlacementProtocolV3(pos, stateSchematic, hitPos);
+                //#endif
             } else if (protocol == EasyPlaceProtocol.V2) {
                 // Carpet Accurate Block placements protocol support, plus slab support
+                //#if MC >= 260200
+                //$$ return EasyPlaceUtils.applyCarpetProtocolHitVec(pos, stateSchematic, hitPos);
+                //#else
                 return WorldUtils.applyCarpetProtocolHitVec(pos, stateSchematic, hitPos);
+                //#endif
             }
         }
         return null;

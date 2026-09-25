@@ -34,7 +34,11 @@ import net.minecraft.client.DeltaTracker;
 /**
  * HUD渲染Mixin，负责打印器调试信息和进度条的绘制
  */
+//#if MC >= 260200
+//$$ @Mixin(net.minecraft.client.gui.Hud.class) // 26.2 起 HUD 渲染从 Gui 迁移到 Hud
+//#else
 @Mixin(Gui.class)
+//#endif
 public abstract class MixinGui {
     @Unique
     private static final int DEBUG_PADDING = 4;

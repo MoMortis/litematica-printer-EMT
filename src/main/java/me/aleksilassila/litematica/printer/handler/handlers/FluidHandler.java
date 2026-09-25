@@ -74,25 +74,35 @@ public class FluidHandler extends ClientPlayerTickHandler {
         return !fillItems.isEmpty() && !fluidBlocks.isEmpty();
     }
 
+    /**
+     * 位置级过滤：只有确实存在「流体列表」内流体的格位才算工作目标。
+     * 判定必须放在 canProcessPos 里 —— 基类在执行前先问此方法，
+     * 不通过的格位直接跳过、不消耗「每刻放置方块数」额度。
+     * 若留在 executeIteration 里判定，范围内的空气/实心方块也会把每刻额度吃光，
+     * 扫描推进被压到每刻几格，表现为排水极慢甚至几乎不动。
+     */
+    @Override
+    public boolean canProcessPos(BlockPos blockPos) {
+        FluidState fluidState = level.getBlockState(blockPos).getFluidState();
+        if (!fluids.contains(fluidState.getType())) {
+            return false;
+        }
+        return Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue() || fluidState.isSource();
+    }
+
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
-        FluidState fluidState = level.getBlockState(blockPos).getFluidState();
-        if (fluids.contains(fluidState.getType())) {
-            if (!Configs.Fluid.FILL_FLOWING_FLUID.getBooleanValue() && !fluidState.isSource()) {
-                return;
-            }
-            if (!InventoryUtils.switchToItems(player, fillItems.toArray(new Item[0]))) {
-                return;
-            }
-            Action action = new Action()
-                    .setActionSource(ActionManager.ActionSource.FLUID)
-                    .queueAction(blockPos, Direction.UP, false, player);
-            ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
-            if (ActionManager.INSTANCE.sendQueue(player).isWaiting()) {
-                skipIteration.set(true);
-            } else {
-                setCooldown(blockPos, Fluids.WATER.getTickDelay(level) * 2);
-            }
+        if (!InventoryUtils.switchToItems(player, fillItems.toArray(new Item[0]))) {
+            return;
+        }
+        Action action = new Action()
+                .setActionSource(ActionManager.ActionSource.FLUID)
+                .queueAction(blockPos, Direction.UP, false, player);
+        ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
+        if (ActionManager.INSTANCE.sendQueue(player).isWaiting()) {
+            skipIteration.set(true);
+        } else {
+            setCooldown(blockPos, Fluids.WATER.getTickDelay(level) * 2);
         }
     }
 }

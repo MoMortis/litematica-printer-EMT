@@ -46,7 +46,11 @@ public abstract class MixinMinecraftClient {
     @Nullable
     public ClientLevel level;
 
+    //#if MC >= 260200
+    //$$ @Inject(method = {"setScreenAndShow"}, at = {@At(value = "HEAD")}, cancellable = true)
+    //#else
     @Inject(method = {"setScreen"}, at = {@At(value = "HEAD")}, cancellable = true)
+    //#endif
     public void setScreen(@Nullable Screen screen, CallbackInfo ci) {
         if (InventoryUtils.shouldPreserveAutomatedQuickShulkerScreenOnClose(screen)) {
             ci.cancel();

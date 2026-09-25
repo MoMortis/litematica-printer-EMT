@@ -1111,17 +1111,33 @@ public class OptimizedSchematicVerifier extends SchematicVerifier implements Ver
     }
 
     private void ignoreStateMismatch(BlockMismatch mismatch, boolean updateOverlay) {
+        //#if MC >= 260200
+        //$$ Pair<BlockState, BlockState> pair = Pair.of(mismatch.stateExpected(), mismatch.stateFound());
+        //#else
         Pair<BlockState, BlockState> pair = Pair.of(mismatch.stateExpected, mismatch.stateFound);
+        //#endif
         lock.writeLock().lock();
         try {
             if (this.ignoredPairs.add(pair)) {
+                //#if MC >= 260200
+                //$$ Integer boxed = this.entryIndex.get(new Entry(mismatch.mismatchType(), pair));
+                //#else
                 Integer boxed = this.entryIndex.get(new Entry(mismatch.mismatchType, pair));
+                //#endif
                 if (boxed != null) {
                     this.ignoredEntries.add(boxed);
+                    //#if MC >= 260200
+                    //$$ this.typeEffective[mismatch.mismatchType().ordinal()] -= this.entryCounts.get(boxed);
+                    //#else
                     this.typeEffective[mismatch.mismatchType.ordinal()] -= this.entryCounts.get(boxed);
+                    //#endif
                 }
                 // 与原版一致：忽略条目同时取消其高亮选择
+                //#if MC >= 260200
+                //$$ this.selectedEntries.remove(mismatch.mismatchType(), mismatch);
+                //#else
                 this.selectedEntries.remove(mismatch.mismatchType, mismatch);
+                //#endif
             }
         } finally {
             lock.writeLock().unlock();
@@ -1306,7 +1322,11 @@ public class OptimizedSchematicVerifier extends SchematicVerifier implements Ver
 
     @Override
     public void toggleMismatchEntrySelected(BlockMismatch mismatch) {
+        //#if MC >= 260200
+        //$$ MismatchType type = mismatch.mismatchType();
+        //#else
         MismatchType type = mismatch.mismatchType;
+        //#endif
         if (this.selectedEntries.containsValue(mismatch)) {
             this.selectedEntries.remove(type, mismatch);
         } else {
@@ -1359,8 +1379,13 @@ public class OptimizedSchematicVerifier extends SchematicVerifier implements Ver
         this.updateClosestPositions(centerPos, maxEntries);
         this.combineClosestPositions(centerPos, maxEntries);
         if (this.selectedCategories.size() == 1 && this.selectedEntries.isEmpty()) {
+            //#if MC >= 260200
+            //$$ MismatchType type = this.mismatchPositionsForRender.isEmpty()
+            //$$         ? null : this.mismatchPositionsForRender.get(0).type();
+            //#else
             MismatchType type = this.mismatchPositionsForRender.isEmpty()
                     ? null : this.mismatchPositionsForRender.get(0).type;
+            //#endif
             this.updateMismatchPositionStringList(type, this.mismatchPositionsForRender);
         } else {
             this.updateMismatchPositionStringList(null, this.mismatchPositionsForRender);
@@ -1403,7 +1428,11 @@ public class OptimizedSchematicVerifier extends SchematicVerifier implements Ver
         if (!this.selectedCategories.contains(type)) {
             selectedPairs = new HashSet<>();
             for (BlockMismatch mismatch : this.selectedEntries.get(type)) {
+                //#if MC >= 260200
+                //$$ selectedPairs.add(Pair.of(mismatch.stateExpected(), mismatch.stateFound()));
+                //#else
                 selectedPairs.add(Pair.of(mismatch.stateExpected, mismatch.stateFound));
+                //#endif
             }
         }
         List<BlockPos> candidates = new ArrayList<>(Math.min(maxEntries * NEAREST_OVERSAMPLE + 1, 4096));
@@ -1460,7 +1489,11 @@ public class OptimizedSchematicVerifier extends SchematicVerifier implements Ver
         for (int i = 0; i < max; i++) {
             MismatchRenderPos entry = tempList.get(i);
             renderList.add(entry);
+            //#if MC >= 260200
+            //$$ renderBlockList.add(entry.pos());
+            //#else
             renderBlockList.add(entry.pos);
+            //#endif
         }
         // 写时复制 + volatile 写：渲染线程每帧整体换引用，杜绝读到拼接中的列表
         this.mismatchBlockPositionsForRender = renderBlockList;
@@ -1484,8 +1517,13 @@ public class OptimizedSchematicVerifier extends SchematicVerifier implements Ver
 
         @Override
         public int compare(MismatchRenderPos pos1, MismatchRenderPos pos2) {
+            //#if MC >= 260200
+            //$$ double dist1 = pos1.pos().distSqr(this.posReference);
+            //$$ double dist2 = pos2.pos().distSqr(this.posReference);
+            //#else
             double dist1 = pos1.pos.distSqr(this.posReference);
             double dist2 = pos2.pos.distSqr(this.posReference);
+            //#endif
             if (dist1 == dist2) {
                 return 0;
             }
@@ -1508,8 +1546,13 @@ public class OptimizedSchematicVerifier extends SchematicVerifier implements Ver
         int count = Math.min(positionList.size(), Configs.InfoOverlays.INFO_HUD_MAX_LINES.getIntegerValue());
         for (int i = 0; i < count; i++) {
             MismatchRenderPos entry = positionList.get(i);
+            //#if MC >= 260200
+            //$$ BlockPos pos = entry.pos();
+            //$$ String pre = entry.type().getColorCode();
+            //#else
             BlockPos pos = entry.pos;
             String pre = entry.type.getColorCode();
+            //#endif
             this.infoHudLines.add(String.format("%sx: %5d, y: %3d, z: %5d%s", pre, pos.getX(), pos.getY(), pos.getZ(), rst));
         }
     }

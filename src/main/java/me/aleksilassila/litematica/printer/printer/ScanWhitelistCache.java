@@ -149,7 +149,11 @@ public final class ScanWhitelistCache {
             Set<SchematicVerifier.BlockMismatch> selectedEntries =
                     selectedMap.get(SchematicVerifier.MismatchType.MISSING);
             for (SchematicVerifier.BlockMismatch mismatch : selectedEntries) {
+                //#if MC >= 260200
+                //$$ states.add(mismatch.stateExpected());
+                //#else
                 states.add(mismatch.stateExpected);
+                //#endif
             }
         }
         if (allMissing != highlightAllMissing || !states.equals(highlightStates)) {

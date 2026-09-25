@@ -149,6 +149,19 @@ public class PinYinSearchUtils {
     }
 
     /**
+     * 是否全部为 ASCII 字符。拼音组合串只出现于 ASCII 期望名场景，
+     * 用于跳过中文期望名下必然失败的拼音匹配（省去笛卡尔积计算）。
+     */
+    private static boolean isAscii(String str) {
+        for (int i = 0; i < str.length(); i++) {
+            if (str.charAt(i) > 127) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
      * 匹配方块名称（封装matchName，提升语义）
      */
     public static boolean matchBlockName(String expectedName, BlockState blockState) {
@@ -207,8 +220,12 @@ public class PinYinSearchUtils {
 
         // 中文名称匹配
         boolean displayNameMatch = matchString(targetDisplayName, coreName, matchRules);
-        // 拼音匹配
-        boolean pinyinMatch = getPinYin(targetDisplayName)
+        // 拼音匹配：拼音组合串只由 ASCII 字符（中文转写）与原字符组成，
+        // 期望名核心含非 ASCII 字符（例如白名单里直接写中文名）时，与该串既不可能相等也不可能被包含，
+        // 此路径必然 false。跳过可省去整串拼音的全拼/简拼笛卡尔积——这是挖掘/打印白名单
+        // 逐格匹配的热点（每条规则、每个在范围内的格子、每一刻都会重算一遍）。
+        boolean pinyinMatch = isAscii(coreName)
+                && getPinYin(targetDisplayName)
                 .stream()
                 .anyMatch(pinyin -> matchString(pinyin, coreName, matchRules));
         // 注册表名称匹配

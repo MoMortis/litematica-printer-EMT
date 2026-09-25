@@ -452,5 +452,16 @@
   "litematica_printer.config.eatHurtCancelCooldown": "受伤打断-进食冷却",
   "litematica_printer.config.eatHurtCancelCooldown.desc": "进食中受到伤害立即停止，并在该秒数内不再触发（0 = 受伤不打断，继续吃）。",
   "litematica_printer.config.category.go": "寻路",
-  "litematica_printer.config.category.go.desc": "扫描自动寻路与 /go 自动寻路：白名单、寻路方式与速度、视角与安全停止"
+  "litematica_printer.config.category.go.desc": "扫描自动寻路与 /go 自动寻路：白名单、寻路方式与速度、视角与安全停止",
+  "litematica_printer.config.category.danger": "§c千万别点",
+  "litematica_printer.config.category.danger.desc": "§c真的别点这个目录，说了别点吧",
+  "litematica_printer.config.simiao": "§c似了喵",
+  "litematica_printer.config.simiao.desc": "§c一点就崩",
+  "litematica_printer.config.simiao.button": "§c叽里咕噜说啥呢？直接崩吧！",
+  "litematica_printer.config.donotclickA": "§cA-千万别点！",
+  "litematica_printer.config.donotclickA.desc": "§c千万别点！！！",
+  "litematica_printer.config.donotclickA.button": "§c不要点啊！",
+  "litematica_printer.config.donotclickA.hover": "§c千万别点！！！",
+  "litematica_printer.config.donotclickB": "§cB-千万别点！",
+  "litematica_printer.config.donotclickB.desc": "§c千万别点！！！"
 }

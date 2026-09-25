@@ -86,55 +86,64 @@ public class FillHandler extends ClientPlayerTickHandler {
         return fillModeItemList.length > 0;
     }
 
+    /**
+     * 位置级过滤：非填充目标（已正确的实心方块等）直接跳过，不消耗「每刻放置方块数」额度。
+     * 目标判定若留在 executeIteration 里，范围内的实心方块也会把每刻额度吃光，
+     * 扫描推进被压到每刻几格，填充会异常缓慢。
+     */
     @Override
     public boolean canProcessPos(BlockPos blockPos) {
         if (Configs.Fill.FILL_BLOCK_MODE.getOptionListValue() == FillBlockModeType.HANDHELD) {
             ItemStack heldStack = player.getMainHandItem(); // 获取主手物品
-            return !heldStack.isEmpty() && heldStack.getCount() > 0;
+            if (heldStack.isEmpty() || heldStack.getCount() <= 0) {
+                return false;
+            }
         }
-        return true;
+        return isFillTarget(level.getBlockState(blockPos));
+    }
+
+    /** 该格位是否属于填充目标：空气 / 液体 / 「可替换方块列表」内的方块。 */
+    private boolean isFillTarget(BlockState state) {
+        return state.isAir()
+                || (state.getBlock() instanceof LiquidBlock)
+                || Configs.Print.REPLACEABLE_LIST.getStrings().stream().anyMatch(s -> PinYinSearchUtils.matchName(s, state));
     }
 
     @Override
     protected void executeIteration(BlockPos blockPos, AtomicReference<Boolean> skipIteration) {
-        BlockState currentState = level.getBlockState(blockPos);
-        if (currentState.isAir()
-                || (currentState.getBlock() instanceof LiquidBlock)
-                || Configs.Print.REPLACEABLE_LIST.getStrings().stream().anyMatch(s -> PinYinSearchUtils.matchName(s, currentState))
+        // 目标判定已在 canProcessPos 完成：不通过的格位不会走到这里，也不消耗放置额度
+        if (!InventoryUtils.switchToItems(player, this.fillModeItemList)) {
+            return;
+        }
+        if (Configs.Print.FALLING_CHECK.getBooleanValue() &&
+            player.getMainHandItem().getItem() instanceof BlockItem item &&
+            item.getBlock() instanceof FallingBlock block &&
+            FallingBlock.isFree(level.getBlockState(blockPos.below()))
         ) {
-            if (!InventoryUtils.switchToItems(player, this.fillModeItemList)) {
-                return;
-            }
-            if (Configs.Print.FALLING_CHECK.getBooleanValue() &&
-                player.getMainHandItem().getItem() instanceof BlockItem item &&
-                item.getBlock() instanceof FallingBlock block &&
-                FallingBlock.isFree(level.getBlockState(blockPos.below()))
-            ) {
-                MessageUtils.setOverlayMessage(I18n.BLOCK_NO_SUPPORT.getName(block.getName().getString()));
-                return;
-            }
+            MessageUtils.setOverlayMessage(I18n.BLOCK_NO_SUPPORT.getName(block.getName().getString()));
+            return;
+        }
 
-            Action action;
-            if (ConfigUtils.getFillModeFacing() != null) {
-                action = new Action()
-                        .setActionSource(ActionManager.ActionSource.FILL)
-                        .setLookDirection(ConfigUtils.getFillModeFacing().getOpposite())
-                        .queueAction(blockPos, ConfigUtils.getFillModeFacing(), false, player);
-            } else {
-                action = new Action()
-                        .setActionSource(ActionManager.ActionSource.FILL)
-                        .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
-            }
-            ActionManager.INSTANCE.setLook(action.getPlayerLook());
-            ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
-            // 固定方向填充：目标视角已通过 look 包同步给服务端，无需等待客户端镜头实际转向，
-            // 否则每次发送都会因 WAITING_FOR_LOOK 停轮，每刻只能放置 1 个
-            ActionManager.INSTANCE.setWaitForHorizontalLook(false);
-            if (ActionManager.INSTANCE.sendQueue(player).isWaiting()){
-                skipIteration.set(true);
-            } else {
-                this.setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
-            }
+        Action action;
+        if (ConfigUtils.getFillModeFacing() != null) {
+            action = new Action()
+                    .setActionSource(ActionManager.ActionSource.FILL)
+                    .setLookDirection(ConfigUtils.getFillModeFacing().getOpposite())
+                    .queueAction(blockPos, ConfigUtils.getFillModeFacing(), false, player);
+        } else {
+            action = new Action()
+                    .setActionSource(ActionManager.ActionSource.FILL)
+                    .queueAction(blockPos, getPlayerPlacementDirection(), false, player);
+        }
+        ActionManager.INSTANCE.setLook(action.getPlayerLook());
+        ActionManager.INSTANCE.setNeedWaitModifyLookFromAction(action.getNeedWaitModifyLook());
+        // 固定方向填充：目标视角已通过 look 包同步给服务端，无需等待客户端镜头实际转向，
+        // 否则每次发送都会因 WAITING_FOR_LOOK 停轮，每刻只能放置 1 个
+        ActionManager.INSTANCE.setWaitForHorizontalLook(false);
+        if (ActionManager.INSTANCE.sendQueue(player).isWaiting()){
+            skipIteration.set(true);
+        } else {
+            this.setCooldown(blockPos, ConfigUtils.getPlaceCooldown());
         }
     }
 

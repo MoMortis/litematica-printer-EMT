@@ -310,8 +310,11 @@ public abstract class ClientPlayerTickHandler extends ConfigUtils {
                 }
             }
 
-            cachedIterator = null;
-
+            // 这里刻意不丢弃正在进行的遍历（不置 cachedIterator = null）：
+            // 玩家每跨 1 格就会重建盒子，若每次重建都从头重扫，受「工作时长预算」截断的长遍历
+            // 会永远只扫到顺序表前段，后半段方块（含待挖方块）永远轮不到，
+            // 表现为"玩家一移动就完全不挖"。让当前遍历跑完再换盒子即可：
+            // 新盒子在下一次创建迭代器时生效，仍按「运动前方优先」的顺序起扫。
             // 新盒子可能覆盖未扫过的区域，立即恢复逐 tick 扫描
             idleBackoffTicks = 1;
             nextScanAllowedAt = -1L;

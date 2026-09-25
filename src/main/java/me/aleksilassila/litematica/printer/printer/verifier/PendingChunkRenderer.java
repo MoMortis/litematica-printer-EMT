@@ -10,7 +10,6 @@ import me.aleksilassila.litematica.printer.Reference;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.mixin.printer.litematica.SchematicPlacementAccessor;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.client.renderer.RenderBuffers;
 import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.util.profiling.ProfilerFiller;
@@ -114,8 +113,13 @@ public class PendingChunkRenderer implements IRenderer {
         int yMax = verifier.getRenderMaxY();
         int cap = Math.min(MAX_BOXES_PER_FRAME, snapshot.length);
         Vec3 cam = RenderUtils.camPos();
+        //#if MC >= 260200
+        //$$ RenderContext ctx = new RenderContext(
+        //$$         () -> "litematica_printer:pending_chunks", MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL, 0);
+        //#else
         RenderContext ctx = new RenderContext(
                 () -> "litematica_printer:pending_chunks", MaLiLibPipelines.DEBUG_LINES_MASA_SIMPLE_NO_DEPTH_NO_CULL);
+        //#endif
         try {
             BufferBuilder buffer = ctx.getBuilder();
             // 顶点为相机相对坐标（与 litematica 错误高亮的 Simple 变体一致），无深度无剔除，

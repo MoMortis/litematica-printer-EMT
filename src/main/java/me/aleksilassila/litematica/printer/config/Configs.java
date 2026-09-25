@@ -67,6 +67,7 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
         optionSet.addAll(Core.OPTIONS);           // 核心
         optionSet.addAll(Special.OPTIONS);        // 特殊
         optionSet.addAll(Go.OPTIONS);             // 寻路
+        optionSet.addAll(Danger.OPTIONS);         // 千万别点
         optionSet.addAll(Hotkeys.OPTIONS);        // 热键
         optionSet.addAll(Print.OPTIONS);          // 打印
         optionSet.addAll(Mine.OPTIONS);           // 挖掘
@@ -1046,6 +1047,45 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 GO_DEVIATION_STOP,
                 GO_DEVIATION_DISTANCE,
                 GO_WAYPOINT_TIMEOUT
+        );
+    }
+
+    public static class Danger {
+        // 似了喵：整蛊按钮，点击后不打开任何东西，直接让游戏崩溃（实际触发走 ConfigUi.DangerWidget）
+        public static final ConfigBoolean SIMIAO = bool("simiao")
+                .defaultValue(false)
+                .build();
+
+        // A-千万别点！：整蛊开关，单次点击即用系统浏览器打开指定网页
+        //（参考 LPCTools「调试-时间测试」的按钮式交互：点一下就触发，开关随即回弹为关）
+        public static final ConfigBoolean DONOTCLICK_A = bool("donotclickA")
+                .defaultValue(false)
+                .addValueChangeListener(config -> {
+                    if (((ConfigBoolean) config).getBooleanValue()) {
+                        me.aleksilassila.litematica.printer.utils.ModUtils.openTrollVideoUrl();
+                        // 立即回弹为关，保持"单次点击触发一次"的按钮语义（回弹自身触发的回调值为 false，不会递归）
+                        ((ConfigBoolean) config).setBooleanValue(false);
+                    }
+                })
+                .build();
+
+        // B-千万别点！：整蛊开关，单次点击即释放 jar 内置视频并用系统默认播放器播放
+        //（与 A 同为按钮式配置，配置 GUI 中实际触发走 ConfigUi.DangerWidget，此处监听器仅作兜底）
+        public static final ConfigBoolean DONOTCLICK_B = bool("donotclickB")
+                .defaultValue(false)
+                .addValueChangeListener(config -> {
+                    if (((ConfigBoolean) config).getBooleanValue()) {
+                        me.aleksilassila.litematica.printer.utils.ModUtils.playBundledVideo();
+                        // 立即回弹为关，保持"单次点击触发一次"的按钮语义（回弹自身触发的回调值为 false，不会递归）
+                        ((ConfigBoolean) config).setBooleanValue(false);
+                    }
+                })
+                .build();
+
+        public static final ImmutableList<IConfigBase> OPTIONS = ImmutableList.of(
+                SIMIAO,
+                DONOTCLICK_A,
+                DONOTCLICK_B
         );
     }
 

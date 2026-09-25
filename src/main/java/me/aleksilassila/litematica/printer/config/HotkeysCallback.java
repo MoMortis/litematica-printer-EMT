@@ -17,7 +17,11 @@ public class HotkeysCallback {
             return false;
         }
         if (key == Configs.Hotkeys.OPEN_SCREEN.getKeybind()) {
+            //#if MC >= 260200
+            //$$ client.setScreenAndShow(new ConfigUi());
+            //#else
             client.setScreen(new ConfigUi());
+            //#endif
             return true;
         }
 
