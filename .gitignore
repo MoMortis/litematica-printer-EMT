@@ -88,3 +88,7 @@ $RECYCLE.BIN/
 !.env.example
 
 *profile*
+
+# 本地临时检查/校验目录
+.aaachk*/
+.bldchk*/

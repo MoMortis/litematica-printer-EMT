@@ -27,6 +27,8 @@ public final class HandRestockShulkerCompat {
 
     /** 副手在玩家背包（Inventory）中的槽位号。 */
     private static final int OFFHAND_INVENTORY_SLOT = 40;
+    /** 玩家背包（Inventory）总槽位数：0-35 主背包+快捷栏、36-39 盔甲、40 副手；被动检测全部计入。 */
+    private static final int INVENTORY_SLOT_COUNT = OFFHAND_INVENTORY_SLOT + 1;
 
     private static Item pendingItem;
     private static int pendingTargetInventorySlot = -1;
@@ -145,6 +147,15 @@ public final class HandRestockShulkerCompat {
     private static final int DROP_SUPPRESS_TICKS = 3;
     private static long lastLocalDropTick = Long.MIN_VALUE;
 
+    /**
+     * 背包菜单（InventoryMenu）中 2×2 合成格占用的菜单槽位：1-4（槽位 0 是合成结果）。
+     * 材料被搬进合成格（配方书填入材料、手动拖入）只是换了个存放位置，不算消耗，
+     * 因此被动检测把合成格内容一并计入物品总量。
+     */
+    private static final int CRAFT_GRID_FIRST_SLOT = 1;
+    private static final int CRAFT_GRID_SLOT_COUNT = 4;
+    private static final ItemStack[] prevCraftGrid = new ItemStack[CRAFT_GRID_SLOT_COUNT];
+
     /** 本地发生丢弃（Q/Ctrl+Q/背包界面扔出）时调用，抑制随后数 tick 内的被动补货判定。 */
     public static void markLocalDrop() {
         Minecraft client = Minecraft.getInstance();
@@ -159,9 +170,9 @@ public final class HandRestockShulkerCompat {
     }
 
     /**
-     * 仅检测"槽位从非空变空"：同一物品全背包总量确实减少（排除背包内移动/换位）、
-     * 且近期无本地丢弃，即判定该物品被消耗（箭矢射出、图腾弹出等），
-     * 按补货流程处理并回置到该槽位。
+     * 仅检测"槽位从非空变空"：同一物品全背包（含盔甲槽）总量确实减少（排除背包内
+     * 移动/换位、穿上装备、以及搬进 2×2 合成格的合成材料）、且近期无本地丢弃，
+     * 即判定该物品被消耗（箭矢射出、图腾弹出等），按补货流程处理并回置到该槽位。
      */
     private static void detectPassiveConsumption(LocalPlayer player) {
         net.minecraft.world.entity.player.Inventory inventory = player.getInventory();
@@ -174,35 +185,66 @@ public final class HandRestockShulkerCompat {
             boolean dropRecent = lastLocalDropTick != Long.MIN_VALUE
                     && tick >= lastLocalDropTick
                     && tick - lastLocalDropTick <= DROP_SUPPRESS_TICKS;
-            for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT && !dropRecent; slot++) {
-                if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
-                    continue;
-                }
+            // 盔甲槽（36-39）一并检查：物品在背包内换位/穿上装备都不会造成总量下降
+            for (int slot = 0; slot < INVENTORY_SLOT_COUNT && !dropRecent; slot++) {
                 ItemStack before = prevSlots[slot];
                 if (before == null || before.isEmpty() || !inventory.getItem(slot).isEmpty()) {
                     continue;
                 }
                 Item item = before.getItem();
-                if (countItem(prevSlots, item) > countItem(inventory, item)) {
+                // 合成格里的同种材料照旧算作"还在"：搬进合成格导致的总量下降不算消耗
+                int beforeTotal = countItem(prevSlots, item) + countItemInStacks(prevCraftGrid, item);
+                int afterTotal = countItem(inventory, item) + countCraftGrid(player, item);
+                if (beforeTotal > afterTotal) {
                     tryRestockFromShulker(player, item, 0, slot);
                     break;
                 }
             }
         }
-        for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT; slot++) {
-            if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
-                continue;
-            }
+        for (int slot = 0; slot < INVENTORY_SLOT_COUNT; slot++) {
             prevSlots[slot] = inventory.getItem(slot).copy();
+        }
+        snapshotCraftGrid(player);
+    }
+
+    /** 2×2 合成格中某物品的当前数量（合成结果槽不计）。 */
+    private static int countCraftGrid(LocalPlayer player, Item item) {
+        AbstractContainerMenu menu = player.inventoryMenu;
+        int count = 0;
+        for (int i = 0; i < CRAFT_GRID_SLOT_COUNT && CRAFT_GRID_FIRST_SLOT + i < menu.slots.size(); i++) {
+            ItemStack stack = menu.getSlot(CRAFT_GRID_FIRST_SLOT + i).getItem();
+            if (!stack.isEmpty() && stack.is(item)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    /** 上一 tick 的合成格快照中某物品的数量。 */
+    private static int countItemInStacks(ItemStack[] stacks, Item item) {
+        int count = 0;
+        for (ItemStack stack : stacks) {
+            if (stack != null && !stack.isEmpty() && stack.is(item)) {
+                count += stack.getCount();
+            }
+        }
+        return count;
+    }
+
+    /** 记录当前 2×2 合成格内容，供下一 tick 比较。 */
+    private static void snapshotCraftGrid(LocalPlayer player) {
+        AbstractContainerMenu menu = player.inventoryMenu;
+        for (int i = 0; i < CRAFT_GRID_SLOT_COUNT; i++) {
+            int menuSlot = CRAFT_GRID_FIRST_SLOT + i;
+            prevCraftGrid[i] = menuSlot < menu.slots.size()
+                    ? menu.getSlot(menuSlot).getItem().copy()
+                    : ItemStack.EMPTY;
         }
     }
 
     private static int countItem(ItemStack[] slots, Item item) {
         int count = 0;
-        for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT; slot++) {
-            if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
-                continue;
-            }
+        for (int slot = 0; slot < INVENTORY_SLOT_COUNT; slot++) {
             ItemStack stack = slots[slot];
             if (stack != null && !stack.isEmpty() && stack.is(item)) {
                 count += stack.getCount();
@@ -213,10 +255,7 @@ public final class HandRestockShulkerCompat {
 
     private static int countItem(net.minecraft.world.entity.player.Inventory inventory, Item item) {
         int count = 0;
-        for (int slot = 0; slot <= OFFHAND_INVENTORY_SLOT; slot++) {
-            if (slot > 35 && slot != OFFHAND_INVENTORY_SLOT) {
-                continue;
-            }
+        for (int slot = 0; slot < INVENTORY_SLOT_COUNT; slot++) {
             ItemStack stack = inventory.getItem(slot);
             if (!stack.isEmpty() && stack.is(item)) {
                 count += stack.getCount();
