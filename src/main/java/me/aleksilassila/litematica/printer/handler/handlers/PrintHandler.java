@@ -346,6 +346,10 @@ public class PrintHandler extends ClientPlayerTickHandler {
         }
         long key = blockPos.asLong();
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        // 补货后幽灵物品检测：快捷潜影盒补货后 100gt 内连续 3 次放置失败 →
+        // 开关一次该潜影盒强制客户端与服务端同步（DEFERRED 暂缓不计入）
+        me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils
+                .onPlacementOutcome(outcome == ExecuteOutcome.PLACED);
         switch (outcome) {
             case PLACED -> {
                 retryTable.remove(key);
