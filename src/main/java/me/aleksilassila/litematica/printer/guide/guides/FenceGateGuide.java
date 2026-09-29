@@ -34,11 +34,16 @@ public class FenceGateGuide extends Guide {
                 .map(open -> !open.equals(getProperty(currentState, BlockStateProperties.OPEN).orElse(null)))
                 .orElse(false);
 
-        if (facing.getOpposite() == currentFacing || openMismatch) {
+        // 原版对已放置的栅栏门右键只能切换 OPEN，无法旋转朝向。
+        // 只有在朝向一致、仅开关不符时点击才有意义；朝向相反时点击会陷入
+        // 无限"开门-关门"循环（开→开态不符→关→关态不符→…）且永不修正，
+        // 必须交给 DefaultGuide 的破坏重放路径修复
+        boolean facingOk = facing == currentFacing;
+        if (facingOk && openMismatch) {
             return Result.success(new ClickAction()
                     .setSides(facing.getOpposite())
                     .setLookDirection(facing));
         }
-        return Result.SKIP;
+        return Result.PASS;
     }
 }

@@ -6,6 +6,7 @@ import me.aleksilassila.litematica.printer.guide.Result;
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
+import me.aleksilassila.litematica.printer.utils.BlockUtils;
 import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import net.minecraft.core.Direction;
 import net.minecraft.world.level.block.*;
@@ -29,9 +30,11 @@ public class SignGuide extends Guide {
         // 站立告示牌
         if (requiredBlock instanceof StandingSignBlock) {
             int rotation = getProperty(requiredState, StandingSignBlock.ROTATION).orElseThrow();
+            // 原版 StandingSignBlock 放置公式为 rotation = round(yaw/22.5)&15（无 +180），
+            // 而 rotationToPlayerYaw 会加 180，必须取反向补偿，否则告示牌恒差 180°（同 SkullGuide）
             return Result.success(new Action()
                     .setSides(Direction.DOWN)
-                    .setLookRotation(rotation)
+                    .setLookRotation(BlockUtils.getOppositeRotation(rotation))
                     .setRequiresSupport());
         }
 
