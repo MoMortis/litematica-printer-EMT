@@ -8,6 +8,7 @@ import me.aleksilassila.litematica.printer.enums.ExcavateListMode;
 import me.aleksilassila.litematica.printer.enums.FluidAvoidStrategyType;
 import me.aleksilassila.litematica.printer.mixin_extension.BlockBreakResult;
 import me.aleksilassila.litematica.printer.mixin_extension.MultiPlayerGameModeExtension;
+import me.aleksilassila.litematica.printer.printer.PrintTaskController;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.api.Environment;
@@ -134,10 +135,13 @@ public class BreakUtils {
     /**
      * 防流体挖掘判定：待挖方块的上/东/西/北/南侧是否存在目标流体；六面模式额外检查下侧。
      * 优先用逐tick缓存集合（O(1)命中）；可达半径过大时降级为内联直查。
+     * 破冰放水流程正在破的冰除外——流程自身产生的临时水源会贴住相邻待破冰格，
+     * 不豁免会形成"入队→拒破丢弃→重新入队"的永久抖动。
      */
     private static boolean isFluidProtected(BlockPos pos, ClientLevel level) {
         LocalPlayer player = LitematicaUtils.client.player;
         if (player == null) return false;
+        if (PrintTaskController.INSTANCE.isBreaking(pos)) return false;
         ensureFluidAvoidMatcher();
         if (isConfiguredFluid(level.getBlockState(pos.relative(Direction.UP)))
                 || isConfiguredFluid(level.getBlockState(pos.relative(Direction.EAST)))

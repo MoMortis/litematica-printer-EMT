@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.printer.action.Action;
 import me.aleksilassila.litematica.printer.utils.BlockStateUtils;
 import me.aleksilassila.litematica.printer.utils.LitematicaUtils;
 import me.aleksilassila.litematica.printer.utils.PlayerUtils;
+import me.aleksilassila.litematica.printer.utils.ToolSelectionUtils;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
@@ -50,6 +51,9 @@ public class PrintTaskController {
     /** 等待水源出现的超时（tick），超时后视为破冰失败，重新放冰 */
     private static final int WAIT_WATER_TIMEOUT_TICKS = 60;
 
+    /** 等待放冰结果同步的超时（tick）：超时视为放冰包被服务端静默拒绝，回退重放 */
+    private static final int ICE_PLACED_TIMEOUT_TICKS = 40;
+
     private final Map<Long, Stage> stages = new HashMap<>();
     private final Map<Long, Long> stageStartTicks = new HashMap<>();
 
@@ -77,6 +81,11 @@ public class PrintTaskController {
     @Nullable
     public Action handle(SchematicBlockContext ctx) {
         if (!Configs.Print.PRINT_ICE_FOR_WATER.getBooleanValue()) {
+            // 配置关闭：清掉残留状态，重开后不沿用旧坐标的阶段
+            if (!stages.isEmpty()) {
+                stages.clear();
+                stageStartTicks.clear();
+            }
             return null;
         }
         BlockState required = ctx.requiredState;
@@ -119,7 +128,14 @@ public class PrintTaskController {
         if (stage == Stage.WAITING_WATER) {
             long start = stageStartTicks.getOrDefault(key, getClientTick());
             if (getClientTick() - start >= WAIT_WATER_TIMEOUT_TICKS) {
-                // 超时（例如破冰被精准采集工具打断，冰掉落而非变水）→ 重新放冰
+                // 超时且化水条件已不满足（如手持精准采集/下界蒸发/下方悬空）→
+                // 放弃该格（WaterGuide 对水源目标本就静默跳过），避免无限"放冰→破冰"循环
+                if (!canMeltIntoWater(pos)) {
+                    stages.remove(key);
+                    stageStartTicks.remove(key);
+                    return null;
+                }
+                // 超时（例如破冰被其他情况打断，冰掉落而非变水）→ 重新放冰
                 stages.put(key, Stage.NEED_ICE);
                 return new Action().setItem(Items.ICE);
             }
@@ -127,7 +143,18 @@ public class PrintTaskController {
         }
 
         // 放冰成功后等待客户端状态同步，避免在数据包放置或延迟同步时重复排队放冰。
+        // 超时说明放冰包被服务端静默拒绝（反作弊/幽灵物品/落点被占等），回退重放，
+        // 否则该格位在断线前永久卡死
         if (stage == Stage.ICE_PLACED) {
+            long start = stageStartTicks.getOrDefault(key, getClientTick());
+            if (getClientTick() - start >= ICE_PLACED_TIMEOUT_TICKS) {
+                stages.remove(key);
+                stageStartTicks.remove(key);
+                if (canMeltIntoWater(pos) && !hasPendingOrdinaryInRange(false)) {
+                    stages.put(key, Stage.NEED_ICE);
+                    return new Action().setItem(Items.ICE);
+                }
+            }
             return null;
         }
 
@@ -137,9 +164,36 @@ public class PrintTaskController {
             return null;
         }
 
+        // 原版化水前置条件不满足（精准采集/下界/下方悬空）→ 不接管：
+        // 破冰后不会产生水，接管只会无限"放冰→破冰→失败"并白耗冰材料
+        if (!canMeltIntoWater(pos)) {
+            return null;
+        }
+
         // 需要放冰：显式 setItem(Items.ICE)，否则 getRequiredItems 会回退成水桶
         stages.put(key, Stage.NEED_ICE);
         return new Action().setItem(Items.ICE);
+    }
+
+    /**
+     * 原版冰化水前置条件（IceBlock.playerDestroy 语义）：
+     * ① 破坏工具无精准采集（PREVENTS_ICE_MELTING → 冰掉落为物品而非变水）；
+     * ② 维度不是"水蒸发"（下界冰破即消失）；
+     * ③ 下方方块 blocksMotion 或下方是液体（否则冰凭空消失）。
+     * 工具切换流程可能换手，这里只检查主副手当前状态——足够拦截最常见的"手持精准采集"。
+     */
+    private boolean canMeltIntoWater(BlockPos pos) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level != null && minecraft.level.dimensionType().ultraWarm()) {
+            return false;
+        }
+        if (minecraft.player != null
+                && (ToolSelectionUtils.hasSilkTouch(minecraft.player.getMainHandItem())
+                || ToolSelectionUtils.hasSilkTouch(minecraft.player.getOffhandItem()))) {
+            return false;
+        }
+        BlockState below = minecraft.level == null ? null : minecraft.level.getBlockState(pos.below());
+        return below != null && (below.blocksMotion() || !below.getFluidState().isEmpty());
     }
 
     /**
@@ -283,6 +337,7 @@ public class PrintTaskController {
         long key = pos.asLong();
         if (stages.getOrDefault(key, Stage.NONE) == Stage.NEED_ICE) {
             stages.put(key, Stage.ICE_PLACED);
+            stageStartTicks.put(key, getClientTick());
         }
     }
 
