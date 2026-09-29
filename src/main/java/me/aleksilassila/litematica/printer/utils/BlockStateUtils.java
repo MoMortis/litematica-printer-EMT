@@ -48,7 +48,11 @@ public class BlockStateUtils extends BlockUtils {
         }
         loop:
         for (Property<?> property : state1.getProperties()) {
-            if (property == BlockStateProperties.WATERLOGGED && !(state1.getBlock() instanceof CoralPlantBlock)) {
+            // WATERLOGGED 一律忽略（含珊瑚）：含水与否由放置时的环境流体决定，
+            // 在流动水（非水源）中放置的水生方块 waterlogged 必为 false，若参与比较
+            // 会形成"判错→破坏→重放→同状态"的无限循环；珊瑚的存活由六邻水源决定，
+            // 与 waterlogged 差异无关
+            if (property == BlockStateProperties.WATERLOGGED) {
                 continue;
             }
             for (Property<?> ignoredProperty : propertiesToIgnore) {
@@ -100,7 +104,8 @@ public class BlockStateUtils extends BlockUtils {
             return true;
         }
         for (Property<?> property : state1.getProperties()) {
-            if (property == BlockStateProperties.WATERLOGGED && !(state1.getBlock() instanceof CoralPlantBlock)) {
+            // WATERLOGGED 一律不可修复（含珊瑚）：差异来自环境流体，破坏重放只会循环
+            if (property == BlockStateProperties.WATERLOGGED) {
                 continue;
             }
             if (DYNAMIC_STATE_PROPERTIES.contains(property.getName())) {

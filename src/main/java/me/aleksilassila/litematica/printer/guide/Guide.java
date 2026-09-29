@@ -10,6 +10,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
+import net.minecraft.tags.FluidTags;
 import net.minecraft.world.level.block.*;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.AttachFace;
@@ -66,6 +67,17 @@ public abstract class Guide extends BlockStateUtils {
             if (!BlockStateUtils.hasSourceWaterFluid(level.getBlockState(blockPos))) {
                 return Result.PASS;
             }
+        }
+
+        // 活体珊瑚的含水状态由放置环境决定：目标格自身与六邻都没有水时，干放的珊瑚
+        // 会在 60~100gt 内枯死（原版 tryScheduleDieTick/scanForWater 语义），之后要么
+        // 永久卡死要么"破坏-重放"循环——等破冰放水流程或水源到位再放。
+        // 六邻有水的干放可以存活（WATERLOGGED 差异由 statesEqualIgnoreProperties 忽略），无需等待
+        if (requiredBlock instanceof BaseCoralPlantTypeBlock
+                && getProperty(requiredState, BlockStateProperties.WATERLOGGED).orElse(false)
+                && !level.getFluidState(blockPos).is(FluidTags.WATER)
+                && !hasWaterNeighbor()) {
+            return Result.PASS;
         }
 
         // 交给子类的 onBuildAction 拦截钩子
@@ -213,6 +225,13 @@ public abstract class Guide extends BlockStateUtils {
                     || requiredBlock instanceof StairBlock
                     || requiredBlock instanceof FenceGateBlock) {
                 action.setLookDirection(facing);
+            } else if (requiredBlock instanceof BaseCoralWallFanBlock) {
+                // 墙面珊瑚扇：支撑墙在 FACING 反侧，必须限定点击面。不限定的话
+                // DefaultGuide 默认六面可点，原版 getNearestLookingDirections 会把
+                // clickedFace.getOpposite() 提到队首——目标位在错误方向恰有可点击
+                // 实体方块（如鱼缸玻璃壁）时 FACING=clickedFace（恰等于视线方向），
+                // 贴错面后被验证器判错→破坏→重放→同样错，无限循环
+                action.setSides(facing.getOpposite()).setLookDirection(facing.getOpposite());
             } else if (!(requiredBlock instanceof HorizontalDirectionalBlock)
                     && !(requiredBlock instanceof BaseEntityBlock)) {
                 // 其余方块反向放置
@@ -227,6 +246,19 @@ public abstract class Guide extends BlockStateUtils {
         }
 
         return action;
+    }
+
+    /**
+     * 目标位六邻是否有水（对齐原版 BaseCoralPlantTypeBlock.scanForWater 的存活判定），
+     * 供活体珊瑚的干放守卫使用。
+     */
+    private boolean hasWaterNeighbor() {
+        for (Direction direction : Direction.values()) {
+            if (level.getFluidState(blockPos.relative(direction)).is(FluidTags.WATER)) {
+                return true;
+            }
+        }
+        return false;
     }
 
 }

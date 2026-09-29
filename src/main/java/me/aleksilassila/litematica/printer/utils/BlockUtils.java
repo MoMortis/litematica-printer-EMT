@@ -80,8 +80,9 @@ public class BlockUtils {
         }
         loop:
         for (Property<?> property : state1.getProperties()) {
-            if (property == BlockStateProperties.WATERLOGGED
-                    && !(state1.getBlock() instanceof CoralPlantBlock)) {
+            // WATERLOGGED 一律忽略（含珊瑚）：含水与否由放置时的环境流体决定，
+            // 流动水中放置必为 false，参与比较会形成无限"破坏→重放"循环
+            if (property == BlockStateProperties.WATERLOGGED) {
                 continue;
             }
             for (Property<?> ignoredProperty : propertiesToIgnore) {
