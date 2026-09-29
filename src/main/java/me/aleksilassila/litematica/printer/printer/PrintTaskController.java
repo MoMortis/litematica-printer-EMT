@@ -184,7 +184,9 @@ public class PrintTaskController {
      */
     private boolean canMeltIntoWater(BlockPos pos) {
         Minecraft minecraft = Minecraft.getInstance();
-        if (minecraft.level != null && minecraft.level.dimensionType().ultraWarm()) {
+        if (minecraft.level != null
+                && minecraft.level.environmentAttributes().getValue(
+                        net.minecraft.world.attribute.EnvironmentAttributes.WATER_EVAPORATES, pos)) {
             return false;
         }
         if (minecraft.player != null
@@ -193,7 +195,7 @@ public class PrintTaskController {
             return false;
         }
         BlockState below = minecraft.level == null ? null : minecraft.level.getBlockState(pos.below());
-        return below != null && (below.blocksMotion() || !below.getFluidState().isEmpty());
+        return below != null && (below.blocksMotion() || below.liquid());
     }
 
     /**
