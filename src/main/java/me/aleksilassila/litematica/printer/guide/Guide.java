@@ -149,14 +149,22 @@ public abstract class Guide extends BlockStateUtils {
         AttachFace attachFace = getProperty(requiredState, BlockStateProperties.ATTACH_FACE).orElse(null);
 
         // 1. 附着面方块（按钮、拉杆等 FaceAttachedHorizontalDirectionalBlock）
+        // 原版（1.21.11 字节码验证）：
+        // - canSurvive：支撑块在 WALL→FACING.getOpposite()（按钮背后）、FLOOR→下方、CEILING→上方
+        // - getStateForPlacement：WALL 时 FACING = 第一个水平视线方向取反；FLOOR/CEILING 时
+        //   FACING = 玩家水平视线本身，FACE 由视线序第一个方向（DOWN→FLOOR / UP→CEILING）决定
+        // sides 的 key = 指向被点击邻块（支撑块）的方向
         if (requiredBlock instanceof FaceAttachedHorizontalDirectionalBlock && facing != null && attachFace != null) {
-            Direction sidePitch = attachFace == AttachFace.CEILING ? Direction.UP
+            Direction lookPitch = attachFace == AttachFace.CEILING ? Direction.UP
                     : attachFace == AttachFace.FLOOR ? Direction.DOWN
                     : facing;
-            Direction clickSide = attachFace == AttachFace.WALL ? facing : facing.getOpposite();
+            Direction clickSide = attachFace == AttachFace.WALL ? facing.getOpposite()
+                    : attachFace == AttachFace.FLOOR ? Direction.DOWN
+                    : Direction.UP;
+            Direction lookYaw = attachFace == AttachFace.WALL ? facing.getOpposite() : facing;
             return action
                     .setSides(clickSide)
-                    .setLookDirection(clickSide.getOpposite(), sidePitch)
+                    .setLookDirection(lookYaw, lookPitch)
                     .setNeedWaitModifyLook();
         }
 

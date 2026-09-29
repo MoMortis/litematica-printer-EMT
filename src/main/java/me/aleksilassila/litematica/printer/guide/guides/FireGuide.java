@@ -46,11 +46,11 @@ public class FireGuide extends Guide {
     /**
      * 根据 requiredState 的方向属性确定火焰放置面。
      * 火焰有六个方向属性（east/north/south/west/up），表示火焰可以向该方向蔓延。
-     * 选择第一个为 true 的水平方向；若无则默认 DOWN。
+     * 只取水平方向（火焰的 up 属性几乎恒为 true，不能作为点击面依据）；无则默认 DOWN。
      */
     private Direction findFireDirection() {
         for (Direction direction : Direction.values()) {
-            if (direction == Direction.DOWN) continue;
+            if (direction == Direction.DOWN || direction == Direction.UP) continue;
             Object value = BlockUtils.getPropertyByName(requiredState, direction.name());
             if (value instanceof Boolean && (Boolean) value) {
                 return direction;
