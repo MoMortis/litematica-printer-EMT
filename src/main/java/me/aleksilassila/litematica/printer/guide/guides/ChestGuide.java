@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.guide.guides;
 
 import me.aleksilassila.litematica.printer.enums.BlockMatchResult;
 import me.aleksilassila.litematica.printer.guide.Guide;
+import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
 import me.aleksilassila.litematica.printer.guide.Result;
 import me.aleksilassila.litematica.printer.printer.SchematicBlockContext;
 import me.aleksilassila.litematica.printer.printer.action.Action;
@@ -21,12 +22,13 @@ import java.util.Map;
 public class ChestGuide extends Guide {
 
     /**
-     * 双箱子放置状态：记录组内位置首次以"第一半"身份放置的时间戳（毫秒）。
+     * 双箱子放置状态：记录组内位置首次以"第一半"身份放置的处理时间（处理器 tick）。
      * 放置速度过快时服务器可能尚未把第一个箱子同步回客户端，
      * 用于等待确认后再放第二半，避免两个半箱都按第一半逻辑放置导致不合并。
+     * 用处理器 tick 而非挂钟：改系统时间不会打乱等待窗口。
      */
     private static final Map<String, Long> DOUBLE_CHEST_PENDING = new HashMap<>();
-    private static final long PARTNER_CONFIRM_TIMEOUT_MS = 1000;
+    private static final long PARTNER_CONFIRM_TIMEOUT_TICKS = 20;
 
     public ChestGuide(SchematicBlockContext context) {
         super(context);
@@ -77,9 +79,10 @@ public class ChestGuide extends Guide {
 
         // 伙伴未放置：把自己当第一半。放置后等待服务器确认（超时阈值内），
         // 期间如果伙伴位置被确认则上方分支会放第二半；超时未确认（丢包/延迟）则重试第一半。
-        long now = System.currentTimeMillis();
+        long now = ClientPlayerTickManager.getCurrentHandlerTime();
+        prunePending(now);
         Long firstTry = DOUBLE_CHEST_PENDING.get(pendingKey(blockPos));
-        if (firstTry == null || now - firstTry >= PARTNER_CONFIRM_TIMEOUT_MS) {
+        if (firstTry == null || now - firstTry >= PARTNER_CONFIRM_TIMEOUT_TICKS) {
             DOUBLE_CHEST_PENDING.put(pendingKey(blockPos), now);
             DOUBLE_CHEST_PENDING.put(pendingKey(partnerPos), now);
             return Result.success(new Action()
@@ -106,5 +109,18 @@ public class ChestGuide extends Guide {
 
     private void clearPending(BlockPos pos) {
         DOUBLE_CHEST_PENDING.remove(pendingKey(pos));
+    }
+
+    /** 清掉全部超时条目：pending 只在 1 秒窗口内有意义，不清理会随打印进度无限累积 */
+    private static void prunePending(long now) {
+        if (DOUBLE_CHEST_PENDING.size() < 64) {
+            return;
+        }
+        DOUBLE_CHEST_PENDING.values().removeIf(tryTime -> now - tryTime >= PARTNER_CONFIRM_TIMEOUT_TICKS);
+    }
+
+    /** 跨维度/断线复位：双箱等待窗口内的坐标在旧世界已无意义 */
+    public static void resetPending() {
+        DOUBLE_CHEST_PENDING.clear();
     }
 }

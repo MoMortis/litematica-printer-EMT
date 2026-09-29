@@ -2,6 +2,7 @@ package me.aleksilassila.litematica.printer.mixin;
 
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
+import me.aleksilassila.litematica.printer.utils.BreakUtils;
 import me.aleksilassila.litematica.printer.utils.PacketSoundConfirmationTracker;
 import me.aleksilassila.litematica.printer.utils.PacketUtils;
 import net.minecraft.client.multiplayer.ClientPacketListener;
@@ -45,13 +46,18 @@ public abstract class MixinClientPacketListener {
     @Inject(at = @At("TAIL"), method = "handleBlockUpdate")
     private void confirmPacketSound(ClientboundBlockUpdatePacket packet, CallbackInfo ci) {
         PacketSoundConfirmationTracker.confirmServerBlockUpdate(packet.getPos(), packet.getBlockState());
+        // 服务端方块变化确认：清除破坏防重标记，防重挖不再纯靠计时过期
+        BreakUtils.INSTANCE.confirmServerBlockUpdate(packet.getPos());
     }
 
     // 批量子区块更新包：同一游戏刻内同一子区块有多个方块变化时，服务端会合并成此包发送，
     // 不确认的话数据包挖掘/打印的音效确认会大量超时丢失
     @Inject(at = @At("TAIL"), method = "handleChunkBlocksUpdate")
     private void confirmPacketSectionSound(ClientboundSectionBlocksUpdatePacket packet, CallbackInfo ci) {
-        packet.runUpdates(PacketSoundConfirmationTracker::confirmServerBlockUpdate);
+        packet.runUpdates((pos, state) -> {
+            PacketSoundConfirmationTracker.confirmServerBlockUpdate(pos, state);
+            BreakUtils.INSTANCE.confirmServerBlockUpdate(pos);
+        });
     }
 
     @Inject(at = @At("TAIL"), method = "handleContainerContent")

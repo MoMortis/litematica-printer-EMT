@@ -7,6 +7,7 @@ import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.handlers.*;
 import me.aleksilassila.litematica.printer.go.GhastFlyer;
 import me.aleksilassila.litematica.printer.go.GoManager;
+import me.aleksilassila.litematica.printer.guide.guides.ChestGuide;
 import me.aleksilassila.litematica.printer.guide.guides.ShulkerPlacementGuard;
 import me.aleksilassila.litematica.printer.printer.ActionManager;
 import me.aleksilassila.litematica.printer.printer.PrintTaskController;
@@ -62,6 +63,7 @@ public class ClientPlayerTickManager {
         ShulkerPlacementGuard.INSTANCE.reset();
         GhastFlyer.resetRuntime();
         GoManager.INSTANCE.stop(null);
+        ChestGuide.resetPending();
     }
 
     public static final ImmutableList<ClientPlayerTickHandler> VALUES = ImmutableList.of(
