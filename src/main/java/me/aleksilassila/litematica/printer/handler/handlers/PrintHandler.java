@@ -325,6 +325,12 @@ public class PrintHandler extends ClientPlayerTickHandler {
     /** 服务器确认窗口（tick）：超过仍未看到方块放置到位即判失败 */
     private static final int CONFIRM_WINDOW_TICKS = 5;
 
+    /** 跨维度/断线复位快速重试与确认簿记：表内坐标属于旧维度，包语义在新维度不成立 */
+    public void resetFastRetry() {
+        retryTable.clear();
+        pendingConfirm.clear();
+    }
+
     /** 最近一次 doExecute 的结果（供快速路径统计"实际放置"次数） */
     private ExecuteOutcome lastOutcome = ExecuteOutcome.DEFERRED;
 

@@ -47,6 +47,13 @@ public class ShulkerPlacementGuard {
     private ShulkerPlacementGuard() {
     }
 
+    /** 跨维度/断线复位守卫簿记：pending 条目只在该位置再次被评估时才移除，不主动清会跨世界缓慢残留 */
+    public void reset() {
+        pending.clear();
+        readyMap.clear();
+        readyMapTick = -1L;
+    }
+
     /** 该位置本 tick 已被守卫确认为空盒（主手已切换），跳过 switchToItems */
     public boolean isReady(BlockPos pos) {
         return pos != null && readyMap.containsKey(pos.asLong());

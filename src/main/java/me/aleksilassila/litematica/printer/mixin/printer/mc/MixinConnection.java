@@ -2,7 +2,6 @@ package me.aleksilassila.litematica.printer.mixin.printer.mc;
 
 import me.aleksilassila.litematica.printer.config.Configs;
 import me.aleksilassila.litematica.printer.handler.ClientPlayerTickManager;
-import me.aleksilassila.litematica.printer.printer.PrintTaskController;
 import me.aleksilassila.litematica.printer.printer.zxy.inventory.InventoryUtils;
 import me.aleksilassila.litematica.printer.utils.ConfigUtils;
 import net.fabricmc.api.EnvType;
@@ -29,7 +28,8 @@ public class MixinConnection {
     @Inject(method = "disconnect*", at = {@At("HEAD")})
     public void disconnect(Component ignored, CallbackInfo ci) {
         InventoryUtils.clearAutomatedQuickShulkerScreenProtection();
-        PrintTaskController.INSTANCE.reset();
+        // 断线时统一复位：原先只清打印状态机，破坏队列/重试簿记/寻路等残留坐标状态一并清掉
+        ClientPlayerTickManager.resetRuntimeState();
         ConfigUtils.resetAutoEnableSession();
         if (Configs.Core.AUTO_DISABLE_PRINTER.getBooleanValue() && Configs.Core.WORK_SWITCH.getBooleanValue()) {
             Configs.Core.WORK_SWITCH.setBooleanValue(false);

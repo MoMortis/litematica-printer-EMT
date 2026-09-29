@@ -677,4 +677,25 @@ public final class GhastFlyer {
             pitchOwned = false;
         }
     }
+
+    /**
+     * 跨维度/跨服务器/死亡重生时复位全部静态脱困与视角状态：
+     * 这些状态没有"玩家失效"钩子，残留会导致重生瞬间俯仰角被强制归零、
+     * 或在下一世界带着上一条命的脱困方向继续飞。
+     */
+    public static void resetRuntime() {
+        escapeTicks = 0;
+        escapeTier = 0;
+        escapeX = 0.0;
+        escapeY = 0.0;
+        escapeZ = 0.0;
+        escapeDirX = 0.0;
+        escapeDirY = 0.0;
+        escapeDirZ = 0.0;
+        java.util.Arrays.fill(failedDirExpire, 0L);
+        failedDirCursor = 0;
+        tier1FailStreak = 0;
+        pitchOwned = false;
+        schematicCheckCountdown = 0;
+    }
 }

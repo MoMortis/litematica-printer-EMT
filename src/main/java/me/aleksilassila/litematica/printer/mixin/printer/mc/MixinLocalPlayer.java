@@ -52,11 +52,16 @@ public class MixinLocalPlayer extends AbstractClientPlayer {
     public void init(CallbackInfo ci) {
         // 进入服务器自启动：启动"重试开启打印机"会话（死亡重生不重复启动会话）
         me.aleksilassila.litematica.printer.utils.ConfigUtils.startAutoEnableSession();
+        // 重生/重生点复位会重建玩家实体：乐魂飞行的脱困与视角接管状态随之失效，立即清掉，
+        // 否则残留的 pitchOwned 会在重生瞬间把俯仰角强制归零
+        me.aleksilassila.litematica.printer.go.GhastFlyer.resetRuntime();
     }
 
     @Inject(at = @At("HEAD"), method = "tick")
     public void tick(CallbackInfo ci) {
         ClientPlayerTickManager.updateTickHandlerTime();
+        // 换维度（同一连接）检测：必须先于一切早退分支，否则旧破坏队列挂起打印循环时永远检测不到
+        ClientPlayerTickManager.checkDimensionChange(minecraft.level);
         me.aleksilassila.litematica.printer.utils.ConfigUtils.tickAutoEnable();
         // 仅渲染方块：配置变化后全量重建原理图渲染网格（须在早退逻辑之前，保证必定执行）
         me.aleksilassila.litematica.printer.printer.RenderOnlyBlockCache.tickPendingReload();
