@@ -452,7 +452,7 @@
   "litematica_printer.config.eatHurtCancelCooldown": "Hurt-cancel eat cooldown",
   "litematica_printer.config.eatHurtCancelCooldown.desc": "Taking damage while eating stops eating and blocks re-triggering for this many seconds (0 = keep eating through damage).",
   "litematica_printer.config.eatOperationCooldown": "Player-action eat cooldown",
-  "litematica_printer.config.eatOperationCooldown.desc": "Using an item or switching hotbar slot starts a cooldown; auto-eat only starts after this many game ticks with no further player action (0 = disabled).",
+  "litematica_printer.config.eatOperationCooldown.desc": "Before auto-eating, look back this many game ticks (gt) for player actions: using an item or switching hotbar slot counts as an action; eating only starts if no action occurred within the window (0 = disabled).",
   "litematica_printer.config.category.go": "Pathfinding",
   "litematica_printer.config.category.go.desc": "Scan auto-walk and /go pathfinding: whitelists, movement style and speed, camera and safety stops",
   "litematica_printer.config.category.danger": "§cDO NOT CLICK",

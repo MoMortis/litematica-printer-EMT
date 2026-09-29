@@ -450,7 +450,7 @@
   "litematica_printer.config.eatHurtCancelCooldown": "受傷打斷-進食冷卻",
   "litematica_printer.config.eatHurtCancelCooldown.desc": "進食中受到傷害立即停止，並在該秒數內不再觸發（0 = 受傷不打斷，繼續吃）。",
   "litematica_printer.config.eatOperationCooldown": "玩家操作-進食冷卻",
-  "litematica_printer.config.eatOperationCooldown.desc": "玩家使用物品或切換物品欄後進入冷卻，冷卻期間沒有任何再次操作才允許自動進食，每次操作都會重新計時（0 = 不啟用）。",
+  "litematica_printer.config.eatOperationCooldown.desc": "進食前先回看該時長（單位：gt，即遊戲刻）內玩家是否有操作——使用物品或切換物品欄都算操作，視窗內沒有任何操作才允許自動進食（0 = 不檢查）。",
   "litematica_printer.config.category.go": "尋路",
   "litematica_printer.config.category.go.desc": "掃描自動尋路與 /go 自動尋路：白名單、尋路方式與速度、視角與安全停止",
   "litematica_printer.config.category.danger": "§c千萬別點",

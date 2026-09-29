@@ -646,8 +646,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 60)
                 .build();
 
-        // 玩家操作 - 进食冷却（gt）：玩家使用物品或切换物品栏后进入冷却，
-        // 冷却期间没有任何再次操作（每次操作都会重新计时）才允许自动进食；0 = 不启用
+        // 玩家操作 - 进食冷却（单位：gt）：进食前回看该时长的操作窗口——玩家使用物品
+        // 或切换物品栏都记为操作，窗口内没有任何操作才允许自动进食；0 = 不检查
         public static final ConfigInteger EAT_OPERATION_COOLDOWN = integer("eatOperationCooldown")
                 .defaultValue(0)
                 .range(0, 600)

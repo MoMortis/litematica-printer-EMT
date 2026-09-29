@@ -43,8 +43,8 @@ import net.minecraft.world.level.GameType;
  * 检测到即打断进食。
  * <p>打断：受伤（生命+吸收下降，冷却见 {@code EAT_HURT_CANCEL_COOLDOWN}，0=不打断）、
  * 玩家攻击/切槽/开界面（短冷却）。另有「玩家操作 - 进食冷却」（{@code EAT_OPERATION_COOLDOWN}，
- * 0=不启用）：使用物品/切换物品栏后须静置 N gt 且期间无再次操作才允许开吃。
- * tick 入口在 {@code MixinLocalPlayer.tick}。
+ * 0=不检查）：进食前回看该时长（gt）窗口，玩家使用物品/切换物品栏的操作出现在窗口内
+ * 就不开吃，保证进食前一段时间内玩家没在操作。tick 入口在 {@code MixinLocalPlayer.tick}。
  * <p><b>聊天栏 / ESC 菜单例外</b>：这两个界面不算"玩家在忙"，开着也照常进食（多人游戏下游戏照跑；
  * 单人 ESC 会暂停游戏，玩家 tick 停摆，属于原版限制）。界面打开的瞬间 vanilla 会松开使用状态，
  * 所以"使用状态没了"不等于"吃完了"——只有食物真的被消耗才收尾，否则重新建立使用状态接着吃。
@@ -93,8 +93,12 @@ public final class EatUtils {
     /** 使用状态被释放后重建的次数（本餐内累计） */
     private static int resumeRetries;
     // ===== 玩家操作追踪（进食冷却用）=====
-    /** 最近一次玩家操作的处理器 tick（使用物品/切换物品栏）；初始值须为负且远离 MIN_VALUE 防溢出 */
-    private static long lastOperationTick = -1_000_000L;
+    /** 操作历史环容量（= 配置范围上限 600gt） */
+    private static final int OPERATION_HISTORY_CAPACITY = 600;
+    /** 玩家操作历史（按 tick 采样）：true = 该 tick 玩家有操作（使用物品/切换物品栏） */
+    private static final boolean[] operationHistory = new boolean[OPERATION_HISTORY_CAPACITY];
+    /** 下一个写入位置；最近一次写入在 cursor-1 */
+    private static int operationHistoryCursor;
     /** 上一 tick 的选中快捷栏槽（检测切槽操作；-1 = 尚未采样） */
     private static int prevSelectedSlot = -1;
 
@@ -135,20 +139,33 @@ public final class EatUtils {
     // ==================== 玩家操作追踪 ====================
 
     /**
-     * 玩家操作追踪（进食冷却 {@code EAT_OPERATION_COOLDOWN} 用）：使用物品（含按住使用键）
-     * 或切换快捷栏槽都算一次操作，刷新冷却计时——冷却期间玩家没有任何再次操作才允许进食。
-     * 只在 IDLE 态追踪：进食/取食/恢复期间是我们自己在模拟按住使用键和切槽，不是玩家操作；
-     * 玩家此刻动手会先走既有的打断逻辑（playerActed），不依赖本追踪。
+     * 玩家操作采样（进食冷却 {@code EAT_OPERATION_COOLDOWN} 用）：每 tick 记录本 tick
+     * 玩家是否"有操作"——使用物品（含按住使用键）或切换快捷栏槽。进食前由
+     * {@link #hasRecentOperation} 回看配置时长窗口，保证进食前一段时间内玩家没在操作。
+     * 操作只在 IDLE 态认定：进食/取食/恢复期间是我们自己在模拟按住使用键和切槽，
+     * 不是玩家操作；玩家此刻动手会先走既有的打断逻辑（playerActed），不依赖本追踪。
      */
     private static void trackPlayerOperations(Minecraft mc, LocalPlayer player) {
         int selected = InventoryUtils.getSelectedSlot(player.getInventory());
-        if (state == State.IDLE
-                && (player.isUsingItem()
-                || mc.options.keyUse.isDown()
-                || (prevSelectedSlot != -1 && selected != prevSelectedSlot))) {
-            lastOperationTick = ClientPlayerTickManager.getCurrentHandlerTime();
+        boolean operated = false;
+        if (state == State.IDLE) {
+            operated = player.isUsingItem()
+                    || mc.options.keyUse.isDown()
+                    || (prevSelectedSlot != -1 && selected != prevSelectedSlot);
         }
+        operationHistory[operationHistoryCursor] = operated;
+        operationHistoryCursor = (operationHistoryCursor + 1) % OPERATION_HISTORY_CAPACITY;
         prevSelectedSlot = selected;
+    }
+
+    /** 过去 windowTicks 个 tick 内玩家是否有操作（cursor-1 是最近一 tick 的采样） */
+    private static boolean hasRecentOperation(int windowTicks) {
+        for (int i = 1; i <= windowTicks; i++) {
+            if (operationHistory[(operationHistoryCursor - i + OPERATION_HISTORY_CAPACITY) % OPERATION_HISTORY_CAPACITY]) {
+                return true;
+            }
+        }
+        return false;
     }
 
     // ==================== 触发 ====================
@@ -178,10 +195,10 @@ public final class EatUtils {
         if (now < nextActionTick || now < nextScanTick) {
             return;
         }
-        // 玩家操作 - 进食冷却：最近一次操作（使用物品/切换物品栏）后须静置 N gt
-        // 且期间无任何再次操作（每次操作都刷新计时）；0 = 不启用
-        long opCooldown = Configs.Special.EAT_OPERATION_COOLDOWN.getIntegerValue();
-        if (opCooldown > 0 && now - lastOperationTick < opCooldown) {
+        // 玩家操作 - 进食冷却：进食前回看该时长（gt）窗口，保证这段时间内
+        // 玩家没有使用物品/切换物品栏等操作；0 = 不检查
+        int opCooldown = Configs.Special.EAT_OPERATION_COOLDOWN.getIntegerValue();
+        if (opCooldown > 0 && hasRecentOperation(opCooldown)) {
             return;
         }
         if (player.getFoodData().getFoodLevel() > Configs.Special.EAT_HUNGER_THRESHOLD.getIntegerValue()) {
@@ -367,6 +384,9 @@ public final class EatUtils {
         swappedInvSlot = -1;
         usingStarted = false;
         startRetries = 0;
+        // 操作历史是跨世界无意义的旧采样：清空，避免新世界第一餐被旧窗口判住
+        java.util.Arrays.fill(operationHistory, false);
+        prevSelectedSlot = -1;
     }
 
     // ==================== 判定 ====================
