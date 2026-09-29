@@ -95,6 +95,10 @@ public class PrinterBox implements Iterable<BlockPos> {
 
         @Override
         public boolean hasNext() {
+            // Y 轴钳制到世界边界后可能产生 minY>maxY 的退化盒（如眼位高于建筑上限），
+            // 此时 Y 轴溢出后 reset 回 minY、永远到不了 targetY=maxY，
+            // hasNext 会恒真导致调用方 while 死循环，必须按空盒判定终止
+            if (minY > maxY) return false;
             if (currPos == null) return true;
             int x = currPos.getX();
             int y = currPos.getY();
