@@ -779,6 +779,12 @@ public final class GoPathfinder {
             map.put(key, n);
             heap.push(n);
         } else if (tentative < n.g - MIN_IMPROVEMENT) {
+            if (n.heapIndex == -1) {
+                // 已弹出（closed）：w=1 且启发一致时不会走到这里；加权启发（weight>1）下
+                // closed 节点的 g 仍可能"改进"，但它不会重新入堆、已扩展的后继也基于旧 g，
+                // 下写 g/parent 只会制造代价不自洽的 parent 链与次优路径——按 closed 语义丢弃
+                return;
+            }
             n.g = tentative;
             n.parent = parent;
             heap.update(n);

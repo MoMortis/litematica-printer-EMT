@@ -161,6 +161,10 @@ public final class GoExecutor {
         // 仅容器类界面暂停（打印换料/补货/箱子界面，走远会被服务端强制关闭容器）；
         // 聊天栏等普通界面照常寻路（原版 applyInput/isControlledCamera 与界面无关）
         if (isContainerUiOpen(player)) {
+            // 暂停前先清掉我们写入的残留输入：tweakeroo 灵魂出窍的 DummyMovementInput
+            // 不会从物理键盘重写 keyPresses，不清会带着上一 tick 的前进/疾跑继续走，
+            // 服务端会强制关闭容器（原版 applyInput 在 active 期间照常消费输入）
+            clearStaleInput(player);
             return;
         }
         // 寻路假设地面行走：飞行/旁观/睡觉时不接管输入（保持激活，落地自动恢复驱动）
