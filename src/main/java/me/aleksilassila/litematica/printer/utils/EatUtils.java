@@ -42,7 +42,9 @@ import net.minecraft.world.level.GameType;
  * 反向门禁保证它们忙时不启动进食。玩家手动操作（攻击/切槽/开界面）永远优先，
  * 检测到即打断进食。
  * <p>打断：受伤（生命+吸收下降，冷却见 {@code EAT_HURT_CANCEL_COOLDOWN}，0=不打断）、
- * 玩家攻击/切槽/开界面（短冷却）。tick 入口在 {@code MixinLocalPlayer.tick}。
+ * 玩家攻击/切槽/开界面（短冷却）。另有「玩家操作 - 进食冷却」（{@code EAT_OPERATION_COOLDOWN}，
+ * 0=不启用）：使用物品/切换物品栏后须静置 N gt 且期间无再次操作才允许开吃。
+ * tick 入口在 {@code MixinLocalPlayer.tick}。
  * <p><b>聊天栏 / ESC 菜单例外</b>：这两个界面不算"玩家在忙"，开着也照常进食（多人游戏下游戏照跑；
  * 单人 ESC 会暂停游戏，玩家 tick 停摆，属于原版限制）。界面打开的瞬间 vanilla 会松开使用状态，
  * 所以"使用状态没了"不等于"吃完了"——只有食物真的被消耗才收尾，否则重新建立使用状态接着吃。
@@ -90,6 +92,11 @@ public final class EatUtils {
     private static int startRetries;
     /** 使用状态被释放后重建的次数（本餐内累计） */
     private static int resumeRetries;
+    // ===== 玩家操作追踪（进食冷却用）=====
+    /** 最近一次玩家操作的处理器 tick（使用物品/切换物品栏）；初始值须为负且远离 MIN_VALUE 防溢出 */
+    private static long lastOperationTick = -1_000_000L;
+    /** 上一 tick 的选中快捷栏槽（检测切槽操作；-1 = 尚未采样） */
+    private static int prevSelectedSlot = -1;
 
     private EatUtils() {
     }
@@ -116,12 +123,32 @@ public final class EatUtils {
             }
             return;
         }
+        trackPlayerOperations(mc, player);
         switch (state) {
             case IDLE -> tryStart(mc, player);
             case FETCH -> tickFetch(player);
             case EATING -> tickEating(mc, player);
             case RESTORE -> restore(player);
         }
+    }
+
+    // ==================== 玩家操作追踪 ====================
+
+    /**
+     * 玩家操作追踪（进食冷却 {@code EAT_OPERATION_COOLDOWN} 用）：使用物品（含按住使用键）
+     * 或切换快捷栏槽都算一次操作，刷新冷却计时——冷却期间玩家没有任何再次操作才允许进食。
+     * 只在 IDLE 态追踪：进食/取食/恢复期间是我们自己在模拟按住使用键和切槽，不是玩家操作；
+     * 玩家此刻动手会先走既有的打断逻辑（playerActed），不依赖本追踪。
+     */
+    private static void trackPlayerOperations(Minecraft mc, LocalPlayer player) {
+        int selected = InventoryUtils.getSelectedSlot(player.getInventory());
+        if (state == State.IDLE
+                && (player.isUsingItem()
+                || mc.options.keyUse.isDown()
+                || (prevSelectedSlot != -1 && selected != prevSelectedSlot))) {
+            lastOperationTick = ClientPlayerTickManager.getCurrentHandlerTime();
+        }
+        prevSelectedSlot = selected;
     }
 
     // ==================== 触发 ====================
@@ -149,6 +176,12 @@ public final class EatUtils {
         }
         long now = ClientPlayerTickManager.getCurrentHandlerTime();
         if (now < nextActionTick || now < nextScanTick) {
+            return;
+        }
+        // 玩家操作 - 进食冷却：最近一次操作（使用物品/切换物品栏）后须静置 N gt
+        // 且期间无任何再次操作（每次操作都刷新计时）；0 = 不启用
+        long opCooldown = Configs.Special.EAT_OPERATION_COOLDOWN.getIntegerValue();
+        if (opCooldown > 0 && now - lastOperationTick < opCooldown) {
             return;
         }
         if (player.getFoodData().getFoodLevel() > Configs.Special.EAT_HUNGER_THRESHOLD.getIntegerValue()) {

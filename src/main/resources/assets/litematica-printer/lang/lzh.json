@@ -449,6 +449,8 @@
   "litematica_printer.config.eatBlacklist.desc": "錄內之食，不自噉也。一行一名，可書註冊之徑（rotten_flesh）、全 ID（minecraft:rotten_flesh），或其確譯。",
   "litematica_printer.config.eatHurtCancelCooldown": "受創輟食之息",
   "litematica_printer.config.eatHurtCancelCooldown.desc": "方噉而受創，即刻輟之，息此秒數而後復（零則創而不輟，食之如故）。",
+  "litematica_printer.config.eatOperationCooldown": "人動-輟噉之息",
+  "litematica_printer.config.eatOperationCooldown.desc": "人方用物或易欄，則息此刻數；息中無復動，方許自噉，一動則復計（零則不俟）。",
   "litematica_printer.config.category.go": "尋路",
   "litematica_printer.config.category.go.desc": "巡自走與手令自走：白冊、行法與速、目向與安止",
   "litematica_printer.config.category.danger": "§c慎莫按",

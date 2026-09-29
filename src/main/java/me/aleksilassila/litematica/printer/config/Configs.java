@@ -646,6 +646,13 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 .range(0, 60)
                 .build();
 
+        // 玩家操作 - 进食冷却（gt）：玩家使用物品或切换物品栏后进入冷却，
+        // 冷却期间没有任何再次操作（每次操作都会重新计时）才允许自动进食；0 = 不启用
+        public static final ConfigInteger EAT_OPERATION_COOLDOWN = integer("eatOperationCooldown")
+                .defaultValue(0)
+                .range(0, 600)
+                .build();
+
         // ===== 容器同步 =====
 
         // 容器同步 - 开关：开启后同步前先校验玩家背包材料是否齐全，不足则暂不同步
@@ -706,7 +713,8 @@ public class Configs extends ConfigBuilders implements IConfigHandler {
                 EAT,
                 EAT_HUNGER_THRESHOLD,
                 EAT_BLACKLIST,
-                EAT_HURT_CANCEL_COOLDOWN
+                EAT_HURT_CANCEL_COOLDOWN,
+                EAT_OPERATION_COOLDOWN
         );
     }
 
